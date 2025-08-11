@@ -2,6 +2,7 @@ pub mod decoder;
 pub mod handlers;
 mod lut;
 
+#[derive(Debug, Clone)]
 pub struct Cpu {
     pub pc: u32,
     pub registers: [u32; 32],

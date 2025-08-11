@@ -1,3 +1,4 @@
+#[derive(Debug, Clone)]
 pub struct Mmu {
     pub memory: Box<[u8; 512 * 1024]>, // 512 KB BIOS
 }

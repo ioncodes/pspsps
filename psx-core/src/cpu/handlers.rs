@@ -92,6 +92,7 @@ pub fn branch<const LINK: bool, const REGISTER: bool, const TYPE: BranchType>(
     );
 }
 
+#[tracing::instrument(target = "psx_core::cpu", level = "debug")]
 pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE: bool>(
     instr: &Instruction, cpu: &mut Cpu,
 ) {

@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 psx-core = { path = "../psx-core" }
+iced = "0.13.1"

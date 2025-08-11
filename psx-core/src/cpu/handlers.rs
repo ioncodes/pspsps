@@ -95,14 +95,23 @@ pub fn shift<const DIRECTION: ShiftDirection, const TYPE: ShiftType, const VARIA
 }
 
 pub fn branch<const LINK: bool, const REGISTER: bool, const TYPE: BranchType>(
-    _instr: &Instruction, _cpu: &mut Cpu, _mmu: &mut Mmu,
+    instr: &Instruction, cpu: &mut Cpu, _mmu: &mut Mmu,
 ) {
-    todo!(
-        "Implement branch operation with link: {}, register: {}, type: {:?}",
-        LINK,
-        REGISTER,
-        TYPE
-    );
+    if LINK {
+        cpu.registers[31] = cpu.pc + 4;
+    }
+
+    match TYPE {
+        BranchType::Unconditional => {
+            cpu.pc = instr.jump_target(cpu.pc);
+        }
+        _ => todo!(
+            "Implement branch operation with link: {}, register: {}, type: {:?}",
+            LINK,
+            REGISTER,
+            TYPE
+        ),
+    }
 }
 
 pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE: bool>(

@@ -28,7 +28,7 @@ pub enum BranchType {
 #[derive(Debug, ConstParamTy, PartialEq, Eq)]
 pub enum AluOperation {
     Add,
-    Subtract,
+    Sub,
     And,
     Or,
     Xor,
@@ -71,7 +71,7 @@ pub enum MultiplyMoveRegister {
 }
 
 pub fn shift<const DIRECTION: ShiftDirection, const TYPE: ShiftType, const VARIABLE: bool>(
-    instr: &Instruction, cpu: &mut Cpu,
+    _instr: &Instruction, _cpu: &mut Cpu,
 ) {
     todo!(
         "Implement shift operation with direction: {:?}, type: {:?}, variable: {}",
@@ -82,7 +82,7 @@ pub fn shift<const DIRECTION: ShiftDirection, const TYPE: ShiftType, const VARIA
 }
 
 pub fn branch<const LINK: bool, const REGISTER: bool, const TYPE: BranchType>(
-    instr: &Instruction, cpu: &mut Cpu,
+    _instr: &Instruction, _cpu: &mut Cpu,
 ) {
     todo!(
         "Implement branch operation with link: {}, register: {}, type: {:?}",
@@ -109,7 +109,7 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
         AluOperation::Xor => cpu.registers[dst] = x ^ y,
         AluOperation::Nor => cpu.registers[dst] = !(x | y),
         AluOperation::Add => cpu.registers[dst] = x.wrapping_add(y),
-        AluOperation::Subtract => cpu.registers[dst] = x.wrapping_sub(y),
+        AluOperation::Sub => cpu.registers[dst] = x.wrapping_sub(y),
         _ => todo!(
             "Implement ALU operation: {:?}, unsigned: {}, immediate: {}",
             OPERATION,
@@ -120,12 +120,19 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
 }
 
 pub fn load_store<
+    const IS_LUI: bool,
     const TYPE: MemoryAccessType,
     const TRANSFER_SIZE: MemoryTransferSize,
     const PORTION: MemoryAccessPortion,
 >(
     instr: &Instruction, cpu: &mut Cpu,
 ) {
+    if IS_LUI {
+        let imm = instr.immediate() as u32;
+        cpu.registers[instr.rt() as usize] = imm << 16;
+        return;
+    }
+
     todo!(
         "Implement load/store operation with type: {:?}, transfer size: {:?}, portion: {:?}",
         TYPE,
@@ -138,7 +145,7 @@ pub fn move_multiply<
     const DIRECTION: MultiplyMoveDirection,
     const REGISTER: MultiplyMoveRegister,
 >(
-    instr: &Instruction, cpu: &mut Cpu,
+    _instr: &Instruction, _cpu: &mut Cpu,
 ) {
     todo!(
         "Implement move multiply operation with direction: {:?}, register: {:?}",
@@ -147,19 +154,14 @@ pub fn move_multiply<
     );
 }
 
-pub fn load_upper_immediate(instr: &Instruction, cpu: &mut Cpu) {
-    let imm = instr.immediate() as u32;
-    cpu.registers[instr.rt() as usize] = imm << 16;
-}
-
-pub fn cop(instr: &Instruction, cpu: &mut Cpu) {
+pub fn cop(_instr: &Instruction, _cpu: &mut Cpu) {
     todo!("Implement COP");
 }
 
-pub fn system_call(instr: &Instruction, cpu: &mut Cpu) {
+pub fn system_call(_instr: &Instruction, _cpu: &mut Cpu) {
     todo!("Implement system call");
 }
 
-pub fn debug_break(instr: &Instruction, cpu: &mut Cpu) {
+pub fn debug_break(_instr: &Instruction, _cpu: &mut Cpu) {
     todo!("Implement break");
 }

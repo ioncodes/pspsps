@@ -182,13 +182,13 @@ pub static MIPS_RTYPE_LUT: [Instruction; 64] = [
     instruction!(
         Sub,
         RType,
-        handlers::alu::<{ handlers::AluOperation::Subtract }, false, false>
+        handlers::alu::<{ handlers::AluOperation::Sub }, false, false>
     ),
     /* 0x23 */
     instruction!(
         SubUnsigned,
         RType,
-        handlers::alu::<{ handlers::AluOperation::Subtract }, true, false>
+        handlers::alu::<{ handlers::AluOperation::Sub }, true, false>
     ),
     /* 0x24 */
     instruction!(
@@ -388,7 +388,17 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
         IType,
         handlers::alu::<{ handlers::AluOperation::Xor }, false, true>
     ),
-    /* 0x0F */ instruction!(LoadUpperImmediate, IType, handlers::load_upper_immediate),
+    /* 0x0F */
+    instruction!(
+        LoadUpperImmediate,
+        IType,
+        handlers::load_store::<
+            true,
+            { handlers::MemoryAccessType::Load },
+            { handlers::MemoryTransferSize::Word },
+            { handlers::MemoryAccessPortion::Full },
+        >
+    ),
     /* 0x10 */ Instruction::invalid(),
     /* 0x11 */ Instruction::invalid(),
     /* 0x12 */ Instruction::invalid(),
@@ -410,6 +420,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
         LoadByte,
         IType,
         handlers::load_store::<
+            false,
             { handlers::MemoryAccessType::Load },
             { handlers::MemoryTransferSize::Byte },
             { handlers::MemoryAccessPortion::Full },
@@ -420,6 +431,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
         LoadHalfword,
         IType,
         handlers::load_store::<
+            false,
             { handlers::MemoryAccessType::Load },
             { handlers::MemoryTransferSize::HalfWord },
             { handlers::MemoryAccessPortion::Full },
@@ -430,6 +442,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
         LoadWordLeft,
         IType,
         handlers::load_store::<
+            false,
             { handlers::MemoryAccessType::Load },
             { handlers::MemoryTransferSize::Word },
             { handlers::MemoryAccessPortion::Left },
@@ -440,6 +453,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
         LoadWord,
         IType,
         handlers::load_store::<
+            false,
             { handlers::MemoryAccessType::Load },
             { handlers::MemoryTransferSize::Word },
             { handlers::MemoryAccessPortion::Full },
@@ -450,6 +464,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
         LoadByteUnsigned,
         IType,
         handlers::load_store::<
+            false,
             { handlers::MemoryAccessType::Load },
             { handlers::MemoryTransferSize::Byte },
             { handlers::MemoryAccessPortion::Full },
@@ -460,6 +475,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
         LoadHalfwordUnsigned,
         IType,
         handlers::load_store::<
+            false,
             { handlers::MemoryAccessType::Load },
             { handlers::MemoryTransferSize::HalfWord },
             { handlers::MemoryAccessPortion::Full },
@@ -470,6 +486,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
         LoadWordRight,
         IType,
         handlers::load_store::<
+            false,
             { handlers::MemoryAccessType::Load },
             { handlers::MemoryTransferSize::Word },
             { handlers::MemoryAccessPortion::Right },
@@ -481,6 +498,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
         StoreByte,
         IType,
         handlers::load_store::<
+            false,
             { handlers::MemoryAccessType::Store },
             { handlers::MemoryTransferSize::Byte },
             { handlers::MemoryAccessPortion::Full },
@@ -491,6 +509,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
         StoreHalfword,
         IType,
         handlers::load_store::<
+            false,
             { handlers::MemoryAccessType::Store },
             { handlers::MemoryTransferSize::HalfWord },
             { handlers::MemoryAccessPortion::Full },
@@ -501,6 +520,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
         StoreWordLeft,
         IType,
         handlers::load_store::<
+            false,
             { handlers::MemoryAccessType::Store },
             { handlers::MemoryTransferSize::Word },
             { handlers::MemoryAccessPortion::Left },
@@ -511,6 +531,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
         StoreWord,
         IType,
         handlers::load_store::<
+            false,
             { handlers::MemoryAccessType::Store },
             { handlers::MemoryTransferSize::Word },
             { handlers::MemoryAccessPortion::Full },
@@ -523,6 +544,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
         StoreWordRight,
         IType,
         handlers::load_store::<
+            false,
             { handlers::MemoryAccessType::Store },
             { handlers::MemoryTransferSize::Word },
             { handlers::MemoryAccessPortion::Right },

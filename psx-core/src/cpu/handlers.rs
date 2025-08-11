@@ -1,5 +1,6 @@
 use crate::cpu::Cpu;
 use crate::cpu::decoder::Instruction;
+use crate::mmu::Mmu;
 use std::marker::ConstParamTy;
 
 #[derive(Debug, ConstParamTy, PartialEq, Eq)]
@@ -71,18 +72,30 @@ pub enum MultiplyMoveRegister {
 }
 
 pub fn shift<const DIRECTION: ShiftDirection, const TYPE: ShiftType, const VARIABLE: bool>(
-    _instr: &Instruction, _cpu: &mut Cpu,
+    instr: &Instruction, cpu: &mut Cpu, _mmu: &mut Mmu,
 ) {
-    todo!(
-        "Implement shift operation with direction: {:?}, type: {:?}, variable: {}",
-        DIRECTION,
-        TYPE,
-        VARIABLE
-    );
+    // TODO: op 0 technically is a NOP
+
+    let shift = |x: u32, y: u32| match DIRECTION {
+        ShiftDirection::Left => x << y,
+        ShiftDirection::Right => {
+            if TYPE == ShiftType::Logical {
+                x >> y
+            } else {
+                (x as i32 >> y) as u32
+            }
+        }
+    };
+
+    let shift_amount = if VARIABLE { instr.rs() } else { instr.sa() } as u32;
+    let value = cpu.registers[instr.rt() as usize];
+
+    let result = shift(value, shift_amount);
+    cpu.registers[instr.rd() as usize] = result;
 }
 
 pub fn branch<const LINK: bool, const REGISTER: bool, const TYPE: BranchType>(
-    _instr: &Instruction, _cpu: &mut Cpu,
+    _instr: &Instruction, _cpu: &mut Cpu, _mmu: &mut Mmu,
 ) {
     todo!(
         "Implement branch operation with link: {}, register: {}, type: {:?}",
@@ -92,9 +105,8 @@ pub fn branch<const LINK: bool, const REGISTER: bool, const TYPE: BranchType>(
     );
 }
 
-#[tracing::instrument(target = "psx_core::cpu", level = "debug")]
 pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE: bool>(
-    instr: &Instruction, cpu: &mut Cpu,
+    instr: &Instruction, cpu: &mut Cpu, _mmu: &mut Mmu,
 ) {
     let x = cpu.registers[instr.rs() as usize];
     let y = if IMMEDIATE {
@@ -126,7 +138,7 @@ pub fn load_store<
     const TRANSFER_SIZE: MemoryTransferSize,
     const PORTION: MemoryAccessPortion,
 >(
-    instr: &Instruction, cpu: &mut Cpu,
+    instr: &Instruction, cpu: &mut Cpu, mmu: &mut Mmu,
 ) {
     if IS_LUI {
         let imm = instr.immediate() as u32;
@@ -134,19 +146,43 @@ pub fn load_store<
         return;
     }
 
-    todo!(
-        "Implement load/store operation with type: {:?}, transfer size: {:?}, portion: {:?}",
-        TYPE,
-        TRANSFER_SIZE,
-        PORTION
-    );
+    let base = cpu.registers[instr.rs() as usize];
+    let offset = instr.offset();
+    let vaddr = base.wrapping_add_signed(offset as i32);
+
+    match TRANSFER_SIZE {
+        MemoryTransferSize::Byte if TYPE == MemoryAccessType::Load => {
+            cpu.registers[instr.rt() as usize] = mmu.read_u8(vaddr) as u32;
+        }
+        MemoryTransferSize::Byte if TYPE == MemoryAccessType::Store => {
+            mmu.write_u8(vaddr, (cpu.registers[instr.rt() as usize] & 0xFF) as u8);
+        }
+        MemoryTransferSize::HalfWord if TYPE == MemoryAccessType::Load => {
+            cpu.registers[instr.rt() as usize] = mmu.read_u16(vaddr) as u32;
+        }
+        MemoryTransferSize::HalfWord if TYPE == MemoryAccessType::Store => {
+            mmu.write_u16(vaddr, (cpu.registers[instr.rt() as usize] & 0xFFFF) as u16);
+        }
+        MemoryTransferSize::Word if TYPE == MemoryAccessType::Load => {
+            cpu.registers[instr.rt() as usize] = mmu.read_u32(vaddr);
+        }
+        MemoryTransferSize::Word if TYPE == MemoryAccessType::Store => {
+            mmu.write_u32(vaddr, cpu.registers[instr.rt() as usize]);
+        }
+        _ => todo!(
+            "Implement load/store operation with type: {:?}, transfer size: {:?}, portion: {:?}",
+            TYPE,
+            TRANSFER_SIZE,
+            PORTION
+        ),
+    }
 }
 
 pub fn move_multiply<
     const DIRECTION: MultiplyMoveDirection,
     const REGISTER: MultiplyMoveRegister,
 >(
-    _instr: &Instruction, _cpu: &mut Cpu,
+    _instr: &Instruction, _cpu: &mut Cpu, _mmu: &mut Mmu,
 ) {
     todo!(
         "Implement move multiply operation with direction: {:?}, register: {:?}",
@@ -155,14 +191,14 @@ pub fn move_multiply<
     );
 }
 
-pub fn cop(_instr: &Instruction, _cpu: &mut Cpu) {
+pub fn cop(_instr: &Instruction, _cpu: &mut Cpu, _mmu: &mut Mmu) {
     todo!("Implement COP");
 }
 
-pub fn system_call(_instr: &Instruction, _cpu: &mut Cpu) {
+pub fn system_call(_instr: &Instruction, _cpu: &mut Cpu, _mmu: &mut Mmu) {
     todo!("Implement system call");
 }
 
-pub fn debug_break(_instr: &Instruction, _cpu: &mut Cpu) {
+pub fn debug_break(_instr: &Instruction, _cpu: &mut Cpu, _mmu: &mut Mmu) {
     todo!("Implement break");
 }

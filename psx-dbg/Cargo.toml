@@ -5,7 +5,9 @@ edition = "2024"
 
 [dependencies]
 psx-core = { path = "../psx-core" }
-iced = "0.13.1"
+eframe = "0.29"
+egui = "0.29"
+egui_dock = "0.14"
 tracing-subscriber = "0.3.19"
 tracing = "0.1.41"
 tokio = { version = "1.0", features = ["time"] }

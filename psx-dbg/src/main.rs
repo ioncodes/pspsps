@@ -1,7 +1,5 @@
-use iced::theme::Palette;
-use iced::widget::{button, column, container, row, scrollable, text};
-use iced::{Color, Element, Task, Theme};
-use lazy_static::lazy_static;
+use eframe::egui;
+use egui_dock::{DockArea, DockState};
 use psx_core::cpu::decoder::Instruction;
 use psx_core::psx::Psx;
 use std::time::Duration;
@@ -11,216 +9,257 @@ use tracing_subscriber::util::SubscriberInitExt as _;
 
 static BIOS: &[u8] = include_bytes!("../../bios/SCPH1000.BIN");
 
-lazy_static! {
-    static ref THEME_PRIMARY_TEXT: Color = Color::from_rgb8(232, 227, 240);
-    static ref THEME_MUTED_TEXT: Color = Color::from_rgb8(128, 115, 153);
-    static ref THEME_VIOLET: Color = Color::from_rgb8(159, 122, 234);
-    static ref THEME_PINK: Color = Color::from_rgb8(245, 179, 217);
-    static ref THEME_MINT: Color = Color::from_rgb8(179, 227, 209);
-    static ref THEME_LAVENDER: Color = Color::from_rgb8(183, 148, 212);
-    static ref THEME_PURPLE: Color = Color::from_rgb8(200, 168, 233);
-    static ref THEME_BACKGROUND: Color = Color::from_rgb8(26, 22, 37);
-    static ref THEME_BACKGROUND2: Color = Color::from_rgb8(30, 27, 46);
-    static ref THEME_SUCCESS: Color = Color::from_rgb8(141, 217, 173);
-    static ref THEME_ERROR: Color = Color::from_rgb8(242, 166, 192);
-    static ref THEME_WARNING: Color = Color::from_rgb8(250, 207, 176);
-    static ref THEME_INFO: Color = Color::from_rgb8(166, 209, 242);
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum TabKind {
+    Cpu,
+    Mmu,
 }
 
-macro_rules! monospace_text {
-    ($text:expr) => {
-        text($text)
-            .font(iced::Font {
-                family: iced::font::Family::Monospace,
-                ..iced::Font::default()
-            })
-            .size(14)
-    };
-    () => {};
-}
-
-#[derive(Debug, Clone)]
-pub enum Message {
-    Run,
-    Pause,
-    Step,
-    Reset,
-    Tick,
+impl std::fmt::Display for TabKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TabKind::Cpu => write!(f, "CPU"),
+            TabKind::Mmu => write!(f, "MMU"),
+        }
+    }
 }
 
 pub struct PsxDebugger {
     psx: Psx,
     is_running: bool,
+    dock_state: DockState<TabKind>,
+    memory_address: u32,
 }
 
 impl Default for PsxDebugger {
     fn default() -> Self {
+        let mut dock_state = DockState::new(vec![TabKind::Cpu]);
+        let [_old, _new] = dock_state.main_surface_mut().split_right(
+            egui_dock::NodeIndex::root(),
+            0.5,
+            vec![TabKind::Mmu],
+        );
+
         Self {
             psx: Psx::new(BIOS),
             is_running: false,
+            dock_state,
+            memory_address: 0x80000000,
         }
     }
 }
 
-impl PsxDebugger {
-    fn update(&mut self, message: Message) -> Task<Message> {
-        match message {
-            Message::Run => {
-                self.is_running = true;
-                return Task::perform(async {}, |_| Message::Tick);
-            }
-            Message::Pause => {
-                self.is_running = false;
-            }
-            Message::Step => {
+impl eframe::App for PsxDebugger {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.is_running {
+            for _ in 0..100 {
                 self.psx.step();
             }
-            Message::Reset => {
-                self.psx = Psx::new(BIOS);
-                self.is_running = false;
-            }
-            Message::Tick => {
-                if self.is_running {
-                    for _ in 0..100 {
+
+            ctx.request_repaint_after(Duration::from_millis(16));
+        }
+
+        let mut tab_viewer = TabViewer {
+            psx: &mut self.psx,
+            is_running: &mut self.is_running,
+            memory_address: &mut self.memory_address,
+        };
+
+        DockArea::new(&mut self.dock_state).show(ctx, &mut tab_viewer);
+    }
+}
+
+struct TabViewer<'a> {
+    psx: &'a mut Psx,
+    is_running: &'a mut bool,
+    memory_address: &'a mut u32,
+}
+
+impl<'a> egui_dock::TabViewer for TabViewer<'a> {
+    type Tab = TabKind;
+
+    fn title(&mut self, tab: &mut Self::Tab) -> egui::WidgetText {
+        tab.to_string().into()
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
+        match tab {
+            TabKind::Cpu => {
+                ui.heading("Controls");
+                ui.horizontal(|ui| {
+                    if *self.is_running {
+                        if ui.button("Pause").clicked() {
+                            *self.is_running = false;
+                        }
+                    } else {
+                        if ui.button("Run").clicked() {
+                            *self.is_running = true;
+                        }
+                    }
+
+                    if ui.button("Step").clicked() {
                         self.psx.step();
                     }
 
-                    return Task::perform(
-                        async {
-                            tokio::time::sleep(Duration::from_millis(16)).await;
-                        },
-                        |_| Message::Tick,
-                    );
+                    if ui.button("Reset").clicked() {
+                        *self.psx = Psx::new(BIOS);
+                        *self.is_running = false;
+                    }
+                });
+
+                ui.separator();
+
+                ui.heading("Registers");
+                ui.monospace(format!(
+                    "$00: {:08X}  $at: {:08X}  $v0: {:08X}  $v1: {:08X}",
+                    self.psx.cpu.registers[0],
+                    self.psx.cpu.registers[1],
+                    self.psx.cpu.registers[2],
+                    self.psx.cpu.registers[3]
+                ));
+                ui.monospace(format!(
+                    "$a0: {:08X}  $a1: {:08X}  $a2: {:08X}  $a3: {:08X}",
+                    self.psx.cpu.registers[4],
+                    self.psx.cpu.registers[5],
+                    self.psx.cpu.registers[6],
+                    self.psx.cpu.registers[7]
+                ));
+                ui.monospace(format!(
+                    "$t0: {:08X}  $t1: {:08X}  $t2: {:08X}  $t3: {:08X}",
+                    self.psx.cpu.registers[8],
+                    self.psx.cpu.registers[9],
+                    self.psx.cpu.registers[10],
+                    self.psx.cpu.registers[11]
+                ));
+                ui.monospace(format!(
+                    "$t4: {:08X}  $t5: {:08X}  $t6: {:08X}  $t7: {:08X}",
+                    self.psx.cpu.registers[12],
+                    self.psx.cpu.registers[13],
+                    self.psx.cpu.registers[14],
+                    self.psx.cpu.registers[15]
+                ));
+                ui.monospace(format!(
+                    "$s0: {:08X}  $s1: {:08X}  $s2: {:08X}  $s3: {:08X}",
+                    self.psx.cpu.registers[16],
+                    self.psx.cpu.registers[17],
+                    self.psx.cpu.registers[18],
+                    self.psx.cpu.registers[19]
+                ));
+                ui.monospace(format!(
+                    "$s4: {:08X}  $s5: {:08X}  $s6: {:08X}  $s7: {:08X}",
+                    self.psx.cpu.registers[20],
+                    self.psx.cpu.registers[21],
+                    self.psx.cpu.registers[22],
+                    self.psx.cpu.registers[23]
+                ));
+                ui.monospace(format!(
+                    "$t8: {:08X}  $t9: {:08X}  $k0: {:08X}  $k1: {:08X}",
+                    self.psx.cpu.registers[24],
+                    self.psx.cpu.registers[25],
+                    self.psx.cpu.registers[26],
+                    self.psx.cpu.registers[27]
+                ));
+                ui.monospace(format!(
+                    "$gp: {:08X}  $sp: {:08X}  $fp: {:08X}  $ra: {:08X}",
+                    self.psx.cpu.registers[28],
+                    self.psx.cpu.registers[29],
+                    self.psx.cpu.registers[30],
+                    self.psx.cpu.registers[31]
+                ));
+                ui.monospace(format!("$pc: {:08X}", self.psx.cpu.pc));
+                ui.monospace(format!("$hi: {:08X}", self.psx.cpu.hi));
+                ui.monospace(format!("$lo: {:08X}", self.psx.cpu.lo));
+
+                ui.separator();
+
+                ui.heading("Disassembly");
+                let start = self.psx.cpu.pc as usize;
+                let end = start + 40 * 4;
+
+                let instructions: Vec<(u32, Instruction)> = self.psx.mmu.memory[start..end]
+                    .chunks(4)
+                    .enumerate()
+                    .map(|(i, chunk)| {
+                        let addr = start + i * 4;
+                        let instr_raw =
+                            u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                        let instr = Instruction::decode(instr_raw);
+                        (addr as u32, instr)
+                    })
+                    .collect();
+
+                for (addr, instr) in instructions {
+                    let line = format!("{:08X}: {}", addr, instr);
+                    ui.monospace(line);
+                }
+            }
+            TabKind::Mmu => {
+                ui.heading("Memory Viewer");
+
+                ui.horizontal(|ui| {
+                    ui.label("Address:");
+                    let mut addr_str = format!("{:08X}", *self.memory_address);
+                    if ui.text_edit_singleline(&mut addr_str).changed() {
+                        if let Ok(addr) = u32::from_str_radix(&addr_str, 16) {
+                            *self.memory_address = addr;
+                        }
+                    }
+
+                    if ui.button("Go to PC").clicked() {
+                        *self.memory_address = self.psx.cpu.pc;
+                    }
+                });
+
+                ui.separator();
+
+                let start_addr = *self.memory_address & !0xF;
+                let memory = &self.psx.mmu.memory;
+
+                for row in 0..32 {
+                    let addr = start_addr + (row * 16);
+                    if addr as usize >= memory.len() {
+                        break;
+                    }
+
+                    let mut line = format!("{:08X}: ", addr);
+
+                    for col in 0..16 {
+                        let byte_addr = addr + col;
+                        if (byte_addr as usize) < memory.len() {
+                            line.push_str(&format!("{:02X} ", memory[byte_addr as usize]));
+                        } else {
+                            line.push_str("?? ");
+                        }
+
+                        if col == 7 {
+                            line.push(' ');
+                        }
+                    }
+
+                    line.push_str(" |");
+                    for col in 0..16 {
+                        let byte_addr = addr + col;
+                        if (byte_addr as usize) < memory.len() {
+                            let byte = memory[byte_addr as usize];
+                            if byte >= 32 && byte <= 126 {
+                                line.push(byte as char);
+                            } else {
+                                line.push('.');
+                            }
+                        } else {
+                            line.push('?');
+                        }
+                    }
+                    line.push('|');
+
+                    ui.monospace(line);
                 }
             }
         }
-
-        Task::none()
-    }
-
-    fn view(&self) -> Element<'_, Message> {
-        let controls = row![
-            if self.is_running {
-                button("Pause").on_press(Message::Pause)
-            } else {
-                button("Run").on_press(Message::Run)
-            },
-            button("Step").on_press(Message::Step),
-            button("Reset").on_press(Message::Reset),
-        ]
-        .spacing(10)
-        .padding(10);
-
-        let cpu_state = column![
-            text("Registers")
-                .font(iced::Font {
-                    weight: iced::font::Weight::Bold,
-                    ..iced::Font::default()
-                })
-                .size(24),
-            monospace_text!(format!(
-                "$00: {:08X}  $at: {:08X}  $v0: {:08X}  $v1: {:08X}",
-                self.psx.cpu.registers[0],
-                self.psx.cpu.registers[1],
-                self.psx.cpu.registers[2],
-                self.psx.cpu.registers[3]
-            )),
-            monospace_text!(format!(
-                "$a0: {:08X}  $a1: {:08X}  $a2: {:08X}  $a3: {:08X}",
-                self.psx.cpu.registers[4],
-                self.psx.cpu.registers[5],
-                self.psx.cpu.registers[6],
-                self.psx.cpu.registers[7]
-            )),
-            monospace_text!(format!(
-                "$t0: {:08X}  $t1: {:08X}  $t2: {:08X}  $t3: {:08X}",
-                self.psx.cpu.registers[8],
-                self.psx.cpu.registers[9],
-                self.psx.cpu.registers[10],
-                self.psx.cpu.registers[11]
-            )),
-            monospace_text!(format!(
-                "$t4: {:08X}  $t5: {:08X}  $t6: {:08X}  $t7: {:08X}",
-                self.psx.cpu.registers[12],
-                self.psx.cpu.registers[13],
-                self.psx.cpu.registers[14],
-                self.psx.cpu.registers[15]
-            )),
-            monospace_text!(format!(
-                "$t8: {:08X}  $t9: {:08X}  $k0: {:08X}  $k1: {:08X}",
-                self.psx.cpu.registers[24],
-                self.psx.cpu.registers[25],
-                self.psx.cpu.registers[26],
-                self.psx.cpu.registers[27]
-            )),
-            monospace_text!(format!(
-                "$k0: {:08X}  $k1: {:08X}  $gp: {:08X}  $sp: {:08X}",
-                self.psx.cpu.registers[28],
-                self.psx.cpu.registers[29],
-                self.psx.cpu.registers[30],
-                self.psx.cpu.registers[31]
-            )),
-            monospace_text!(format!(
-                "$fp: {:08X}  $ra: {:08X}  $hi: {:08X}  $lo: {:08X}",
-                self.psx.cpu.registers[30],
-                self.psx.cpu.registers[31],
-                self.psx.cpu.hi,
-                self.psx.cpu.lo
-            )),
-            monospace_text!(format!("$pc: {:08X}", self.psx.cpu.pc)),
-        ]
-        .spacing(5);
-
-        let disassembly = {
-            let mut items = Vec::new();
-
-            let start = self.psx.cpu.pc as usize;
-            let end = start + 40 * 4;
-
-            let instructions = &self.psx.mmu.memory[start..end]
-                .chunks(4)
-                .enumerate()
-                .map(|(i, chunk)| {
-                    let addr = start + i * 4;
-                    let instr_raw = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-                    let instr = Instruction::decode(instr_raw);
-                    (addr as u32, instr)
-                })
-                .collect::<Vec<_>>();
-
-            for (addr, instr) in instructions {
-                let line = format!("{:08X}: {}", addr, instr);
-                let text = monospace_text!(line);
-                items.push(text.into());
-            }
-
-            scrollable(column(items).spacing(2))
-        };
-
-        let main_content = column![
-            container(cpu_state).padding(10),
-            container(
-                column![
-                    text("Disassembly")
-                        .font(iced::Font {
-                            weight: iced::font::Weight::Bold,
-                            ..iced::Font::default()
-                        })
-                        .size(24),
-                    disassembly.width(iced::Length::Fill)
-                ]
-                .spacing(5)
-            )
-            .padding(10)
-        ];
-
-        container(column![controls, main_content].spacing(10))
-            .padding(10)
-            .into()
     }
 }
 
-fn main() -> iced::Result {
+fn main() -> eframe::Result {
     let mut targets = tracing_subscriber::filter::Targets::new();
     targets = targets.with_target("psx_core::cpu", tracing::Level::DEBUG);
 
@@ -229,22 +268,16 @@ fn main() -> iced::Result {
         .with_filter(targets);
     tracing_subscriber::registry().with(fmt_layer).init();
 
-    iced::application(
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([1200.0, 800.0])
+            .with_title("pspsps - psx debugger"),
+        ..Default::default()
+    };
+
+    eframe::run_native(
         "pspsps - psx debugger",
-        PsxDebugger::update,
-        PsxDebugger::view,
+        options,
+        Box::new(|_cc| Ok(Box::new(PsxDebugger::default()))),
     )
-    .theme(|_| {
-        Theme::custom(
-            "psx".into(),
-            Palette {
-                background: *THEME_BACKGROUND,
-                text: *THEME_PRIMARY_TEXT,
-                primary: *THEME_VIOLET,
-                success: *THEME_SUCCESS,
-                danger: *THEME_ERROR,
-            },
-        )
-    })
-    .run()
 }

@@ -104,16 +104,8 @@ pub fn shift<const DIRECTION: ShiftDirection, const TYPE: ShiftType, const VARIA
 }
 
 pub fn branch<const LINK: bool, const REGISTER: bool, const TYPE: BranchType>(
-    instr: &Instruction, cpu: &mut Cpu, _mmu: &mut Mmu,
+    instr: &Instruction, cpu: &mut Cpu, mmu: &mut Mmu,
 ) {
-    if LINK {
-        cpu.registers[31] = cpu.pc; // PC is the address of the next instruction
-    }
-
-    if REGISTER {
-        todo!("Implement branch with register comparison");
-    }
-
     let compare = |x: u32, y: u32| match TYPE {
         BranchType::Equal => x == y,
         BranchType::NotEqual => x != y,
@@ -130,7 +122,26 @@ pub fn branch<const LINK: bool, const REGISTER: bool, const TYPE: BranchType>(
     );
 
     if perform_branch {
-        cpu.pc = cpu.pc.wrapping_add_signed((instr.offset() as i32) << 2)
+        let return_address = cpu.pc + 4; // return address = PC + 4, where PC = delay slot
+
+        // Instructions like jal store the return address in reg 31 by default
+        // however, for instructions like JALR the reg is explicit (and may be different)
+        if LINK && !REGISTER {
+            cpu.registers[31] = return_address;
+        }
+
+        cpu.queue_delay_slot(mmu);
+
+        if REGISTER {
+            // See above
+            if LINK && REGISTER {
+                cpu.registers[instr.rd() as usize] = return_address;
+            }
+
+            cpu.pc = cpu.registers[instr.rs() as usize];
+        } else {
+            cpu.pc = cpu.pc.wrapping_add_signed((instr.offset() as i32) << 2);
+        }
     }
 }
 
@@ -152,6 +163,7 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
         AluOperation::Nor => cpu.registers[dst] = !(x | y),
         AluOperation::Add => cpu.registers[dst] = x.wrapping_add(y),
         AluOperation::Sub => cpu.registers[dst] = x.wrapping_sub(y),
+        AluOperation::SetLessThan => cpu.registers[dst] = if x < y { 1 } else { 0 },
         _ => todo!(
             "Implement ALU operation: {:?}, unsigned: {}, immediate: {}",
             OPERATION,

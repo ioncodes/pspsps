@@ -36,21 +36,8 @@ impl Cpu {
 
     #[inline(always)]
     pub fn tick(&mut self, mmu: &mut Mmu) {
-        let instr = Instruction::decode(mmu.read_u32(self.pc));
-
-        tracing::debug!(target: "psx_core::cpu", "{:08X}: [{:08X}] {: <30}", self.pc, instr.raw, format!("{}", instr));
-        tracing::trace!(target: "psx_core::cpu", "{:?}", instr);
-
-        self.pc += 4; // Advance the program counter
-        self.delay_slot = Some(Instruction::decode(mmu.read_u32(self.pc))); // Load the next instruction into the delay slot
-
-        (instr.handler)(&instr, self, mmu);
-
-        // If the instruction is a branch, execute the delay slot instruction
-        // TODO: Should we postpone this to the next tick?
-        if instr.is_branch()
-            && let Some(delay_instr) = self.delay_slot.take()
-        {
+        // If there's a delay slot, execute it first
+        if let Some(delay_instr) = self.delay_slot.take() {
             tracing::debug!(
                 target: "psx_core::cpu",
                 "{}",
@@ -58,7 +45,22 @@ impl Cpu {
             );
             tracing::trace!(target: "psx_core::cpu", "{:?}", delay_instr);
             (delay_instr.handler)(&delay_instr, self, mmu);
+            return; // TODO: do we have to return here?
         }
+
+        let instr = Instruction::decode(mmu.read_u32(self.pc));
+
+        tracing::debug!(target: "psx_core::cpu", "{:08X}: [{:08X}] {: <30}", self.pc, instr.raw, format!("{}", instr));
+        tracing::trace!(target: "psx_core::cpu", "{:?}", instr);
+
+        self.pc += 4; // Advance the program counter
+
+        (instr.handler)(&instr, self, mmu);
+    }
+
+    #[inline(always)]
+    pub(crate) fn queue_delay_slot(&mut self, mmu: &mut Mmu) {
+        self.delay_slot = Some(Instruction::decode(mmu.read_u32(self.pc))); // Load the next instruction into the delay slot
     }
 }
 

@@ -2402,6 +2402,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8cf8e6a8aa66ce33f63993ffc4ea4271eb5b0530a9002db8455ea6050c77bfa"
 
 [[package]]
+name = "proc-bitfield"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9f7bcef534ec30dc2fbf029899174cec7c686cb64374b3317add6b8377787aee"
+dependencies = [
+ "proc-bitfield-macros",
+ "static_assertions",
+]
+
+[[package]]
+name = "proc-bitfield-macros"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7d7e3decd6e9b840c25ede220b5082c7d24e66a165037d9783c403deee2cd6f"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.104",
+]
+
+[[package]]
 name = "proc-macro-crate"
 version = "3.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2443,6 +2464,7 @@ name = "psx-core"
 version = "0.1.0"
 dependencies = [
  "colored",
+ "proc-bitfield",
  "tracing",
 ]
 

@@ -180,6 +180,15 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
                             .default_open(true)
                             .show(ui, |ui| {
                                 ui.monospace(format!("SR: {:08X}", self.psx.cpu.cop0[12]));
+                                let sr = psx_core::cpu::cop::StatusRegister(self.psx.cpu.cop0[12]);
+                                ui.monospace(format!(
+                                    "Current Mode: {}",
+                                    if !sr.current_mode() { "Kernel" } else { "User" }
+                                ));
+                                ui.monospace(format!(
+                                    "COP0 Enabled: {}",
+                                    if sr.cop0_enable() { "Yes" } else { "No" }
+                                ));
                             });
                     });
 

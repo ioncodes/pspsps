@@ -317,9 +317,8 @@ impl Instruction {
                 | Opcode::ShiftRightArithmetic => {
                     Some(Operand::Register(Register(self.rt(), false)))
                 }
-                Opcode::JumpRegister | Opcode::JumpAndLinkRegister => {
-                    Some(Operand::Register(Register(self.rs(), false)))
-                }
+                Opcode::JumpRegister => Some(Operand::Register(Register(self.rs(), false))),
+                Opcode::JumpAndLinkRegister => Some(Operand::Register(Register(self.rd(), false))),
                 Opcode::MoveFromHi | Opcode::MoveFromLo => {
                     Some(Operand::Register(Register(self.rd(), false)))
                 }
@@ -367,7 +366,7 @@ impl Instruction {
                 | Opcode::MoveFromLo
                 | Opcode::SystemCall
                 | Opcode::Break => None,
-                Opcode::JumpAndLinkRegister => Some(Operand::Register(Register(self.rd(), false))),
+                Opcode::JumpAndLinkRegister => Some(Operand::Register(Register(self.rs(), false))),
                 Opcode::MoveToHi | Opcode::MoveToLo => None,
                 Opcode::Multiply
                 | Opcode::MultiplyUnsigned

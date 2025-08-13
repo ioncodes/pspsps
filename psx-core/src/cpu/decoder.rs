@@ -1,4 +1,4 @@
-use crate::cpu::lut::{MIPS_OTHER_LUT, MIPS_REGIMM_LUT, MIPS_RTYPE_LUT};
+use crate::cpu::lut::{self, MIPS_OTHER_LUT, MIPS_REGIMM_LUT, MIPS_RTYPE_LUT};
 use crate::cpu::{Cpu, handlers};
 use crate::mmu::Mmu;
 
@@ -73,13 +73,13 @@ pub enum Opcode {
     MoveToLo,
 
     // Coprocessor
+    MoveControlFromCoprocessor(u8),
+    MoveControlToCoprocessor(u8),
     MoveFromCoprocessor(u8),
     MoveToCoprocessor(u8),
+    LoadWordFromCoprocessor(u8),
+    StoreWordFromCoprocessor(u8),
     ReturnFromException,
-    TlbRead,
-    TlbWriteRandom,
-    TlbWriteIndex,
-    TlbProbe,
 
     // Other
     Invalid,
@@ -104,8 +104,9 @@ pub struct Instruction {
 
 impl Instruction {
     pub const fn invalid() -> Self {
-        static NOOP: InstructionHandler =
-            |_: &Instruction, _: &mut Cpu, _: &mut Mmu| todo!("Invalid instruction handler");
+        static NOOP: InstructionHandler = |instr: &Instruction, _: &mut Cpu, _: &mut Mmu| {
+            todo!("Invalid instruction handler: {}", instr)
+        };
 
         Instruction {
             opcode: Opcode::Invalid,
@@ -124,9 +125,8 @@ impl PartialEq for Instruction {
     }
 }
 
-#[repr(transparent)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Register(u8);
+pub struct Register(u8, bool);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Operand {
@@ -138,23 +138,12 @@ pub enum Operand {
 
 impl std::fmt::Display for Register {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let name = match self.0 {
-            0 => "$zero",
-            1 => "$at",
-            2 => "$v0",
-            3 => "$v1",
-            4..=7 => return write!(f, "$a{}", self.0 - 4),
-            8..=15 => return write!(f, "$t{}", self.0 - 8),
-            16..=23 => return write!(f, "$s{}", self.0 - 16),
-            24..=25 => return write!(f, "$t{}", self.0 - 16),
-            26..=27 => return write!(f, "$k{}", self.0 - 26),
-            28 => "$gp",
-            29 => "$sp",
-            30 => "$fp",
-            31 => "$ra",
-            _ => return write!(f, "$invalid"),
+        let register_name = if self.1 {
+            lut::COP_REGISTER_NAME_LUT[self.0 as usize]
+        } else {
+            lut::REGISTER_NAME_LUT[self.0 as usize]
         };
-        write!(f, "{}", name)
+        write!(f, "{}", register_name)
     }
 }
 
@@ -193,19 +182,31 @@ impl Instruction {
                 let fmt = (opcode >> 21) & 0x1F; // Extract the format field (bits 25-21)
 
                 match fmt {
-                    0x00 => Instruction {
+                    0b00000 => Instruction {
                         opcode: Opcode::MoveFromCoprocessor(cop_num),
                         opcode_raw: opcode,
                         opcode_type: InstructionType::Cop,
                         handler: handlers::cop,
                     },
-                    0x04 => Instruction {
+                    0b00010 => Instruction {
+                        opcode: Opcode::MoveControlFromCoprocessor(cop_num),
+                        opcode_raw: opcode,
+                        opcode_type: InstructionType::Cop,
+                        handler: handlers::cop,
+                    },
+                    0b00100 => Instruction {
                         opcode: Opcode::MoveToCoprocessor(cop_num),
                         opcode_raw: opcode,
                         opcode_type: InstructionType::Cop,
                         handler: handlers::cop,
                     },
-                    0x10 if cop_num == 0 => Instruction {
+                    0b00110 => Instruction {
+                        opcode: Opcode::MoveControlToCoprocessor(cop_num),
+                        opcode_raw: opcode,
+                        opcode_type: InstructionType::Cop,
+                        handler: handlers::cop,
+                    },
+                    16 if cop_num == 0 => Instruction {
                         opcode: Opcode::ReturnFromException,
                         opcode_raw: opcode,
                         opcode_type: InstructionType::Cop,
@@ -296,34 +297,39 @@ impl Instruction {
             InstructionType::RType => match self.opcode {
                 Opcode::ShiftLeftLogical
                 | Opcode::ShiftRightLogical
-                | Opcode::ShiftRightArithmetic => Some(Operand::Register(Register(self.rt()))),
+                | Opcode::ShiftRightArithmetic => {
+                    Some(Operand::Register(Register(self.rt(), false)))
+                }
                 Opcode::JumpRegister | Opcode::JumpAndLinkRegister => {
-                    Some(Operand::Register(Register(self.rs())))
+                    Some(Operand::Register(Register(self.rs(), false)))
                 }
                 Opcode::MoveFromHi | Opcode::MoveFromLo => {
-                    Some(Operand::Register(Register(self.rd())))
+                    Some(Operand::Register(Register(self.rd(), false)))
                 }
-                Opcode::MoveToHi | Opcode::MoveToLo => Some(Operand::Register(Register(self.rs()))),
+                Opcode::MoveToHi | Opcode::MoveToLo => {
+                    Some(Operand::Register(Register(self.rs(), false)))
+                }
                 Opcode::Multiply
                 | Opcode::MultiplyUnsigned
                 | Opcode::Divide
-                | Opcode::DivideUnsigned => Some(Operand::Register(Register(self.rs()))),
+                | Opcode::DivideUnsigned => Some(Operand::Register(Register(self.rs(), false))),
                 Opcode::SystemCall | Opcode::Break => None,
-                _ => Some(Operand::Register(Register(self.rd()))),
+                _ => Some(Operand::Register(Register(self.rd(), false))),
             },
             InstructionType::IType => match self.opcode {
-                Opcode::LoadUpperImmediate => Some(Operand::Register(Register(self.rt()))),
+                Opcode::LoadUpperImmediate => Some(Operand::Register(Register(self.rt(), false))),
                 Opcode::BranchGreaterThanZero
                 | Opcode::BranchLessEqualZero
                 | Opcode::BranchGreaterEqualZero
                 | Opcode::BranchLessThanZero
                 | Opcode::BranchLessThanZeroAndLink
                 | Opcode::BranchGreaterEqualZeroAndLink => {
-                    Some(Operand::Register(Register(self.rs())))
+                    Some(Operand::Register(Register(self.rs(), false)))
                 }
-                _ => Some(Operand::Register(Register(self.rt()))),
+                _ => Some(Operand::Register(Register(self.rt(), false))),
             },
             InstructionType::JType => Some(Operand::Address(self.address() << 2)),
+            InstructionType::Cop => Some(Operand::Register(Register(self.rt(), false))),
             _ => None,
         }
     }
@@ -337,20 +343,20 @@ impl Instruction {
                 Opcode::ShiftLeftLogicalVariable
                 | Opcode::ShiftRightLogicalVariable
                 | Opcode::ShiftRightArithmeticVariable => {
-                    Some(Operand::Register(Register(self.rs())))
+                    Some(Operand::Register(Register(self.rs(), false)))
                 }
                 Opcode::JumpRegister
                 | Opcode::MoveFromHi
                 | Opcode::MoveFromLo
                 | Opcode::SystemCall
                 | Opcode::Break => None,
-                Opcode::JumpAndLinkRegister => Some(Operand::Register(Register(self.rd()))),
+                Opcode::JumpAndLinkRegister => Some(Operand::Register(Register(self.rd(), false))),
                 Opcode::MoveToHi | Opcode::MoveToLo => None,
                 Opcode::Multiply
                 | Opcode::MultiplyUnsigned
                 | Opcode::Divide
-                | Opcode::DivideUnsigned => Some(Operand::Register(Register(self.rt()))),
-                _ => Some(Operand::Register(Register(self.rs()))),
+                | Opcode::DivideUnsigned => Some(Operand::Register(Register(self.rt(), false))),
+                _ => Some(Operand::Register(Register(self.rs(), false))),
             },
             InstructionType::IType => match self.opcode {
                 Opcode::LoadUpperImmediate => Some(Operand::Immediate(self.immediate() as u32)),
@@ -363,7 +369,7 @@ impl Instruction {
                     Some(Operand::Immediate((self.immediate() as i16) as u32))
                 }
                 Opcode::BranchEqual | Opcode::BranchNotEqual => {
-                    Some(Operand::Register(Register(self.rt())))
+                    Some(Operand::Register(Register(self.rt(), false)))
                 }
                 Opcode::LoadByte
                 | Opcode::LoadByteUnsigned
@@ -373,7 +379,7 @@ impl Instruction {
                 | Opcode::LoadWordLeft
                 | Opcode::LoadWordRight => Some(Operand::MemoryAddress {
                     offset: self.immediate() as i16,
-                    base: Register(self.rs()),
+                    base: Register(self.rs(), false),
                 }),
                 Opcode::StoreByte
                 | Opcode::StoreHalfword
@@ -381,11 +387,12 @@ impl Instruction {
                 | Opcode::StoreWordLeft
                 | Opcode::StoreWordRight => Some(Operand::MemoryAddress {
                     offset: self.immediate() as i16,
-                    base: Register(self.rs()),
+                    base: Register(self.rs(), false),
                 }),
-                _ => Some(Operand::Register(Register(self.rs()))),
+                _ => Some(Operand::Register(Register(self.rs(), false))),
             },
             InstructionType::JType => None,
+            InstructionType::Cop => Some(Operand::Register(Register(self.rd(), true))),
             _ => None,
         }
     }
@@ -399,7 +406,7 @@ impl Instruction {
                 | Opcode::ShiftLeftLogicalVariable
                 | Opcode::ShiftRightLogicalVariable
                 | Opcode::ShiftRightArithmeticVariable => {
-                    Some(Operand::Register(Register(self.rd())))
+                    Some(Operand::Register(Register(self.rd(), false)))
                 }
                 Opcode::JumpRegister => None,
                 Opcode::JumpAndLinkRegister => None,
@@ -413,7 +420,7 @@ impl Instruction {
                 | Opcode::MultiplyUnsigned
                 | Opcode::Divide
                 | Opcode::DivideUnsigned => None,
-                _ => Some(Operand::Register(Register(self.rt()))),
+                _ => Some(Operand::Register(Register(self.rt(), false))),
             },
             InstructionType::IType => match self.opcode {
                 Opcode::LoadUpperImmediate
@@ -536,11 +543,11 @@ impl std::fmt::Display for Opcode {
             // Coprocessor
             Opcode::MoveFromCoprocessor(cop) => return write!(f, "mfc{}", cop),
             Opcode::MoveToCoprocessor(cop) => return write!(f, "mtc{}", cop),
+            Opcode::MoveControlFromCoprocessor(cop) => return write!(f, "cfc{}", cop),
+            Opcode::MoveControlToCoprocessor(cop) => return write!(f, "ctc{}", cop),
+            Opcode::LoadWordFromCoprocessor(cop) => return write!(f, "lwc{}", cop),
+            Opcode::StoreWordFromCoprocessor(cop) => return write!(f, "swc{}", cop),
             Opcode::ReturnFromException => "rfe",
-            Opcode::TlbRead => "tlbr",
-            Opcode::TlbWriteRandom => "tlbwr",
-            Opcode::TlbWriteIndex => "tlbwi",
-            Opcode::TlbProbe => "tlbp",
 
             // Other
             Opcode::Invalid => "???",

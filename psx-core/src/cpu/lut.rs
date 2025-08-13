@@ -568,3 +568,14 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
     /* 0x3E */ Instruction::invalid(),
     /* 0x3F */ Instruction::invalid(),
 ];
+
+pub static REGISTER_NAME_LUT: [&str; 32] = [
+    "$zero", "$at", "$v0", "$v1", "$a0", "$a1", "$a2", "$a3", "$t0", "$t1", "$t2", "$t3", "$t4",
+    "$t5", "$t6", "$t7", "$s0", "$s1", "$s2", "$s3", "$s4", "$s5", "$s6", "$s7", "$t8", "$t9",
+    "k0", "k1", "gp", "sp", "fp", "ra",
+];
+
+pub static COP_REGISTER_NAME_LUT: [&str; 16] = [
+    "???", "???", "???", "BPC", "???", "BDA", "TAR", "DCIC", "BadA", "BDAM", "???", "BPCM", "SR",
+    "CAUSE", "EPC", "PRID",
+];

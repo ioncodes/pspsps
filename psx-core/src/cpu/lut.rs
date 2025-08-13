@@ -5,7 +5,7 @@ macro_rules! instruction {
     ($name:ident, $opcode_type:ident, $handler:expr) => {
         Instruction {
             opcode: crate::cpu::decoder::Opcode::$name,
-            opcode_raw: 0,
+            raw: 0,
             opcode_type: crate::cpu::decoder::InstructionType::$opcode_type,
             handler: $handler,
         }
@@ -13,7 +13,7 @@ macro_rules! instruction {
     ($name:ident($param:expr), $opcode_type:ident, $handler:expr) => {
         Instruction {
             opcode: crate::cpu::decoder::Opcode::Opcode::$name($param),
-            opcode_raw: 0,
+            raw: 0,
             opcode_type: crate::cpu::decoder::InstructionType::$opcode_type,
             handler: $handler,
         }
@@ -572,7 +572,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
 pub static REGISTER_NAME_LUT: [&str; 32] = [
     "$zero", "$at", "$v0", "$v1", "$a0", "$a1", "$a2", "$a3", "$t0", "$t1", "$t2", "$t3", "$t4",
     "$t5", "$t6", "$t7", "$s0", "$s1", "$s2", "$s3", "$s4", "$s5", "$s6", "$s7", "$t8", "$t9",
-    "k0", "k1", "gp", "sp", "fp", "ra",
+    "$k0", "$k1", "$gp", "$sp", "$fp", "$ra",
 ];
 
 pub static COP_REGISTER_NAME_LUT: [&str; 16] = [

@@ -3,7 +3,10 @@ pub mod decoder;
 pub mod handlers;
 pub mod lut;
 
+use colored::Colorize;
+
 use crate::cpu::decoder::Instruction;
+use crate::mmu::Mmu;
 
 type RegisterValue = u32;
 type RegisterIndex = usize;
@@ -28,6 +31,33 @@ impl Cpu {
             load_delay: None,
             delay_slot: None,
             cop0: [0; 64],
+        }
+    }
+
+    #[inline(always)]
+    pub fn tick(&mut self, mmu: &mut Mmu) {
+        let instr = Instruction::decode(mmu.read_u32(self.pc));
+
+        tracing::debug!(target: "psx_core::cpu", "{:08X}: [{:08X}] {: <30}", self.pc, instr.raw, format!("{}", instr));
+        tracing::trace!(target: "psx_core::cpu", "{:?}", instr);
+
+        self.pc += 4; // Advance the program counter
+        self.delay_slot = Some(Instruction::decode(mmu.read_u32(self.pc))); // Load the next instruction into the delay slot
+
+        (instr.handler)(&instr, self, mmu);
+
+        // If the instruction is a branch, execute the delay slot instruction
+        // TODO: Should we postpone this to the next tick?
+        if instr.is_branch()
+            && let Some(delay_instr) = self.delay_slot.take()
+        {
+            tracing::debug!(
+                target: "psx_core::cpu",
+                "{}",
+                format!("{:08X}: [{:08X}] {: <30}", self.pc, delay_instr.raw, format!("{}", delay_instr)).yellow()
+            );
+            tracing::trace!(target: "psx_core::cpu", "{:?}", delay_instr);
+            (delay_instr.handler)(&delay_instr, self, mmu);
         }
     }
 }

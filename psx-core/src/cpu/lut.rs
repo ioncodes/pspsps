@@ -84,13 +84,23 @@ pub static MIPS_RTYPE_LUT: [Instruction; 64] = [
     instruction!(
         JumpRegister,
         RType,
-        handlers::branch::<false, true, { handlers::BranchType::Unconditional }>
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::Unconditional },
+            { handlers::BranchAddressing::AbsoluteRegister },
+        >
     ),
     /* 0x09 */
     instruction!(
         JumpAndLinkRegister,
         RType,
-        handlers::branch::<true, true, { handlers::BranchType::Unconditional }>
+        handlers::branch::<
+            true,
+            true,
+            { handlers::BranchType::Unconditional },
+            { handlers::BranchAddressing::AbsoluteRegister },
+        >
     ),
     /* 0x0A */ Instruction::invalid(),
     /* 0x0B */ Instruction::invalid(),
@@ -256,13 +266,23 @@ pub static MIPS_REGIMM_LUT: [Instruction; 32] = [
     instruction!(
         BranchLessThanZero,
         IType,
-        handlers::branch::<false, false, { handlers::BranchType::LessThanZero }>
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::LessThanZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
     ),
     /* 0x01 */
     instruction!(
         BranchGreaterEqualZero,
         IType,
-        handlers::branch::<false, false, { handlers::BranchType::BranchGreaterEqualZero }>
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
     ),
     /* 0x02 */ Instruction::invalid(),
     /* 0x03 */ Instruction::invalid(),
@@ -282,13 +302,23 @@ pub static MIPS_REGIMM_LUT: [Instruction; 32] = [
     instruction!(
         BranchLessThanZeroAndLink,
         IType,
-        handlers::branch::<true, false, { handlers::BranchType::LessThanZero }>
+        handlers::branch::<
+            true,
+            true,
+            { handlers::BranchType::LessThanZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
     ),
     /* 0x11 */
     instruction!(
         BranchGreaterEqualZeroAndLink,
         IType,
-        handlers::branch::<true, false, { handlers::BranchType::BranchGreaterEqualZero }>
+        handlers::branch::<
+            true,
+            true,
+            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
     ),
     /* 0x12 */ Instruction::invalid(),
     /* 0x13 */ Instruction::invalid(),
@@ -314,37 +344,67 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
     instruction!(
         Jump,
         JType,
-        handlers::branch::<false, false, { handlers::BranchType::Unconditional }>
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::Unconditional },
+            { handlers::BranchAddressing::AbsoluteImmediate },
+        >
     ),
     /* 0x03 */
     instruction!(
         JumpAndLink,
         JType,
-        handlers::branch::<true, false, { handlers::BranchType::Unconditional }>
+        handlers::branch::<
+            true,
+            false,
+            { handlers::BranchType::Unconditional },
+            { handlers::BranchAddressing::AbsoluteImmediate },
+        >
     ),
     /* 0x04 */
     instruction!(
         BranchEqual,
         IType,
-        handlers::branch::<false, false, { handlers::BranchType::Equal }>
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::Equal },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
     ),
     /* 0x05 */
     instruction!(
         BranchNotEqual,
         IType,
-        handlers::branch::<false, false, { handlers::BranchType::NotEqual }>
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::NotEqual },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
     ),
     /* 0x06 */
     instruction!(
         BranchLessEqualZero,
         IType,
-        handlers::branch::<false, false, { handlers::BranchType::LessEqualZero }>
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::LessEqualZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
     ),
     /* 0x07 */
     instruction!(
         BranchGreaterThanZero,
         IType,
-        handlers::branch::<false, false, { handlers::BranchType::BranchGreaterThanZero }>
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::BranchGreaterThanZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
     ),
     /* 0x08 */
     instruction!(

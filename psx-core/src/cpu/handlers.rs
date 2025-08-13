@@ -27,6 +27,13 @@ pub enum BranchType {
 }
 
 #[derive(Debug, ConstParamTy, PartialEq, Eq)]
+pub enum BranchAddressing {
+    AbsoluteImmediate,
+    RelativeOffset,
+    AbsoluteRegister,
+}
+
+#[derive(Debug, ConstParamTy, PartialEq, Eq)]
 pub enum AluOperation {
     Add,
     Sub,
@@ -103,9 +110,22 @@ pub fn shift<const DIRECTION: ShiftDirection, const TYPE: ShiftType, const VARIA
     cpu.registers[instr.rd() as usize] = result;
 }
 
-pub fn branch<const LINK: bool, const REGISTER: bool, const TYPE: BranchType>(
+pub fn branch<
+    const LINK: bool,
+    const LINK_REGISTER_DEFINED: bool,
+    const TYPE: BranchType,
+    const ADDRESSING: BranchAddressing,
+>(
     instr: &Instruction, cpu: &mut Cpu, mmu: &mut Mmu,
 ) {
+    tracing::debug!(
+        target: "psx_core::cpu",
+        "Branching with link: {}, link register defined: {}, type: {:?}, addressing: {:?}",
+        LINK,
+        LINK_REGISTER_DEFINED,
+        TYPE,
+        ADDRESSING
+    );
     let compare = |x: u32, y: u32| match TYPE {
         BranchType::Equal => x == y,
         BranchType::NotEqual => x != y,
@@ -122,26 +142,33 @@ pub fn branch<const LINK: bool, const REGISTER: bool, const TYPE: BranchType>(
     );
 
     if perform_branch {
-        let return_address = cpu.pc + 4; // return address = PC + 4, where PC = delay slot
+        // return address = PC + 8, where:
+        // PC + 0 = current instruction
+        // PC + 4 = next instruction (delay slot)
+        // PC + 8 = instruction after the delay slot
+        let return_address = cpu.pc + 8;
 
         // Instructions like jal store the return address in reg 31 by default
         // however, for instructions like JALR the reg is explicit (and may be different)
-        if LINK && !REGISTER {
+        if LINK && !LINK_REGISTER_DEFINED {
             cpu.registers[31] = return_address;
         }
 
-        cpu.queue_delay_slot(mmu);
-
-        if REGISTER {
-            // See above
-            if LINK && REGISTER {
-                cpu.registers[instr.rd() as usize] = return_address;
+        let branch_target = match ADDRESSING {
+            BranchAddressing::AbsoluteImmediate => {
+                (instr.address() << 2) | ((cpu.pc + 4) & 0xF000_0000)
             }
+            BranchAddressing::AbsoluteRegister => cpu.registers[instr.rs() as usize],
+            BranchAddressing::RelativeOffset => {
+                cpu.pc.wrapping_add_signed((instr.offset() as i32) << 2) + 4 // +4 to account for the delay slot
+            }
+        };
 
-            cpu.pc = cpu.registers[instr.rs() as usize];
-        } else {
-            cpu.pc = cpu.pc.wrapping_add_signed((instr.offset() as i32) << 2);
+        if LINK && LINK_REGISTER_DEFINED {
+            cpu.registers[instr.rd() as usize] = return_address;
         }
+
+        cpu.set_delay_slot(mmu, branch_target);
     }
 }
 

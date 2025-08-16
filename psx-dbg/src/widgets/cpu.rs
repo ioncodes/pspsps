@@ -146,7 +146,7 @@ impl Widget for CpuWidget {
                 self.current_address = format!("0x{:08X}", context.psx.cpu.pc);
             }
 
-            if let Some(addr) = context.show_in_disassembly {
+            if let Some(addr) = context.show_in_disassembly.take() {
                 self.current_address = format!("0x{:08X}", addr);
                 self.follow_pc = false;
             }

@@ -11,7 +11,7 @@ impl CpuWidget {
     pub fn new() -> Self {
         Self {
             follow_pc: true,
-            current_address: "0x00000000".to_string(),
+            current_address: "00000000".to_string(),
         }
     }
 }
@@ -143,11 +143,11 @@ impl Widget for CpuWidget {
 
         ui.horizontal(|ui| {
             if self.follow_pc {
-                self.current_address = format!("0x{:08X}", context.psx.cpu.pc);
+                self.current_address = format!("{:08X}", context.psx.cpu.pc);
             }
 
             if let Some(addr) = context.show_in_disassembly.take() {
-                self.current_address = format!("0x{:08X}", addr);
+                self.current_address = format!("{:08X}", addr);
                 self.follow_pc = false;
             }
 
@@ -165,8 +165,8 @@ impl Widget for CpuWidget {
 
         ui.separator();
 
-        let start = u32::from_str_radix(&self.current_address.trim_start_matches("0x"), 16)
-            .unwrap_or(context.psx.cpu.pc) as usize;
+        let start =
+            u32::from_str_radix(&self.current_address, 16).unwrap_or(context.psx.cpu.pc) as usize;
         let end = start + 40 * 4;
 
         let instructions: Vec<(u32, Instruction)> = context.psx.mmu.memory[start..end]

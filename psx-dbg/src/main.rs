@@ -1,8 +1,9 @@
 use eframe::egui;
-use egui::CollapsingHeader;
+use egui::{CollapsingHeader, Label, RichText};
 use egui_dock::{DockArea, DockState};
 use psx_core::cpu::decoder::Instruction;
 use psx_core::psx::Psx;
+use std::collections::HashSet;
 use std::time::Duration;
 use tracing_subscriber::Layer as _;
 use tracing_subscriber::layer::SubscriberExt as _;
@@ -14,6 +15,7 @@ static BIOS: &[u8] = include_bytes!("../../bios/SCPH1000.BIN");
 enum TabKind {
     Cpu,
     Mmu,
+    Breakpoints,
 }
 
 impl std::fmt::Display for TabKind {
@@ -21,6 +23,7 @@ impl std::fmt::Display for TabKind {
         match self {
             TabKind::Cpu => write!(f, "CPU"),
             TabKind::Mmu => write!(f, "MMU"),
+            TabKind::Breakpoints => write!(f, "Breakpoints"),
         }
     }
 }
@@ -30,30 +33,45 @@ pub struct PsxDebugger {
     is_running: bool,
     dock_state: DockState<TabKind>,
     memory_address: u32,
+    breakpoints: HashSet<u32>,
+    breakpoint_hit: bool,
+    new_breakpoint_address: String,
 }
 
 impl Default for PsxDebugger {
     fn default() -> Self {
         let mut dock_state = DockState::new(vec![TabKind::Cpu]);
-        let [_old, _new] = dock_state.main_surface_mut().split_right(
+        let [_old, mmu_node] = dock_state.main_surface_mut().split_right(
             egui_dock::NodeIndex::root(),
             0.5,
             vec![TabKind::Mmu],
         );
+        dock_state
+            .main_surface_mut()
+            .split_below(mmu_node, 0.5, vec![TabKind::Breakpoints]);
 
         Self {
             psx: Psx::new(BIOS),
             is_running: false,
             dock_state,
             memory_address: 0x80000000,
+            breakpoints: HashSet::new(),
+            breakpoint_hit: false,
+            new_breakpoint_address: String::new(),
         }
     }
 }
 
 impl eframe::App for PsxDebugger {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if self.is_running {
+        if self.is_running && !self.breakpoint_hit {
             for _ in 0..100 {
+                // Check for breakpoint before stepping
+                if self.breakpoints.contains(&self.psx.cpu.pc) {
+                    self.breakpoint_hit = true;
+                    self.is_running = false;
+                    break;
+                }
                 self.psx.step();
             }
 
@@ -64,6 +82,9 @@ impl eframe::App for PsxDebugger {
             psx: &mut self.psx,
             is_running: &mut self.is_running,
             memory_address: &mut self.memory_address,
+            breakpoints: &mut self.breakpoints,
+            breakpoint_hit: &mut self.breakpoint_hit,
+            new_breakpoint_address: &mut self.new_breakpoint_address,
         };
 
         DockArea::new(&mut self.dock_state).show(ctx, &mut tab_viewer);
@@ -74,6 +95,9 @@ struct TabViewer<'a> {
     psx: &'a mut Psx,
     is_running: &'a mut bool,
     memory_address: &'a mut u32,
+    breakpoints: &'a mut HashSet<u32>,
+    breakpoint_hit: &'a mut bool,
+    new_breakpoint_address: &'a mut String,
 }
 
 impl<'a> egui_dock::TabViewer for TabViewer<'a> {
@@ -95,18 +119,25 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
                     } else {
                         if ui.button("Run").clicked() {
                             *self.is_running = true;
+                            *self.breakpoint_hit = false;
                         }
                     }
 
                     if ui.button("Step").clicked() {
                         self.psx.step();
+                        *self.breakpoint_hit = false;
                     }
 
                     if ui.button("Reset").clicked() {
                         *self.psx = Psx::new(BIOS);
                         *self.is_running = false;
+                        *self.breakpoint_hit = false;
                     }
                 });
+
+                if *self.breakpoint_hit {
+                    ui.colored_label(egui::Color32::RED, "⚠ Breakpoint hit");
+                }
 
                 ui.separator();
 
@@ -211,8 +242,23 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
                     .collect();
 
                 for (addr, instr) in instructions {
-                    let line = format!("{:08X}: {}", addr, instr);
-                    ui.monospace(line);
+                    ui.horizontal(|ui| {
+                        let has_breakpoint = self.breakpoints.contains(&addr);
+
+                        let line = format!("{:08X}: {}", addr, instr);
+                        let line = if has_breakpoint {
+                            Label::new(RichText::new(line).monospace().color(egui::Color32::RED))
+                        } else {
+                            Label::new(RichText::new(line).monospace())
+                        };
+                        if ui.add(line).clicked() {
+                            if has_breakpoint {
+                                self.breakpoints.remove(&addr);
+                            } else {
+                                self.breakpoints.insert(addr);
+                            }
+                        }
+                    });
                 }
             }
             TabKind::Mmu => {
@@ -277,13 +323,73 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
                     ui.monospace(line);
                 }
             }
+            TabKind::Breakpoints => {
+                ui.heading("Add Breakpoint");
+
+                ui.horizontal(|ui| {
+                    ui.label("Address:");
+                    ui.text_edit_singleline(self.new_breakpoint_address);
+
+                    if ui.button("Add").clicked() {
+                        if let Ok(addr) = u32::from_str_radix(
+                            &self.new_breakpoint_address.trim_start_matches("0x"),
+                            16,
+                        ) {
+                            self.breakpoints.insert(addr);
+                            self.new_breakpoint_address.clear();
+                        }
+                    }
+
+                    if ui.button("Clear All").clicked() {
+                        self.breakpoints.clear();
+                    }
+                });
+
+                ui.separator();
+
+                ui.heading("Active Breakpoints");
+
+                let breakpoints: Vec<u32> = self.breakpoints.iter().copied().collect();
+                let mut to_remove = Vec::new();
+
+                for &addr in &breakpoints {
+                    ui.horizontal(|ui| {
+                        ui.monospace(format!("{:08X}", addr));
+
+                        if ui.button("Remove").clicked() {
+                            to_remove.push(addr);
+                        }
+
+                        if ui.button("Go to").clicked() {
+                            *self.memory_address = addr;
+                        }
+                    });
+                }
+
+                for addr in to_remove {
+                    self.breakpoints.remove(&addr);
+                }
+
+                ui.separator();
+                ui.label(format!("Total breakpoints: {}", self.breakpoints.len()));
+            }
         }
     }
 }
 
 fn main() -> eframe::Result {
+    let args = std::env::args().collect::<Vec<_>>();
+    let tracing_level = if args.contains(&"--debug".to_string()) {
+        tracing::Level::DEBUG
+    } else if args.contains(&"--trace".to_string()) {
+        tracing::Level::TRACE
+    } else {
+        tracing::Level::INFO
+    };
+
     let mut targets = tracing_subscriber::filter::Targets::new();
-    targets = targets.with_target("psx_core::cpu", tracing::Level::DEBUG);
+    targets = targets.with_target("psx_core::cpu", tracing_level);
+    targets = targets.with_target("psx_core::mmu", tracing_level);
 
     let fmt_layer = tracing_subscriber::fmt::layer()
         .without_time()

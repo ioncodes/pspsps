@@ -38,23 +38,16 @@ impl Widget for MmuWidget {
         ui.separator();
 
         let start_addr = self.memory_address & !0xF;
-        let memory = &context.psx.mmu.memory;
 
         for row in 0..32 {
             let addr = start_addr + (row * 16);
-            if addr as usize >= memory.len() {
-                break;
-            }
 
             let mut line = format!("{:08X}: ", addr);
 
             for col in 0..16 {
                 let byte_addr = addr + col;
-                if (byte_addr as usize) < memory.len() {
-                    line.push_str(&format!("{:02X} ", memory[byte_addr as usize]));
-                } else {
-                    line.push_str("?? ");
-                }
+                let byte = context.psx.mmu.read_u8(byte_addr);
+                line.push_str(&format!("{:02X} ", byte));
 
                 if col == 7 {
                     line.push(' ');
@@ -64,15 +57,11 @@ impl Widget for MmuWidget {
             line.push_str(" |");
             for col in 0..16 {
                 let byte_addr = addr + col;
-                if (byte_addr as usize) < memory.len() {
-                    let byte = memory[byte_addr as usize];
-                    if byte >= 32 && byte <= 126 {
-                        line.push(byte as char);
-                    } else {
-                        line.push('.');
-                    }
+                let byte = context.psx.mmu.read_u8(byte_addr);
+                if byte >= 32 && byte <= 126 {
+                    line.push(byte as char);
                 } else {
-                    line.push('?');
+                    line.push('.');
                 }
             }
             line.push('|');

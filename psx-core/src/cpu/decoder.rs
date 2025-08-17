@@ -318,7 +318,7 @@ impl Instruction {
                 Opcode::ShiftLeftLogical
                 | Opcode::ShiftRightLogical
                 | Opcode::ShiftRightArithmetic => {
-                    Some(Operand::Register(Register(self.rt(), false)))
+                    Some(Operand::Register(Register(self.rd(), false)))
                 }
                 Opcode::JumpRegister => Some(Operand::Register(Register(self.rs(), false))),
                 Opcode::JumpAndLinkRegister => Some(Operand::Register(Register(self.rd(), false))),
@@ -358,7 +358,7 @@ impl Instruction {
             InstructionType::RType => match self.opcode {
                 Opcode::ShiftLeftLogical
                 | Opcode::ShiftRightLogical
-                | Opcode::ShiftRightArithmetic => Some(Operand::Immediate(self.shamt() as u32)),
+                | Opcode::ShiftRightArithmetic => Some(Operand::Register(Register(self.rt(), false))),
                 Opcode::ShiftLeftLogicalVariable
                 | Opcode::ShiftRightLogicalVariable
                 | Opcode::ShiftRightArithmeticVariable => {
@@ -421,8 +421,8 @@ impl Instruction {
             InstructionType::RType => match self.opcode {
                 Opcode::ShiftLeftLogical
                 | Opcode::ShiftRightLogical
-                | Opcode::ShiftRightArithmetic
-                | Opcode::ShiftLeftLogicalVariable
+                | Opcode::ShiftRightArithmetic => Some(Operand::Immediate(self.shamt() as u32)),
+                Opcode::ShiftLeftLogicalVariable
                 | Opcode::ShiftRightLogicalVariable
                 | Opcode::ShiftRightArithmeticVariable => {
                     Some(Operand::Register(Register(self.rd(), false)))

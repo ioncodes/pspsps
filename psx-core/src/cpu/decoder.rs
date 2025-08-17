@@ -358,7 +358,9 @@ impl Instruction {
             InstructionType::RType => match self.opcode {
                 Opcode::ShiftLeftLogical
                 | Opcode::ShiftRightLogical
-                | Opcode::ShiftRightArithmetic => Some(Operand::Register(Register(self.rt(), false))),
+                | Opcode::ShiftRightArithmetic => {
+                    Some(Operand::Register(Register(self.rt(), false)))
+                }
                 Opcode::ShiftLeftLogicalVariable
                 | Opcode::ShiftRightLogicalVariable
                 | Opcode::ShiftRightArithmeticVariable => {

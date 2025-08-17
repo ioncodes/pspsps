@@ -1,5 +1,6 @@
 use crate::cpu::Cpu;
 use crate::cpu::cop::Cop;
+use crate::cpu::cop::cop0::COP0_EXCEPTION_CODE_SYSCALL;
 use crate::cpu::decoder::Instruction;
 use crate::mmu::Mmu;
 use std::marker::ConstParamTy;
@@ -298,8 +299,8 @@ pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu, _m
     }
 }
 
-pub fn system_call(_instr: &Instruction, _cpu: &mut Cpu, _mmu: &mut Mmu) {
-    todo!("Implement system call");
+pub fn system_call(_instr: &Instruction, cpu: &mut Cpu, _mmu: &mut Mmu) {
+    cpu.cause_exception(COP0_EXCEPTION_CODE_SYSCALL);
 }
 
 pub fn debug_break(_instr: &Instruction, _cpu: &mut Cpu, _mmu: &mut Mmu) {

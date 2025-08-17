@@ -1,7 +1,7 @@
 use super::{SharedContext, Widget};
 use egui::{CollapsingHeader, Label, RichText, Ui};
-use psx_core::cpu::cop::cop0::COP0_SR;
 use psx_core::cpu::cop::Cop;
+use psx_core::cpu::cop::cop0::COP0_SR;
 use psx_core::cpu::decoder::Instruction;
 
 pub struct CpuWidget {
@@ -135,12 +135,32 @@ impl Widget for CpuWidget {
                             }
                         ));
                         ui.monospace(format!(
-                            "COP0 Enabled: {}",
+                            "Enabled: {}",
                             if context.psx.cpu.cop0.sr.cop0_enable() {
                                 "Yes"
                             } else {
                                 "No"
                             }
+                        ));
+                    });
+                CollapsingHeader::new("Cause Register")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        ui.monospace(format!(
+                            "Cause: {:08X}",
+                            context.psx.cpu.cop0.read_register(13)
+                        ));
+                        ui.monospace(format!(
+                            "Exception Code: {}",
+                            context.psx.cpu.cop0.cause.exception_code()
+                        ));
+                        ui.monospace(format!(
+                            "Software Interrupts: {}",
+                            context.psx.cpu.cop0.cause.software_interrupts()
+                        ));
+                        ui.monospace(format!(
+                            "Interrupt Pending: {}",
+                            context.psx.cpu.cop0.cause.interrupt_pending()
                         ));
                     });
             });

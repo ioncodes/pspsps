@@ -48,7 +48,6 @@ impl Widget for CpuWidget {
             }
         });
 
-
         ui.separator();
 
         ui.heading("Registers");

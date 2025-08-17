@@ -5,10 +5,12 @@ use std::collections::HashSet;
 pub mod breakpoints;
 pub mod cpu;
 pub mod mmu;
+pub mod tty;
 
 pub use breakpoints::BreakpointsWidget;
 pub use cpu::CpuWidget;
 pub use mmu::MmuWidget;
+pub use tty::TtyWidget;
 
 pub trait Widget {
     fn title(&self) -> &str;

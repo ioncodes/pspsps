@@ -1,3 +1,5 @@
+mod widgets;
+
 use eframe::egui;
 use egui_dock::{DockArea, DockState};
 use egui_toast::{Toast, ToastKind, Toasts};
@@ -7,9 +9,7 @@ use std::time::Duration;
 use tracing_subscriber::Layer as _;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
-
-mod widgets;
-use widgets::{BreakpointsWidget, CpuWidget, MmuWidget, SharedContext, Widget};
+use widgets::{BreakpointsWidget, CpuWidget, MmuWidget, SharedContext, TtyWidget, Widget};
 
 static BIOS: &[u8] = include_bytes!("../../bios/SCPH1000.BIN");
 
@@ -18,6 +18,7 @@ enum TabKind {
     Cpu,
     Mmu,
     Breakpoints,
+    Tty,
 }
 
 impl std::fmt::Display for TabKind {
@@ -26,6 +27,7 @@ impl std::fmt::Display for TabKind {
             TabKind::Cpu => write!(f, "CPU"),
             TabKind::Mmu => write!(f, "MMU"),
             TabKind::Breakpoints => write!(f, "Breakpoints"),
+            TabKind::Tty => write!(f, "TTY"),
         }
     }
 }
@@ -49,14 +51,17 @@ impl Default for PsxDebugger {
             0.5,
             vec![TabKind::Mmu],
         );
-        dock_state
-            .main_surface_mut()
-            .split_below(mmu_node, 0.5, vec![TabKind::Breakpoints]);
+        dock_state.main_surface_mut().split_below(
+            mmu_node,
+            0.5,
+            vec![TabKind::Breakpoints, TabKind::Tty],
+        );
 
         let mut widgets: HashMap<TabKind, Box<dyn Widget>> = HashMap::new();
         widgets.insert(TabKind::Cpu, Box::new(CpuWidget::new()));
         widgets.insert(TabKind::Mmu, Box::new(MmuWidget::new()));
         widgets.insert(TabKind::Breakpoints, Box::new(BreakpointsWidget::new()));
+        widgets.insert(TabKind::Tty, Box::new(TtyWidget::new()));
 
         Self {
             psx: Psx::new(BIOS),

@@ -48,9 +48,6 @@ impl Widget for CpuWidget {
             }
         });
 
-        if *context.breakpoint_hit {
-            ui.colored_label(egui::Color32::RED, "⚠ Breakpoint hit");
-        }
 
         ui.separator();
 

@@ -1,5 +1,6 @@
 use eframe::egui;
 use egui_dock::{DockArea, DockState};
+use egui_toast::{Toast, ToastKind, Toasts};
 use psx_core::psx::Psx;
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
@@ -37,6 +38,7 @@ pub struct PsxDebugger {
     breakpoint_hit: bool,
     widgets: HashMap<TabKind, Box<dyn Widget>>,
     show_in_disassembly: Option<u32>,
+    toasts: Toasts,
 }
 
 impl Default for PsxDebugger {
@@ -64,6 +66,7 @@ impl Default for PsxDebugger {
             breakpoint_hit: false,
             widgets,
             show_in_disassembly: None,
+            toasts: Toasts::new(),
         }
     }
 }
@@ -72,12 +75,20 @@ impl eframe::App for PsxDebugger {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if self.is_running && !self.breakpoint_hit {
             for _ in 0..100 {
-                // Check for breakpoint before stepping
                 if self.breakpoints.contains(&self.psx.cpu.pc) {
                     self.breakpoint_hit = true;
                     self.is_running = false;
+
+                    self.toasts.add(Toast {
+                        text: format!("Breakpoint hit at {:08X}", self.psx.cpu.pc).into(),
+                        kind: ToastKind::Info,
+                        options: Default::default(),
+                        style: Default::default(),
+                    });
+
                     break;
                 }
+
                 self.psx.step();
             }
 
@@ -94,6 +105,7 @@ impl eframe::App for PsxDebugger {
         };
 
         DockArea::new(&mut self.dock_state).show(ctx, &mut tab_viewer);
+        self.toasts.show(ctx);
     }
 }
 
@@ -144,6 +156,7 @@ fn main() -> eframe::Result {
     let mut targets = tracing_subscriber::filter::Targets::new();
     targets = targets.with_target("psx_core::cpu", tracing_level);
     targets = targets.with_target("psx_core::mmu", tracing_level);
+    targets = targets.with_target("psx_core::tty", tracing_level);
 
     let fmt_layer = tracing_subscriber::fmt::layer()
         .without_time()

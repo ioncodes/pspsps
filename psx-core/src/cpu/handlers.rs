@@ -1,4 +1,5 @@
 use crate::cpu::Cpu;
+use crate::cpu::cop::Cop;
 use crate::cpu::decoder::Instruction;
 use crate::mmu::Mmu;
 use std::marker::ConstParamTy;
@@ -287,10 +288,11 @@ pub fn move_multiply<
 pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu, _mmu: &mut Mmu) {
     match OPERATION {
         CopOperation::MoveTo | CopOperation::MoveControlTo => {
-            cpu.cop0[instr.rt() as usize] = cpu.registers[instr.rd() as usize];
+            cpu.cop0
+                .write_register(instr.rt() as u32, cpu.registers[instr.rd() as usize]);
         }
         CopOperation::MoveFrom | CopOperation::MoveControlFrom => {
-            cpu.registers[instr.rt() as usize] = cpu.cop0[instr.rd() as usize];
+            cpu.registers[instr.rt() as usize] = cpu.cop0.read_register(instr.rd() as u32);
         }
         _ => todo!("Implement cop operation: {:?}", OPERATION),
     }

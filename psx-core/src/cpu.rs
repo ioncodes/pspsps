@@ -6,6 +6,8 @@ pub mod lut;
 
 use colored::Colorize;
 
+use crate::cpu::cop::Cop;
+use crate::cpu::cop::cop0::Cop0;
 use crate::cpu::decoder::Instruction;
 use crate::mmu::Mmu;
 
@@ -19,7 +21,7 @@ pub struct Cpu {
     pub lo: u32,
     pub load_delay: Option<(RegisterIndex, RegisterValue)>, // Loads are delayed by one instruction
     pub delay_slot: Option<(Instruction, u32)>, // Delay slot (instruction, branch destination)
-    pub cop0: [RegisterValue; 64],              // COP0 registers
+    pub cop0: Cop0,                             // COP0 registers
 }
 
 impl Cpu {
@@ -31,7 +33,7 @@ impl Cpu {
             lo: 0,
             load_delay: None,
             delay_slot: None,
-            cop0: [0; 64],
+            cop0: Cop0::new(),
         }
     }
 
@@ -61,6 +63,10 @@ impl Cpu {
         (instr.handler)(&instr, self, mmu);
 
         self.pc += 4;
+    }
+
+    pub fn cause_exception(&mut self, mmu: &mut Mmu, exception_code: u32, address: u32) {
+        tracing::error!(target: "psx_core::cpu", "Exception occurred: code = {}, address = {:08X}", exception_code, address);
     }
 
     #[inline(always)]

@@ -1,5 +1,7 @@
 use super::{SharedContext, Widget};
 use egui::{CollapsingHeader, Label, RichText, Ui};
+use psx_core::cpu::cop::cop0::COP0_SR;
+use psx_core::cpu::cop::Cop;
 use psx_core::cpu::decoder::Instruction;
 
 pub struct CpuWidget {
@@ -120,15 +122,25 @@ impl Widget for CpuWidget {
                 CollapsingHeader::new("Status Register")
                     .default_open(true)
                     .show(ui, |ui| {
-                        ui.monospace(format!("SR: {:08X}", context.psx.cpu.cop0[12]));
-                        let sr = psx_core::cpu::cop::StatusRegister(context.psx.cpu.cop0[12]);
+                        ui.monospace(format!(
+                            "SR: {:08X}",
+                            context.psx.cpu.cop0.read_register(COP0_SR)
+                        ));
                         ui.monospace(format!(
                             "Current Mode: {}",
-                            if !sr.current_mode() { "Kernel" } else { "User" }
+                            if !context.psx.cpu.cop0.sr.current_mode() {
+                                "Kernel"
+                            } else {
+                                "User"
+                            }
                         ));
                         ui.monospace(format!(
                             "COP0 Enabled: {}",
-                            if sr.cop0_enable() { "Yes" } else { "No" }
+                            if context.psx.cpu.cop0.sr.cop0_enable() {
+                                "Yes"
+                            } else {
+                                "No"
+                            }
                         ));
                     });
             });

@@ -43,12 +43,14 @@ impl Mmu {
 
     #[inline(always)]
     pub fn write_u8(&mut self, address: u32, value: u8) {
+        tracing::trace!(target: "psx_core::mmu", "write_u8({:08X}, {:02X})", address, value);
         let address = Self::canonicalize_address(address);
         self.memory[address as usize] = value;
     }
 
     #[inline(always)]
     pub fn write_u16(&mut self, address: u32, value: u16) {
+        tracing::trace!(target: "psx_core::mmu", "write_u16({:08X}, {:04X})", address, value);
         let address = Self::canonicalize_address(address);
         let address = address as usize;
         self.memory[address] = (value & 0xFF) as u8;
@@ -57,8 +59,12 @@ impl Mmu {
 
     #[inline(always)]
     pub fn write_u32(&mut self, address: u32, value: u32) {
+        tracing::trace!(target: "psx_core::mmu", "write_u32({:08X}, {:08X})", address, value);
         let address = Self::canonicalize_address(address);
         let address = address as usize;
+        if address == 0x00000084 {
+            tracing::trace!(target: "psx_core::mmu", "lmao123");
+        }
         self.memory[address] = (value & 0xFF) as u8;
         self.memory[address + 1] = ((value >> 8) & 0xFF) as u8;
         self.memory[address + 2] = ((value >> 16) & 0xFF) as u8;

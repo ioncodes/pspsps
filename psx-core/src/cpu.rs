@@ -5,7 +5,7 @@ pub mod internal;
 pub mod lut;
 
 use crate::cpu::cop::cop0::Cop0;
-use crate::cpu::decoder::Instruction;
+use crate::cpu::decoder::{Instruction, Opcode};
 use crate::mmu::Mmu;
 use colored::Colorize;
 
@@ -48,6 +48,7 @@ impl Cpu {
                 format!("Executing delay slot instruction: {}, with branch target: {:08X}", delay_slot, branch_target).yellow());
             (delay_slot.handler)(&delay_slot, self, mmu);
             self.pc = branch_target; // Set PC to the scheduled branch address
+            // TODO: what happens if syscall is here?
             return;
         }
 
@@ -57,7 +58,10 @@ impl Cpu {
 
         (instr.handler)(&instr, self, mmu);
 
-        self.pc += 4;
+        // exception causes PC to be set to the exception vector, do not progress PC
+        if instr.opcode != Opcode::SystemCall {
+            self.pc += 4;
+        }
     }
 
     pub fn cause_exception(&mut self, exception_code: u32) {

@@ -299,7 +299,8 @@ pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu, _m
     }
 }
 
-pub fn system_call(_instr: &Instruction, cpu: &mut Cpu, _mmu: &mut Mmu) {
+pub fn system_call(instr: &Instruction, cpu: &mut Cpu, _mmu: &mut Mmu) {
+    tracing::debug!(target: "psx_core::cpu", "syscall({:04X})", (instr.raw >> 6) & 0xFFFFF); // print syscall code/comment
     cpu.cause_exception(COP0_EXCEPTION_CODE_SYSCALL);
 }
 

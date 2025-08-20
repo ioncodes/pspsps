@@ -294,7 +294,9 @@ pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu) {
         CopOperation::MoveFrom | CopOperation::MoveControlFrom => {
             cpu.registers[instr.rt() as usize] = cpu.cop0.read_register(instr.rd() as u32);
         }
-        _ => todo!("Implement cop operation: {:?}", OPERATION),
+        CopOperation::ReturnFromException => {
+            cpu.restore_from_exception();
+        }
     }
 }
 

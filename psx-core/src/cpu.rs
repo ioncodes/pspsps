@@ -37,7 +37,7 @@ impl Cpu {
         }
     }
 
-    pub fn tick(&mut self) {
+    pub fn tick(&mut self) -> Instruction {
         if internal::HOOKS.contains_key(&self.pc) {
             let handler = internal::HOOKS.get(&self.pc).unwrap();
             handler(self);
@@ -51,7 +51,7 @@ impl Cpu {
             (delay_slot.handler)(&delay_slot, self);
             self.pc = branch_target; // Set PC to the scheduled branch address
             // TODO: what happens if syscall is here?
-            return;
+            return delay_slot;
         }
 
         let instr = Instruction::decode(self.mmu.read_u32(self.pc));
@@ -64,6 +64,8 @@ impl Cpu {
         if instr.opcode != Opcode::SystemCall {
             self.pc += 4;
         }
+
+        instr
     }
 
     pub fn cause_exception(&mut self, exception_code: u32) {
@@ -88,6 +90,16 @@ impl Cpu {
         } else {
             self.pc = 0xBFC0_0180;
         }
+    }
+
+    pub fn restore_from_exception(&mut self) {
+        tracing::debug!(target: "psx_core::cpu", "Returning from exception");
+
+        self.pc = self.cop0.epc;
+        self.cop0
+            .sr
+            .set_current_interrupt_enable(self.cop0.sr.previous_interrupt_enable());
+        self.cop0.sr.set_current_mode(self.cop0.sr.previous_mode());
     }
 
     pub fn write_u8(&mut self, address: u32, value: u8) {

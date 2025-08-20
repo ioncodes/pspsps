@@ -38,8 +38,15 @@ impl Widget for CpuWidget {
             }
 
             if ui.button("Step").clicked() {
-                context.psx.step();
+                let pc_before = context.psx.cpu.pc;
+                let instruction = context.psx.step();
                 *context.breakpoint_hit = false;
+                
+                // Add to trace buffer with limit of 1000
+                if context.trace_buffer.len() >= 1000 {
+                    context.trace_buffer.pop_front();
+                }
+                context.trace_buffer.push_back((pc_before, instruction));
             }
 
             if ui.button("Reset").clicked() {
@@ -47,6 +54,7 @@ impl Widget for CpuWidget {
                 *context.psx = psx_core::psx::Psx::new(BIOS);
                 *context.is_running = false;
                 *context.breakpoint_hit = false;
+                context.trace_buffer.clear();
             }
         });
 

@@ -127,6 +127,14 @@ impl Widget for CpuWidget {
                             context.psx.cpu.cop0.read_register(COP0_SR)
                         ));
                         ui.monospace(format!(
+                            "Isolate Cache: {}",
+                            if context.psx.cpu.cop0.sr.isolate_cache() {
+                                "Yes"
+                            } else {
+                                "No"
+                            }
+                        ));
+                        ui.monospace(format!(
                             "Current Mode: {}",
                             if !context.psx.cpu.cop0.sr.current_mode() {
                                 "Kernel"
@@ -199,7 +207,7 @@ impl Widget for CpuWidget {
         let instructions: Vec<(u32, Instruction)> = (0..40)
             .map(|i| {
                 let addr = (start + i * 4) as u32;
-                let instr_raw = context.psx.mmu.read_u32(addr);
+                let instr_raw = context.psx.cpu.mmu.read_u32(addr);
                 let instr = Instruction::decode(instr_raw);
                 (addr, instr)
             })

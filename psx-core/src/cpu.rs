@@ -20,6 +20,7 @@ pub struct Cpu {
     pub load_delay: Option<(RegisterIndex, RegisterValue)>, // Loads are delayed by one instruction
     pub delay_slot: Option<(Instruction, u32)>, // Delay slot (instruction, branch destination)
     pub cop0: Cop0,                             // COP0 registers
+    pub mmu: Mmu,                               // Owned MMU
 }
 
 impl Cpu {
@@ -32,13 +33,14 @@ impl Cpu {
             load_delay: None,
             delay_slot: None,
             cop0: Cop0::new(),
+            mmu: Mmu::new(),
         }
     }
 
-    pub fn tick(&mut self, mmu: &mut Mmu) {
+    pub fn tick(&mut self) {
         if internal::HOOKS.contains_key(&self.pc) {
             let handler = internal::HOOKS.get(&self.pc).unwrap();
-            handler(self, mmu);
+            handler(self);
         }
 
         if let Some((delay_slot, branch_target)) = self.delay_slot.take() {
@@ -46,17 +48,17 @@ impl Cpu {
                 target: "psx_core::cpu", 
                 "{}", 
                 format!("Executing delay slot instruction: {}, with branch target: {:08X}", delay_slot, branch_target).yellow());
-            (delay_slot.handler)(&delay_slot, self, mmu);
+            (delay_slot.handler)(&delay_slot, self);
             self.pc = branch_target; // Set PC to the scheduled branch address
             // TODO: what happens if syscall is here?
             return;
         }
 
-        let instr = Instruction::decode(mmu.read_u32(self.pc));
+        let instr = Instruction::decode(self.mmu.read_u32(self.pc));
 
         tracing::trace!(target: "psx_core::cpu", "{:08X}: [{:08X}] {: <30}", self.pc, instr.raw, format!("{}", instr));
 
-        (instr.handler)(&instr, self, mmu);
+        (instr.handler)(&instr, self);
 
         // exception causes PC to be set to the exception vector, do not progress PC
         if instr.opcode != Opcode::SystemCall {
@@ -88,12 +90,48 @@ impl Cpu {
         }
     }
 
+    pub fn write_u8(&mut self, address: u32, value: u8) {
+        if self.cop0.sr.isolate_cache() {
+            return;
+        }
+
+        self.mmu.write_u8(address, value);
+    }
+
+    pub fn write_u16(&mut self, address: u32, value: u16) {
+        if self.cop0.sr.isolate_cache() {
+            return;
+        }
+
+        self.mmu.write_u16(address, value);
+    }
+
+    pub fn write_u32(&mut self, address: u32, value: u32) {
+        if self.cop0.sr.isolate_cache() {
+            return;
+        }
+
+        self.mmu.write_u32(address, value);
+    }
+
+    pub fn read_u8(&self, address: u32) -> u8 {
+        self.mmu.read_u8(address)
+    }
+
+    pub fn read_u16(&self, address: u32) -> u16 {
+        self.mmu.read_u16(address)
+    }
+
+    pub fn read_u32(&self, address: u32) -> u32 {
+        self.mmu.read_u32(address)
+    }
+
     #[inline(always)]
-    pub(crate) fn set_delay_slot(&mut self, mmu: &mut Mmu, branch_target: u32) {
+    pub(crate) fn set_delay_slot(&mut self, branch_target: u32) {
         // Load the next instruction into the delay slot
         // Also cache the branch target
         self.delay_slot = Some((
-            Instruction::decode(mmu.read_u32(self.pc + 4)),
+            Instruction::decode(self.mmu.read_u32(self.pc + 4)),
             branch_target,
         ));
     }

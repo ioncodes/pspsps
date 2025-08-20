@@ -62,9 +62,6 @@ impl Mmu {
         tracing::trace!(target: "psx_core::mmu", "write_u32({:08X}, {:08X})", address, value);
         let address = Self::canonicalize_address(address);
         let address = address as usize;
-        if address == 0x00000084 {
-            tracing::trace!(target: "psx_core::mmu", "lmao123");
-        }
         self.memory[address] = (value & 0xFF) as u8;
         self.memory[address + 1] = ((value >> 8) & 0xFF) as u8;
         self.memory[address + 2] = ((value >> 16) & 0xFF) as u8;

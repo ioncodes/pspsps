@@ -1,8 +1,6 @@
 use crate::cpu::lut::{self, MIPS_OTHER_LUT, MIPS_REGIMM_LUT, MIPS_RTYPE_LUT};
 use crate::cpu::{Cpu, handlers};
-use crate::mmu::Mmu;
-
-type InstructionHandler = fn(&Instruction, &mut Cpu, &mut Mmu);
+type InstructionHandler = fn(&Instruction, &mut Cpu);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Opcode {
@@ -104,9 +102,8 @@ pub struct Instruction {
 
 impl Instruction {
     pub const fn invalid() -> Self {
-        static NOOP: InstructionHandler = |instr: &Instruction, _: &mut Cpu, _: &mut Mmu| {
-            todo!("Invalid instruction handler: {}", instr)
-        };
+        static NOOP: InstructionHandler =
+            |instr: &Instruction, _: &mut Cpu| todo!("Invalid instruction handler: {}", instr);
 
         Instruction {
             opcode: Opcode::Invalid,

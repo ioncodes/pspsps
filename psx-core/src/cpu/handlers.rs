@@ -2,7 +2,6 @@ use crate::cpu::Cpu;
 use crate::cpu::cop::Cop;
 use crate::cpu::cop::cop0::COP0_EXCEPTION_CODE_SYSCALL;
 use crate::cpu::decoder::Instruction;
-use crate::mmu::Mmu;
 use std::marker::ConstParamTy;
 
 #[derive(Debug, ConstParamTy, PartialEq, Eq)]
@@ -90,7 +89,7 @@ pub enum CopOperation {
 }
 
 pub fn shift<const DIRECTION: ShiftDirection, const TYPE: ShiftType, const VARIABLE: bool>(
-    instr: &Instruction, cpu: &mut Cpu, _mmu: &mut Mmu,
+    instr: &Instruction, cpu: &mut Cpu,
 ) {
     // TODO: op 0 technically is a NOP
 
@@ -122,7 +121,7 @@ pub fn branch<
     const TYPE: BranchType,
     const ADDRESSING: BranchAddressing,
 >(
-    instr: &Instruction, cpu: &mut Cpu, mmu: &mut Mmu,
+    instr: &Instruction, cpu: &mut Cpu,
 ) {
     let compare = |x: u32, y: u32| match TYPE {
         BranchType::Equal => x == y,
@@ -166,12 +165,12 @@ pub fn branch<
             cpu.registers[instr.rd() as usize] = return_address;
         }
 
-        cpu.set_delay_slot(mmu, branch_target);
+        cpu.set_delay_slot(branch_target);
     }
 }
 
 pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE: bool>(
-    instr: &Instruction, cpu: &mut Cpu, _mmu: &mut Mmu,
+    instr: &Instruction, cpu: &mut Cpu,
 ) {
     // TODO: UNSIGNED = no exception
 
@@ -228,7 +227,7 @@ pub fn load_store<
     const TRANSFER_SIZE: MemoryTransferSize,
     const PORTION: MemoryAccessPortion,
 >(
-    instr: &Instruction, cpu: &mut Cpu, mmu: &mut Mmu,
+    instr: &Instruction, cpu: &mut Cpu,
 ) {
     if IS_LUI {
         let imm = instr.immediate() as u32;
@@ -242,22 +241,22 @@ pub fn load_store<
 
     match TRANSFER_SIZE {
         MemoryTransferSize::Byte if TYPE == MemoryAccessType::Load => {
-            cpu.registers[instr.rt() as usize] = mmu.read_u8(vaddr) as u32;
+            cpu.registers[instr.rt() as usize] = cpu.read_u8(vaddr) as u32;
         }
         MemoryTransferSize::Byte if TYPE == MemoryAccessType::Store => {
-            mmu.write_u8(vaddr, (cpu.registers[instr.rt() as usize] & 0xFF) as u8);
+            cpu.write_u8(vaddr, (cpu.registers[instr.rt() as usize] & 0xFF) as u8);
         }
         MemoryTransferSize::HalfWord if TYPE == MemoryAccessType::Load => {
-            cpu.registers[instr.rt() as usize] = mmu.read_u16(vaddr) as u32;
+            cpu.registers[instr.rt() as usize] = cpu.read_u16(vaddr) as u32;
         }
         MemoryTransferSize::HalfWord if TYPE == MemoryAccessType::Store => {
-            mmu.write_u16(vaddr, (cpu.registers[instr.rt() as usize] & 0xFFFF) as u16);
+            cpu.write_u16(vaddr, (cpu.registers[instr.rt() as usize] & 0xFFFF) as u16);
         }
         MemoryTransferSize::Word if TYPE == MemoryAccessType::Load => {
-            cpu.registers[instr.rt() as usize] = mmu.read_u32(vaddr);
+            cpu.registers[instr.rt() as usize] = cpu.read_u32(vaddr);
         }
         MemoryTransferSize::Word if TYPE == MemoryAccessType::Store => {
-            mmu.write_u32(vaddr, cpu.registers[instr.rt() as usize]);
+            cpu.write_u32(vaddr, cpu.registers[instr.rt() as usize]);
         }
         _ => todo!(
             "Implement load/store operation with type: {:?}, transfer size: {:?}, portion: {:?}",
@@ -272,7 +271,7 @@ pub fn move_multiply<
     const DIRECTION: MultiplyMoveDirection,
     const REGISTER: MultiplyMoveRegister,
 >(
-    instr: &Instruction, cpu: &mut Cpu, _mmu: &mut Mmu,
+    instr: &Instruction, cpu: &mut Cpu,
 ) {
     match DIRECTION {
         MultiplyMoveDirection::ToRegister => match REGISTER {
@@ -286,11 +285,11 @@ pub fn move_multiply<
     }
 }
 
-pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu, _mmu: &mut Mmu) {
+pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu) {
     match OPERATION {
         CopOperation::MoveTo | CopOperation::MoveControlTo => {
             cpu.cop0
-                .write_register(instr.rt() as u32, cpu.registers[instr.rd() as usize]);
+                .write_register(instr.rd() as u32, cpu.registers[instr.rt() as usize]);
         }
         CopOperation::MoveFrom | CopOperation::MoveControlFrom => {
             cpu.registers[instr.rt() as usize] = cpu.cop0.read_register(instr.rd() as u32);
@@ -299,11 +298,11 @@ pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu, _m
     }
 }
 
-pub fn system_call(instr: &Instruction, cpu: &mut Cpu, _mmu: &mut Mmu) {
+pub fn system_call(instr: &Instruction, cpu: &mut Cpu) {
     tracing::debug!(target: "psx_core::cpu", "syscall({:04X})", (instr.raw >> 6) & 0xFFFFF); // print syscall code/comment
     cpu.cause_exception(COP0_EXCEPTION_CODE_SYSCALL);
 }
 
-pub fn debug_break(_instr: &Instruction, _cpu: &mut Cpu, _mmu: &mut Mmu) {
+pub fn debug_break(_instr: &Instruction, _cpu: &mut Cpu) {
     todo!("Implement break");
 }

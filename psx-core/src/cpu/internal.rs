@@ -8,7 +8,10 @@ type HookHandler = fn(&mut Cpu);
 lazy_static! {
     pub(crate) static ref HOOKS: HashMap<u32, HookHandler> = {
         let mut hooks = HashMap::new();
-        hooks.insert(0xBFC0D460, bios_putchar as HookHandler);
+        hooks.insert(0xBFC0D460, bios_putchar as HookHandler); // TODO: just hook the BIOS putchar function? would make it compatible with other BIOS
+        hooks.insert(0x000000A0, bios_function_call_a as HookHandler);
+        hooks.insert(0x000000B0, bios_function_call_b as HookHandler);
+        hooks.insert(0x000000C0, bios_function_call_c as HookHandler);
         hooks
     };
     pub static ref TTY_BUFFER: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
@@ -27,4 +30,16 @@ fn bios_putchar(cpu: &mut Cpu) {
     } else {
         TTY_LINE_BUFFER.lock().unwrap().push(value);
     }
+}
+
+fn bios_function_call_a(cpu: &mut Cpu) {
+    tracing::debug!(target: "psx_core::bios", "BIOS @ A({:08X})", cpu.registers[9]);
+}
+
+fn bios_function_call_b(cpu: &mut Cpu) {
+    tracing::debug!(target: "psx_core::bios", "BIOS @ B({:08X})", cpu.registers[9]);
+}
+
+fn bios_function_call_c(cpu: &mut Cpu) {
+    tracing::debug!(target: "psx_core::bios", "BIOS @ C({:08X})", cpu.registers[9]);
 }

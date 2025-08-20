@@ -127,6 +127,11 @@ impl Instruction {
                 | Opcode::BranchGreaterEqualZeroAndLink
         )
     }
+
+    #[inline(always)]
+    pub fn is_invalid(&self) -> bool {
+        self.opcode == Opcode::Invalid
+    }
 }
 
 impl PartialEq for Instruction {

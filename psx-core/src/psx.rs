@@ -26,7 +26,7 @@ impl Psx {
         self.sideload_exe = Some(Exe::parse(exe_buffer));
     }
 
-    pub fn step(&mut self) -> Instruction {
+    pub fn step(&mut self) -> Result<Instruction, ()> {
         if let Some(exe) = &self.sideload_exe
             && self.cpu.pc == PSX_SIDELOAD_EXE_ADDRESS
         {

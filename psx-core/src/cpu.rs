@@ -37,13 +37,18 @@ impl Cpu {
         }
     }
 
-    pub fn tick(&mut self) -> Instruction {
+    pub fn tick(&mut self) -> Result<Instruction, ()> {
         if internal::HOOKS.contains_key(&self.pc) {
             let handler = internal::HOOKS.get(&self.pc).unwrap();
             handler(self);
         }
 
         if let Some((delay_slot, branch_target)) = self.delay_slot.take() {
+            if delay_slot.is_invalid() {
+                tracing::error!(target: "psx_core::cpu", "Invalid instruction in delay slot at {:08X}", self.pc);
+                return Err(());
+            }
+
             tracing::trace!(
                 target: "psx_core::cpu", 
                 "{}", 
@@ -51,10 +56,14 @@ impl Cpu {
             (delay_slot.handler)(&delay_slot, self);
             self.pc = branch_target; // Set PC to the scheduled branch address
             // TODO: what happens if syscall is here?
-            return delay_slot;
+            return Ok(delay_slot);
         }
 
         let instr = Instruction::decode(self.mmu.read_u32(self.pc));
+        if instr.is_invalid() {
+            tracing::error!(target: "psx_core::cpu", "Invalid instruction at {:08X}", self.pc);
+            return Err(());
+        }
 
         tracing::trace!(target: "psx_core::cpu", "{:08X}: [{:08X}] {: <30}", self.pc, instr.raw, format!("{}", instr));
 
@@ -65,7 +74,7 @@ impl Cpu {
             self.pc += 4;
         }
 
-        instr
+        Ok(instr)
     }
 
     pub fn cause_exception(&mut self, exception_code: u32) {

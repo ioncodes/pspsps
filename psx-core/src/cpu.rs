@@ -148,6 +148,20 @@ impl Cpu {
     }
 
     #[inline(always)]
+    pub fn write_register(&mut self, index: u8, value: RegisterValue) {
+        if index != 0 {
+            self.registers[index as usize] = value;
+        } else {
+            tracing::warn!(target: "psx_core::cpu", "Attempted to write to $zero at {:08X}", self.pc);
+        }
+    }
+
+    #[inline(always)]
+    pub fn read_register(&self, index: u8) -> RegisterValue {
+        self.registers[index as usize]
+    }
+
+    #[inline(always)]
     pub(crate) fn set_delay_slot(&mut self, branch_target: u32) {
         // Load the next instruction into the delay slot
         // Also cache the branch target

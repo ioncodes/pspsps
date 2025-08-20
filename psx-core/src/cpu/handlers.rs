@@ -105,14 +105,14 @@ pub fn shift<const DIRECTION: ShiftDirection, const TYPE: ShiftType, const VARIA
     };
 
     let shift_amount = if VARIABLE {
-        cpu.registers[instr.rs() as usize] // TODO: is this correct?
+        cpu.read_register(instr.rs()) // TODO: is this correct?
     } else {
         instr.shamt() as u32
     };
-    let value = cpu.registers[instr.rt() as usize];
+    let value = cpu.read_register(instr.rt());
 
     let result = shift(value, shift_amount);
-    cpu.registers[instr.rd() as usize] = result;
+    cpu.write_register(instr.rd(), result);
 }
 
 pub fn branch<
@@ -133,10 +133,7 @@ pub fn branch<
         _ => true, // Unconditional branches do not require comparison
     };
 
-    let perform_branch = compare(
-        cpu.registers[instr.rs() as usize],
-        cpu.registers[instr.rt() as usize],
-    );
+    let perform_branch = compare(cpu.read_register(instr.rs()), cpu.read_register(instr.rt()));
 
     if perform_branch {
         // return address = PC + 8, where:
@@ -148,7 +145,7 @@ pub fn branch<
         // Instructions like jal store the return address in reg 31 by default
         // however, for instructions like JALR the reg is explicit (and may be different)
         if LINK && !LINK_REGISTER_DEFINED {
-            cpu.registers[31] = return_address;
+            cpu.write_register(31, return_address);
         }
 
         let branch_target = match ADDRESSING {
@@ -162,7 +159,7 @@ pub fn branch<
         };
 
         if LINK && LINK_REGISTER_DEFINED {
-            cpu.registers[instr.rd() as usize] = return_address;
+            cpu.write_register(instr.rd(), return_address);
         }
 
         cpu.set_delay_slot(branch_target);
@@ -174,27 +171,27 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
 ) {
     // TODO: UNSIGNED = no exception
 
-    let x = cpu.registers[instr.rs() as usize];
+    let x = cpu.read_register(instr.rs());
     let y = if IMMEDIATE {
         instr.immediate() as u32
     } else {
-        cpu.registers[instr.rt() as usize]
+        cpu.read_register(instr.rt())
     };
-    let dst = if IMMEDIATE { instr.rt() } else { instr.rd() } as usize;
+    let dst = if IMMEDIATE { instr.rt() } else { instr.rd() };
 
     match OPERATION {
-        AluOperation::Or => cpu.registers[dst] = x | y,
-        AluOperation::And => cpu.registers[dst] = x & y,
-        AluOperation::Xor => cpu.registers[dst] = x ^ y,
-        AluOperation::Nor => cpu.registers[dst] = !(x | y),
+        AluOperation::Or => cpu.write_register(dst, x | y),
+        AluOperation::And => cpu.write_register(dst, x & y),
+        AluOperation::Xor => cpu.write_register(dst, x ^ y),
+        AluOperation::Nor => cpu.write_register(dst, !(x | y)),
         AluOperation::Add if IMMEDIATE => {
-            cpu.registers[dst] = x.wrapping_add_signed(y as i16 as i32)
+            cpu.write_register(dst, x.wrapping_add_signed(y as i16 as i32))
         }
-        AluOperation::Add if !IMMEDIATE => cpu.registers[dst] = x.wrapping_add(y),
+        AluOperation::Add if !IMMEDIATE => cpu.write_register(dst, x.wrapping_add(y)),
         AluOperation::Sub if IMMEDIATE => {
-            cpu.registers[dst] = x.wrapping_sub_signed(y as i16 as i32)
+            cpu.write_register(dst, x.wrapping_sub_signed(y as i16 as i32))
         }
-        AluOperation::Sub if !IMMEDIATE => cpu.registers[dst] = x.wrapping_sub(y),
+        AluOperation::Sub if !IMMEDIATE => cpu.write_register(dst, x.wrapping_sub(y)),
         AluOperation::Multiply => {
             let result = (x as i32).wrapping_mul(y as i32) as i64;
             cpu.hi = (result >> 32) as u32;
@@ -210,7 +207,7 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
             }
         }
         AluOperation::SetLessThan => {
-            cpu.registers[dst] = if (x as i32) < (y as i32) { 1 } else { 0 }
+            cpu.write_register(dst, if (x as i32) < (y as i32) { 1 } else { 0 })
         }
         _ => todo!(
             "Implement ALU operation: {:?}, unsigned: {}, immediate: {}",
@@ -231,32 +228,32 @@ pub fn load_store<
 ) {
     if IS_LUI {
         let imm = instr.immediate() as u32;
-        cpu.registers[instr.rt() as usize] = imm << 16;
+        cpu.write_register(instr.rt(), imm << 16);
         return;
     }
 
-    let base = cpu.registers[instr.rs() as usize];
+    let base = cpu.read_register(instr.rs());
     let offset = instr.offset();
     let vaddr = base.wrapping_add_signed(offset as i32);
 
     match TRANSFER_SIZE {
         MemoryTransferSize::Byte if TYPE == MemoryAccessType::Load => {
-            cpu.registers[instr.rt() as usize] = cpu.read_u8(vaddr) as u32;
+            cpu.write_register(instr.rt(), cpu.read_u8(vaddr) as u32);
         }
         MemoryTransferSize::Byte if TYPE == MemoryAccessType::Store => {
-            cpu.write_u8(vaddr, (cpu.registers[instr.rt() as usize] & 0xFF) as u8);
+            cpu.write_u8(vaddr, (cpu.read_register(instr.rt()) & 0xFF) as u8);
         }
         MemoryTransferSize::HalfWord if TYPE == MemoryAccessType::Load => {
-            cpu.registers[instr.rt() as usize] = cpu.read_u16(vaddr) as u32;
+            cpu.write_register(instr.rt(), cpu.read_u16(vaddr) as u32);
         }
         MemoryTransferSize::HalfWord if TYPE == MemoryAccessType::Store => {
-            cpu.write_u16(vaddr, (cpu.registers[instr.rt() as usize] & 0xFFFF) as u16);
+            cpu.write_u16(vaddr, (cpu.read_register(instr.rt()) & 0xFFFF) as u16);
         }
         MemoryTransferSize::Word if TYPE == MemoryAccessType::Load => {
-            cpu.registers[instr.rt() as usize] = cpu.read_u32(vaddr);
+            cpu.write_register(instr.rt(), cpu.read_u32(vaddr));
         }
         MemoryTransferSize::Word if TYPE == MemoryAccessType::Store => {
-            cpu.write_u32(vaddr, cpu.registers[instr.rt() as usize]);
+            cpu.write_u32(vaddr, cpu.read_register(instr.rt()));
         }
         _ => todo!(
             "Implement load/store operation with type: {:?}, transfer size: {:?}, portion: {:?}",
@@ -275,12 +272,12 @@ pub fn move_multiply<
 ) {
     match DIRECTION {
         MultiplyMoveDirection::ToRegister => match REGISTER {
-            MultiplyMoveRegister::Hi => cpu.hi = cpu.registers[instr.rs() as usize],
-            MultiplyMoveRegister::Lo => cpu.lo = cpu.registers[instr.rs() as usize],
+            MultiplyMoveRegister::Hi => cpu.hi = cpu.read_register(instr.rs()),
+            MultiplyMoveRegister::Lo => cpu.lo = cpu.read_register(instr.rs()),
         },
         MultiplyMoveDirection::FromRegister => match REGISTER {
-            MultiplyMoveRegister::Hi => cpu.registers[instr.rd() as usize] = cpu.hi,
-            MultiplyMoveRegister::Lo => cpu.registers[instr.rd() as usize] = cpu.lo,
+            MultiplyMoveRegister::Hi => cpu.write_register(instr.rd(), cpu.hi),
+            MultiplyMoveRegister::Lo => cpu.write_register(instr.rd(), cpu.lo),
         },
     }
 }
@@ -289,10 +286,10 @@ pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu) {
     match OPERATION {
         CopOperation::MoveTo | CopOperation::MoveControlTo => {
             cpu.cop0
-                .write_register(instr.rd() as u32, cpu.registers[instr.rt() as usize]);
+                .write_register(instr.rd() as u32, cpu.read_register(instr.rt()));
         }
         CopOperation::MoveFrom | CopOperation::MoveControlFrom => {
-            cpu.registers[instr.rt() as usize] = cpu.cop0.read_register(instr.rd() as u32);
+            cpu.write_register(instr.rt(), cpu.cop0.read_register(instr.rd() as u32));
         }
         CopOperation::ReturnFromException => {
             cpu.restore_from_exception();
@@ -301,7 +298,7 @@ pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu) {
 }
 
 pub fn system_call(_instr: &Instruction, cpu: &mut Cpu) {
-    let function_number = cpu.registers[4]; // BIOS function number is in $a0 (reg 4)
+    let function_number = cpu.read_register(4); // BIOS function number is in $a0 (reg 4)
     tracing::debug!(target: "psx_core::cpu", "syscall({:08X})", function_number);
     cpu.cause_exception(COP0_EXCEPTION_CODE_SYSCALL);
 }

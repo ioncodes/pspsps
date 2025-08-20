@@ -31,9 +31,9 @@ impl Psx {
             && self.cpu.pc == PSX_SIDELOAD_EXE_ADDRESS
         {
             self.cpu.mmu.load(exe.entry_point, &exe.data);
-            self.cpu.registers[28] = exe.initial_gp;
-            self.cpu.registers[29] = exe.sp();
-            self.cpu.registers[30] = exe.fp();
+            self.cpu.write_register(28, exe.initial_gp);
+            self.cpu.write_register(29, exe.sp());
+            self.cpu.write_register(30, exe.fp());
             self.cpu.pc = exe.entry_point;
 
             tracing::debug!(

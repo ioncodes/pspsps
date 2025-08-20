@@ -3,3 +3,4 @@
 .claude/
 bios/
 target/
+*.bin

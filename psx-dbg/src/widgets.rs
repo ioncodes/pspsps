@@ -1,4 +1,5 @@
 use egui::Ui;
+use egui_toast::Toasts;
 use psx_core::psx::Psx;
 use psx_core::cpu::decoder::Instruction;
 use std::collections::{HashSet, VecDeque};
@@ -31,4 +32,7 @@ pub struct SharedContext<'a> {
     
     // Trace
     pub trace_buffer: &'a mut VecDeque<(u32, Instruction)>,
+    
+    // Toasts
+    pub toasts: &'a mut Toasts,
 }

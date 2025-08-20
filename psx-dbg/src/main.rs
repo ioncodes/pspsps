@@ -1,5 +1,6 @@
 mod widgets;
 
+use clap::Parser;
 use eframe::egui;
 use egui_dock::{DockArea, DockState};
 use egui_toast::{Toast, ToastKind, Toasts};
@@ -15,6 +16,22 @@ use widgets::{
 };
 
 static BIOS: &[u8] = include_bytes!("../../bios/SCPH1000.BIN");
+
+#[derive(Parser, Debug)]
+#[command(about = "pspsps - a cute psx debugger", long_about = None)]
+struct Args {
+    #[arg(long, value_delimiter = ',', help = "List of tracing targets")]
+    targets: Option<Vec<String>>,
+
+    #[arg(long, help = "Path to EXE to sideload")]
+    sideload: Option<String>,
+
+    #[arg(long, help = "Enable debug logging")]
+    debug: bool,
+
+    #[arg(long, help = "Enable trace logging")]
+    trace: bool,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum TabKind {
@@ -51,6 +68,12 @@ pub struct PsxDebugger {
 
 impl Default for PsxDebugger {
     fn default() -> Self {
+        Self::new(None)
+    }
+}
+
+impl PsxDebugger {
+    fn new(sideload_file: Option<String>) -> Self {
         let mut dock_state = DockState::new(vec![TabKind::Cpu, TabKind::Trace]);
         let [_old, mmu_node] = dock_state.main_surface_mut().split_right(
             egui_dock::NodeIndex::root(),
@@ -70,8 +93,18 @@ impl Default for PsxDebugger {
         widgets.insert(TabKind::Breakpoints, Box::new(BreakpointsWidget::new()));
         widgets.insert(TabKind::Tty, Box::new(TtyWidget::new()));
 
+        let mut psx = Psx::new(BIOS);
+
+        // Sideload EXE if provided
+        if let Some(file_path) = sideload_file {
+            match std::fs::read(&file_path) {
+                Ok(exe_data) => psx.sideload_exe(exe_data),
+                Err(e) => panic!("Failed to read EXE file {}: {}", file_path, e),
+            }
+        }
+
         Self {
-            psx: Psx::new(BIOS),
+            psx,
             is_running: false,
             dock_state,
             breakpoints: HashSet::new(),
@@ -173,20 +206,30 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
 }
 
 fn main() -> eframe::Result {
-    let args = std::env::args().collect::<Vec<_>>();
-    let tracing_level = if args.contains(&"--debug".to_string()) {
+    let args = Args::parse();
+
+    let tracing_level = if args.debug {
         tracing::Level::DEBUG
-    } else if args.contains(&"--trace".to_string()) {
+    } else if args.trace {
         tracing::Level::TRACE
     } else {
         tracing::Level::INFO
     };
 
     let mut targets = tracing_subscriber::filter::Targets::new();
-    targets = targets.with_target("psx_core::cpu", tracing_level);
-    targets = targets.with_target("psx_core::mmu", tracing_level);
-    targets = targets.with_target("psx_core::tty", tracing_level);
-    targets = targets.with_target("psx_core::bios", tracing_level);
+
+    // Use custom targets if provided, otherwise use defaults
+    if let Some(custom_targets) = &args.targets {
+        for target in custom_targets {
+            let full_target = format!("psx_core::{}", target);
+            targets = targets.with_target(full_target, tracing_level);
+        }
+    } else {
+        targets = targets.with_target("psx_core::cpu", tracing_level);
+        targets = targets.with_target("psx_core::mmu", tracing_level);
+        targets = targets.with_target("psx_core::tty", tracing_level);
+        targets = targets.with_target("psx_core::bios", tracing_level);
+    }
 
     let fmt_layer = tracing_subscriber::fmt::layer()
         .without_time()
@@ -196,13 +239,13 @@ fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1200.0, 800.0])
-            .with_title("pspsps - psx debugger"),
+            .with_title("pspsps - a cute psx debugger"),
         ..Default::default()
     };
 
     eframe::run_native(
-        "pspsps - psx debugger",
+        "pspsps - a cute psx debugger",
         options,
-        Box::new(|_cc| Ok(Box::new(PsxDebugger::default()))),
+        Box::new(|_cc| Ok(Box::new(PsxDebugger::new(args.sideload)))),
     )
 }

@@ -18,7 +18,7 @@ impl Exe {
         let initial_gp = u32::from_le_bytes(exe_buffer[0x14..0x18].try_into().unwrap());
         let initial_sp_fp = u32::from_le_bytes(exe_buffer[0x30..0x34].try_into().unwrap());
         let sp_fp_offset = u32::from_le_bytes(exe_buffer[0x34..0x38].try_into().unwrap());
-        let license = exe_buffer[0x4C..]
+        let license = exe_buffer[0x4C..0x800]
             .iter()
             .take_while(|&&b| b != 0)
             .map(|&b| b as char)

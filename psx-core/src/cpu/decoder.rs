@@ -98,6 +98,7 @@ pub struct Instruction {
     pub raw: u32,
     pub opcode_type: InstructionType,
     pub handler: InstructionHandler,
+    pub(crate) is_delay_slot: bool,
 }
 
 impl Instruction {
@@ -110,6 +111,7 @@ impl Instruction {
             raw: 0,
             opcode_type: InstructionType::Invalid,
             handler: NOOP,
+            is_delay_slot: false,
         }
     }
 
@@ -209,30 +211,35 @@ impl Instruction {
                         raw: opcode,
                         opcode_type: InstructionType::Cop,
                         handler: handlers::cop::<{ handlers::CopOperation::MoveFrom }>,
+                        is_delay_slot: false,
                     },
                     0b00010 => Instruction {
                         opcode: Opcode::MoveControlFromCoprocessor(cop_num),
                         raw: opcode,
                         opcode_type: InstructionType::Cop,
                         handler: handlers::cop::<{ handlers::CopOperation::MoveControlFrom }>,
+                        is_delay_slot: false,
                     },
                     0b00100 => Instruction {
                         opcode: Opcode::MoveToCoprocessor(cop_num),
                         raw: opcode,
                         opcode_type: InstructionType::Cop,
                         handler: handlers::cop::<{ handlers::CopOperation::MoveTo }>,
+                        is_delay_slot: false,
                     },
                     0b00110 => Instruction {
                         opcode: Opcode::MoveControlToCoprocessor(cop_num),
                         raw: opcode,
                         opcode_type: InstructionType::Cop,
                         handler: handlers::cop::<{ handlers::CopOperation::MoveControlTo }>,
+                        is_delay_slot: false,
                     },
                     16 if cop_num == 0 => Instruction {
                         opcode: Opcode::ReturnFromException,
                         raw: opcode,
                         opcode_type: InstructionType::Cop,
                         handler: handlers::cop::<{ handlers::CopOperation::ReturnFromException }>,
+                        is_delay_slot: false,
                     },
                     _ => Instruction::invalid(),
                 }
@@ -350,7 +357,9 @@ impl Instruction {
                 _ => Some(Operand::Register(Register(self.rt(), false))),
             },
             InstructionType::JType => Some(Operand::Address(self.address() << 2)),
-            InstructionType::Cop => Some(Operand::Register(Register(self.rt(), false))),
+            InstructionType::Cop if self.opcode != Opcode::ReturnFromException => {
+                Some(Operand::Register(Register(self.rt(), false)))
+            }
             _ => None,
         }
     }
@@ -415,7 +424,9 @@ impl Instruction {
                 _ => Some(Operand::Register(Register(self.rs(), false))),
             },
             InstructionType::JType => None,
-            InstructionType::Cop => Some(Operand::Register(Register(self.rd(), true))),
+            InstructionType::Cop if self.opcode != Opcode::ReturnFromException => {
+                Some(Operand::Register(Register(self.rd(), true)))
+            }
             _ => None,
         }
     }

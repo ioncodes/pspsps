@@ -5,7 +5,7 @@ pub mod internal;
 pub mod lut;
 
 use crate::cpu::cop::cop0::Cop0;
-use crate::cpu::decoder::{Instruction, Opcode};
+use crate::cpu::decoder::Instruction;
 use crate::mmu::{Addressable, Mmu};
 use colored::Colorize;
 
@@ -20,7 +20,8 @@ pub struct Cpu {
     pub load_delay: Option<(RegisterIndex, RegisterValue)>, // Loads are delayed by one instruction
     pub delay_slot: Option<(Instruction, u32)>, // Delay slot (instruction, branch destination)
     pub cop0: Cop0,                             // COP0 registers
-    pub mmu: Mmu,                               // Owned MMU
+    pub mmu: Mmu,
+    exception_raised: bool, // Indicates if an exception has been raised
 }
 
 impl Cpu {
@@ -34,6 +35,7 @@ impl Cpu {
             delay_slot: None,
             cop0: Cop0::new(),
             mmu: Mmu::new(),
+            exception_raised: false,
         }
     }
 
@@ -43,7 +45,7 @@ impl Cpu {
             handler(self);
         }
 
-        if let Some((delay_slot, branch_target)) = self.delay_slot.take() {
+        if let Some((mut delay_slot, branch_target)) = self.delay_slot.take() {
             if delay_slot.is_invalid() {
                 tracing::error!(target: "psx_core::cpu", "Invalid instruction in delay slot at {:08X}", self.pc);
                 return Err(());
@@ -53,9 +55,12 @@ impl Cpu {
                 target: "psx_core::cpu", 
                 "{}", 
                 format!("Executing delay slot instruction: {}, with branch target: {:08X}", delay_slot, branch_target).yellow());
+
+            delay_slot.is_delay_slot = true; // Mark as a delay slot instruction
             (delay_slot.handler)(&delay_slot, self);
+
             self.pc = branch_target; // Set PC to the scheduled branch address
-            // TODO: what happens if syscall is here?
+
             return Ok(delay_slot);
         }
 
@@ -69,23 +74,26 @@ impl Cpu {
 
         (instr.handler)(&instr, self);
 
-        // exception causes PC to be set to the exception vector, do not progress PC
-        if instr.opcode != Opcode::SystemCall {
-            self.pc += 4;
+        // Do not progress PC if we just raised an exception
+        if self.exception_raised {
+            self.exception_raised = false;
+        } else {
+            self.pc = self.pc.wrapping_add(4);
         }
 
         Ok(instr)
     }
 
-    pub fn cause_exception(&mut self, exception_code: u32) {
+    pub fn cause_exception(&mut self, exception_code: u32, is_delay_slot: bool) {
         tracing::debug!(target: "psx_core::cpu", "Exception occurred: {:02X}", exception_code);
 
+        self.exception_raised = true;
+
         // Set the EPC to the current PC or PC - 4 if in a branch delay slot
-        self.cop0.epc = if !self.cop0.cause.branch_delay() {
-            self.pc
-        } else {
-            self.pc - 4
-        };
+        self.cop0.cause.set_branch_delay(is_delay_slot);
+        self.cop0.cause.set_branch_taken(false); // TODO: do we have to emulate this?
+
+        self.cop0.epc = if !is_delay_slot { self.pc } else { self.pc - 4 };
         self.cop0.cause.set_exception_code(exception_code); // Set the exception code
         self.cop0.sr.set_current_interrupt_enable(false); // Disable interrupts
 
@@ -104,7 +112,6 @@ impl Cpu {
     pub fn restore_from_exception(&mut self) {
         tracing::debug!(target: "psx_core::cpu", "Returning from exception");
 
-        self.pc = self.cop0.epc;
         self.cop0
             .sr
             .set_current_interrupt_enable(self.cop0.sr.previous_interrupt_enable());

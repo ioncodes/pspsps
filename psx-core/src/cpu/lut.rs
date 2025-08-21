@@ -8,6 +8,7 @@ macro_rules! instruction {
             raw: 0,
             opcode_type: crate::cpu::decoder::InstructionType::$opcode_type,
             handler: $handler,
+            is_delay_slot: false,
         }
     };
     ($name:ident($param:expr), $opcode_type:ident, $handler:expr) => {
@@ -16,6 +17,7 @@ macro_rules! instruction {
             raw: 0,
             opcode_type: crate::cpu::decoder::InstructionType::$opcode_type,
             handler: $handler,
+            is_delay_slot: false,
         }
     };
 }

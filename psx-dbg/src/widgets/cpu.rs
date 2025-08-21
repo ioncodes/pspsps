@@ -161,22 +161,7 @@ impl Widget for CpuWidget {
                                 "No"
                             }
                         ));
-                        ui.monospace(format!(
-                            "Current Mode: {}",
-                            if !context.state.cpu.cop0.sr.current_mode() {
-                                "Kernel"
-                            } else {
-                                "User"
-                            }
-                        ));
-                        ui.monospace(format!(
-                            "Enabled: {}",
-                            if context.state.cpu.cop0.sr.cop0_enable() {
-                                "Yes"
-                            } else {
-                                "No"
-                            }
-                        ));
+                        ui.monospace(format!("Exception PC: {:08X}", context.state.cpu.cop0.epc));
                     });
                 CollapsingHeader::new("Cause Register")
                     .default_open(true)

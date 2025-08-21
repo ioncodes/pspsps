@@ -1,6 +1,6 @@
 use crate::cpu::Cpu;
 use crate::cpu::cop::Cop;
-use crate::cpu::cop::cop0::COP0_EXCEPTION_CODE_SYSCALL;
+use crate::cpu::cop::cop0::{COP0_EXCEPTION_CODE_OV, COP0_EXCEPTION_CODE_SYSCALL};
 use crate::cpu::decoder::Instruction;
 use std::marker::ConstParamTy;
 
@@ -185,13 +185,45 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
         AluOperation::Xor => cpu.write_register(dst, x ^ y),
         AluOperation::Nor => cpu.write_register(dst, !(x | y)),
         AluOperation::Add if IMMEDIATE => {
-            cpu.write_register(dst, x.wrapping_add_signed(y as i16 as i32))
+            if UNSIGNED {
+                cpu.write_register(dst, x.wrapping_add_signed(y as i16 as i32));
+            } else {
+                match (x as i32).checked_add(y as i16 as i32) {
+                    Some(result) => cpu.write_register(dst, result as u32),
+                    None => cpu.cause_exception(COP0_EXCEPTION_CODE_OV, instr.is_delay_slot),
+                }
+            }
         }
-        AluOperation::Add if !IMMEDIATE => cpu.write_register(dst, x.wrapping_add(y)),
+        AluOperation::Add if !IMMEDIATE => {
+            if UNSIGNED {
+                cpu.write_register(dst, x.wrapping_add(y));
+            } else {
+                match (x as i32).checked_add(y as i32) {
+                    Some(result) => cpu.write_register(dst, result as u32),
+                    None => cpu.cause_exception(COP0_EXCEPTION_CODE_OV, instr.is_delay_slot),
+                }
+            }
+        }
         AluOperation::Sub if IMMEDIATE => {
-            cpu.write_register(dst, x.wrapping_sub_signed(y as i16 as i32))
+            if UNSIGNED {
+                cpu.write_register(dst, x.wrapping_sub_signed(y as i16 as i32));
+            } else {
+                match (x as i32).checked_sub(y as i16 as i32) {
+                    Some(result) => cpu.write_register(dst, result as u32),
+                    None => cpu.cause_exception(COP0_EXCEPTION_CODE_OV, instr.is_delay_slot),
+                }
+            }
         }
-        AluOperation::Sub if !IMMEDIATE => cpu.write_register(dst, x.wrapping_sub(y)),
+        AluOperation::Sub if !IMMEDIATE => {
+            if UNSIGNED {
+                cpu.write_register(dst, x.wrapping_sub(y));
+            } else {
+                match (x as i32).checked_sub(y as i32) {
+                    Some(result) => cpu.write_register(dst, result as u32),
+                    None => cpu.cause_exception(COP0_EXCEPTION_CODE_OV, instr.is_delay_slot),
+                }
+            }
+        }
         AluOperation::Multiply => {
             let result = (x as i32).wrapping_mul(y as i32) as i64;
             cpu.hi = (result >> 32) as u32;
@@ -297,10 +329,10 @@ pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu) {
     }
 }
 
-pub fn system_call(_instr: &Instruction, cpu: &mut Cpu) {
+pub fn system_call(instr: &Instruction, cpu: &mut Cpu) {
     let function_number = cpu.read_register(4); // BIOS function number is in $a0 (reg 4)
     tracing::debug!(target: "psx_core::cpu", "syscall({:08X})", function_number);
-    cpu.cause_exception(COP0_EXCEPTION_CODE_SYSCALL);
+    cpu.cause_exception(COP0_EXCEPTION_CODE_SYSCALL, instr.is_delay_slot);
 }
 
 pub fn debug_break(_instr: &Instruction, _cpu: &mut Cpu) {

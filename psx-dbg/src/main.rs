@@ -103,7 +103,7 @@ impl PsxDebugger {
             // Sideload EXE if provided
             if let Some(file_path) = sideload_file {
                 match std::fs::read(&file_path) {
-                    Ok(exe_data) => debugger.psx.sideload_exe(exe_data),
+                    Ok(exe_data) => debugger.sideload_exe(exe_data),
                     Err(e) => panic!("Failed to read EXE file {}: {}", file_path, e),
                 }
             }

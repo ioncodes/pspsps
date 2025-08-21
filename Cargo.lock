@@ -2481,6 +2481,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eb8486b569e12e2c32ad3e204dbaba5e4b5b216e9367044f25f1dba42341773"
 
 [[package]]
+name = "psx-bench"
+version = "0.1.0"
+dependencies = [
+ "psx-core",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "psx-core"
 version = "0.1.0"
 dependencies = [

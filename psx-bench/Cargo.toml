@@ -1,0 +1,8 @@
+[package]
+name = "psx-bench"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+psx-core = { path = "../psx-core" }
+tracing-subscriber = "0.3.19"

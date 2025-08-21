@@ -1,5 +1,3 @@
-use psx_core::mmu::Addressable;
-
 pub mod breakpoints;
 pub mod cpu;
 pub mod mmu;

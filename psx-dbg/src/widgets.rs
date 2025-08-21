@@ -1,7 +1,5 @@
 use egui::Ui;
 use egui_toast::Toasts;
-use psx_core::cpu::decoder::Instruction;
-use std::collections::{HashSet, VecDeque};
 
 pub mod breakpoints;
 pub mod cpu;

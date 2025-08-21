@@ -57,7 +57,7 @@ impl std::fmt::Display for TabKind {
 }
 
 pub struct PsxDebugger {
-    psx_thread: std::thread::JoinHandle<()>,
+    _psx_thread: std::thread::JoinHandle<()>,
     channel_send: crossbeam_channel::Sender<DebuggerEvent>,
     channel_recv: crossbeam_channel::Receiver<DebuggerEvent>,
     state: states::State,
@@ -115,7 +115,7 @@ impl PsxDebugger {
             .expect("Failed to send initial MMU update request");
 
         Self {
-            psx_thread: thread,
+            _psx_thread: thread,
             channel_send: request_channel_send,
             channel_recv: response_channel_recv,
             dock_state,
@@ -193,9 +193,7 @@ impl eframe::App for PsxDebugger {
             .expect("Failed to send update Trace event");
 
         let mut tab_viewer = TabViewer {
-            psx_thread: &mut self.psx_thread,
             channel_send: &self.channel_send,
-            channel_recv: &self.channel_recv,
             widgets: &mut self.widgets,
             toasts: &mut self.toasts,
             state: &mut self.state,
@@ -210,9 +208,7 @@ impl eframe::App for PsxDebugger {
 }
 
 struct TabViewer<'a> {
-    psx_thread: &'a mut std::thread::JoinHandle<()>,
     channel_send: &'a crossbeam_channel::Sender<DebuggerEvent>,
-    channel_recv: &'a crossbeam_channel::Receiver<DebuggerEvent>,
     widgets: &'a mut HashMap<TabKind, Box<dyn Widget>>,
     toasts: &'a mut Toasts,
     state: &'a mut states::State,

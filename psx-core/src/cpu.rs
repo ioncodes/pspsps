@@ -151,8 +151,6 @@ impl Cpu {
     pub fn write_register(&mut self, index: u8, value: RegisterValue) {
         if index != 0 {
             self.registers[index as usize] = value;
-        } else {
-            tracing::warn!(target: "psx_core::cpu", "Attempted to write to $zero at {:08X}", self.pc);
         }
     }
 

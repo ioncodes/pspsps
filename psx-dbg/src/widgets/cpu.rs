@@ -209,10 +209,10 @@ impl Widget for CpuWidget {
                 self.current_address = format!("{:08X}", context.state.cpu.pc);
             }
 
-            // if let Some(addr) = context.show_in_disassembly.take() {
-            //     self.current_address = format!("{:08X}", addr);
-            //     self.follow_pc = false;
-            // }
+            if let Some(addr) = context.show_in_disassembly.take() {
+                self.current_address = format!("{:08X}", addr);
+                self.follow_pc = false;
+            }
 
             ui.label("Address:");
             if ui.text_edit_singleline(&mut self.current_address).changed() {

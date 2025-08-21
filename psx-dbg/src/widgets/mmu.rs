@@ -1,5 +1,6 @@
 use super::{SharedContext, Widget};
 use egui::Ui;
+use psx_core::mmu::Addressable;
 
 pub struct MmuWidget {
     memory_address: u32,
@@ -31,7 +32,14 @@ impl Widget for MmuWidget {
             }
 
             if ui.button("Go to PC").clicked() {
-                self.memory_address = context.psx.cpu.pc;
+                self.memory_address = context.state.cpu.pc;
+            }
+
+            if ui.button("Refresh").clicked() {
+                context
+                    .channel_send
+                    .send(crate::io::DebuggerEvent::UpdateMmu)
+                    .expect("Failed to send refresh event");
             }
         });
 
@@ -46,7 +54,7 @@ impl Widget for MmuWidget {
 
             for col in 0..16 {
                 let byte_addr = addr + col;
-                let byte = context.psx.cpu.mmu.read_u8(byte_addr);
+                let byte = context.state.mmu.read_u8(byte_addr);
                 line.push_str(&format!("{:02X} ", byte));
 
                 if col == 7 {
@@ -57,7 +65,7 @@ impl Widget for MmuWidget {
             line.push_str(" |");
             for col in 0..16 {
                 let byte_addr = addr + col;
-                let byte = context.psx.cpu.mmu.read_u8(byte_addr);
+                let byte = context.state.mmu.read_u8(byte_addr);
                 if byte >= 32 && byte <= 126 {
                     line.push(byte as char);
                 } else {

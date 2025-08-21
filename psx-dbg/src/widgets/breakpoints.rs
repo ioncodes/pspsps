@@ -29,13 +29,19 @@ impl Widget for BreakpointsWidget {
                 if let Ok(addr) =
                     u32::from_str_radix(&self.new_breakpoint_address.trim_start_matches("0x"), 16)
                 {
-                    context.breakpoints.insert(addr);
+                    context
+                        .channel_send
+                        .send(crate::io::DebuggerEvent::AddBreakpoint(addr))
+                        .expect("Failed to send add breakpoint event");
                     self.new_breakpoint_address.clear();
                 }
             }
 
             if ui.button("Clear All").clicked() {
-                context.breakpoints.clear();
+                context
+                    .channel_send
+                    .send(crate::io::DebuggerEvent::ClearBreakpoints)
+                    .expect("Failed to send clear breakpoints event");
             }
         });
 
@@ -43,23 +49,35 @@ impl Widget for BreakpointsWidget {
 
         ui.heading("Active Breakpoints");
 
-        let breakpoints: Vec<u32> = context.breakpoints.iter().copied().collect();
+        let breakpoints: Vec<u32> = context
+            .state
+            .breakpoints
+            .breakpoints
+            .iter()
+            .copied()
+            .collect();
 
         for &addr in &breakpoints {
             ui.horizontal(|ui| {
                 ui.monospace(format!("{:08X}", addr));
 
                 if ui.button("Remove").clicked() {
-                    context.breakpoints.remove(&addr);
+                    context
+                        .channel_send
+                        .send(crate::io::DebuggerEvent::RemoveBreakpoint(addr))
+                        .expect("Failed to send remove breakpoint event");
                 }
 
-                if ui.button("Show in Disassembly").clicked() {
-                    *context.show_in_disassembly = Some(addr);
-                }
+                // if ui.button("Show in Disassembly").clicked() {
+                //     *context.show_in_disassembly = Some(addr);
+                // }
             });
         }
 
         ui.separator();
-        ui.label(format!("Total breakpoints: {}", context.breakpoints.len()));
+        ui.label(format!(
+            "Total breakpoints: {}",
+            context.state.breakpoints.breakpoints.len()
+        ));
     }
 }

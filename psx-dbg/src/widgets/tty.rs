@@ -14,12 +14,12 @@ impl Widget for TtyWidget {
         "TTY"
     }
 
-    fn ui(&mut self, ui: &mut Ui, _context: &mut SharedContext) {
+    fn ui(&mut self, ui: &mut Ui, context: &mut SharedContext) {
         ScrollArea::vertical()
             .auto_shrink([false, false])
             .stick_to_bottom(true)
             .show(ui, |ui| {
-                ui.monospace(psx_core::cpu::internal::TTY_BUFFER.lock().unwrap().clone());
+                ui.monospace(context.state.tty.buffer.clone());
             });
     }
 }

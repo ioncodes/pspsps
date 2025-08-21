@@ -6,7 +6,7 @@ pub mod lut;
 
 use crate::cpu::cop::cop0::Cop0;
 use crate::cpu::decoder::{Instruction, Opcode};
-use crate::mmu::Mmu;
+use crate::mmu::{Addressable, Mmu};
 use colored::Colorize;
 
 type RegisterValue = u32;

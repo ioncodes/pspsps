@@ -21,7 +21,7 @@ impl Widget for TraceWidget {
             .auto_shrink([false, false])
             .stick_to_bottom(true)
             .show(ui, |ui| {
-                for (address, instruction) in context.trace_buffer.iter() {
+                for (address, instruction) in context.state.trace.instructions.iter() {
                     ui.monospace(format!("{:08X}: {}", address, instruction));
                 }
             });

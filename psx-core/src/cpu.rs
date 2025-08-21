@@ -91,7 +91,7 @@ impl Cpu {
 
         // Set the EPC to the current PC or PC - 4 if in a branch delay slot
         self.cop0.cause.set_branch_delay(is_delay_slot);
-        self.cop0.cause.set_branch_taken(false); // TODO: do we have to emulate this?
+        self.cop0.cause.set_branch_taken(false); // TODO: do we have to emulate this? it's easy we can just set a flag in handlers
 
         self.cop0.epc = if !is_delay_slot { self.pc } else { self.pc - 4 };
         self.cop0.cause.set_exception_code(exception_code); // Set the exception code

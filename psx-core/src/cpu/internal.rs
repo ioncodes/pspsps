@@ -1,12 +1,15 @@
 use crate::cpu::{Cpu, lut};
-use lazy_static::lazy_static;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 type HookHandler = fn(&mut Cpu);
 
-lazy_static! {
-    pub(crate) static ref HOOKS: HashMap<u32, HookHandler> = {
+static HOOKS: OnceLock<HashMap<u32, HookHandler>> = OnceLock::new();
+static TTY_BUFFER: OnceLock<Arc<Mutex<String>>> = OnceLock::new();
+static TTY_LINE_BUFFER: OnceLock<Arc<Mutex<String>>> = OnceLock::new();
+
+pub fn cpu_hooks() -> &'static HashMap<u32, HookHandler> {
+    HOOKS.get_or_init(|| {
         let mut hooks = HashMap::new();
         hooks.insert(0xBFC0D460, bios_putchar as HookHandler); // TODO: just hook the BIOS putchar function? would make it compatible with other BIOS
         hooks.insert(0x000000A0, bios_function_call_a as HookHandler);
@@ -16,22 +19,32 @@ lazy_static! {
         hooks.insert(0x000000C0, bios_function_call_c as HookHandler);
         hooks.insert(0x800000C0, bios_function_call_c as HookHandler);
         hooks
-    };
-    pub static ref TTY_BUFFER: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
-    pub static ref TTY_LINE_BUFFER: Arc<Mutex<String>> = Arc::new(Mutex::new(String::new()));
+    })
+}
+
+pub fn tty_buffer() -> Arc<Mutex<String>> {
+    TTY_BUFFER
+        .get_or_init(|| Arc::new(Mutex::new(String::new())))
+        .clone()
+}
+
+pub fn tty_line_buffer() -> Arc<Mutex<String>> {
+    TTY_LINE_BUFFER
+        .get_or_init(|| Arc::new(Mutex::new(String::new())))
+        .clone()
 }
 
 fn bios_putchar(cpu: &mut Cpu) {
     let value = cpu.registers[lut::register_to_index("$a0")] as u8 as char;
 
-    TTY_BUFFER.lock().unwrap().push(value);
+    tty_buffer().lock().unwrap().push(value);
 
     if value == '\n' {
-        let line = TTY_LINE_BUFFER.lock().unwrap().clone();
+        let line = tty_line_buffer().lock().unwrap().clone();
         tracing::info!(target: "psx_core::tty", "{}", line);
-        TTY_LINE_BUFFER.lock().unwrap().clear();
+        tty_line_buffer().lock().unwrap().clear();
     } else {
-        TTY_LINE_BUFFER.lock().unwrap().push(value);
+        tty_line_buffer().lock().unwrap().push(value);
     }
 }
 

@@ -6,7 +6,7 @@ use super::{SharedContext, Widget};
 use egui::{CollapsingHeader, Label, RichText, Ui};
 use egui_toast::{Toast, ToastKind};
 use psx_core::cpu::cop::Cop;
-use psx_core::cpu::cop::cop0::COP0_SR;
+use psx_core::cpu::cop::cop0::{COP0_SR, Exception};
 use psx_core::cpu::decoder::Instruction;
 use psx_core::mmu::Addressable;
 use std::time::Duration;
@@ -171,7 +171,8 @@ impl Widget for CpuWidget {
                             context.state.cpu.cop0.read_register(13)
                         ));
                         ui.monospace(format!(
-                            "Exception Code: {}",
+                            "Exception Code: {} ({:08X})",
+                            Exception::from(context.state.cpu.cop0.cause.exception_code()),
                             context.state.cpu.cop0.cause.exception_code()
                         ));
                         ui.monospace(format!(

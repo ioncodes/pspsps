@@ -23,6 +23,53 @@ pub const COP0_EXCEPTION_CODE_BREAK: u32 = 9; // Breakpoint
 pub const COP0_EXCEPTION_CODE_RI: u32 = 10; // Reserved Instruction
 pub const COP0_EXCEPTION_CODE_OV: u32 = 12; // Arithmetic Overflow
 
+#[repr(u32)]
+pub enum Exception {
+    External = COP0_EXCEPTION_CODE_INT,
+    AddressErrorLoad = COP0_EXCEPTION_CODE_AD_EL,
+    AddressErrorStore = COP0_EXCEPTION_CODE_AD_ES,
+    InstructionBusError = COP0_EXCEPTION_CODE_IBE,
+    DataBusError = COP0_EXCEPTION_CODE_DBE,
+    Syscall = COP0_EXCEPTION_CODE_SYSCALL,
+    Breakpoint = COP0_EXCEPTION_CODE_BREAK,
+    ReservedInstruction = COP0_EXCEPTION_CODE_RI,
+    ArithmeticOverflow = COP0_EXCEPTION_CODE_OV,
+}
+
+impl From<u32> for Exception {
+    fn from(value: u32) -> Self {
+        match value {
+            COP0_EXCEPTION_CODE_INT => Exception::External,
+            COP0_EXCEPTION_CODE_AD_EL => Exception::AddressErrorLoad,
+            COP0_EXCEPTION_CODE_AD_ES => Exception::AddressErrorStore,
+            COP0_EXCEPTION_CODE_IBE => Exception::InstructionBusError,
+            COP0_EXCEPTION_CODE_DBE => Exception::DataBusError,
+            COP0_EXCEPTION_CODE_SYSCALL => Exception::Syscall,
+            COP0_EXCEPTION_CODE_BREAK => Exception::Breakpoint,
+            COP0_EXCEPTION_CODE_RI => Exception::ReservedInstruction,
+            COP0_EXCEPTION_CODE_OV => Exception::ArithmeticOverflow,
+            _ => panic!("Invalid exception code: {}", value),
+        }
+    }
+}
+
+impl std::fmt::Display for Exception {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let description = match self {
+            Exception::External => "External Interrupt",
+            Exception::AddressErrorLoad => "Address Error (Load)",
+            Exception::AddressErrorStore => "Address Error (Store)",
+            Exception::InstructionBusError => "Instruction Bus Error",
+            Exception::DataBusError => "Data Bus Error",
+            Exception::Syscall => "Syscall",
+            Exception::Breakpoint => "Breakpoint",
+            Exception::ReservedInstruction => "Reserved Instruction",
+            Exception::ArithmeticOverflow => "Arithmetic Overflow",
+        };
+        write!(f, "{}", description)
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct Cop0 {
     pub bpc: u32,             // Breakpoint Program Counter

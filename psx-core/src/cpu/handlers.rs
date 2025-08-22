@@ -245,7 +245,13 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
             }
         }
         AluOperation::SetLessThan => {
-            cpu.write_register(dst, if (x as i32) < (y as i32) { 1 } else { 0 })
+            let result = if UNSIGNED {
+                (x as u32) < (y as u32)
+            } else {
+                (x as i32) < (y as i32)
+            };
+
+            cpu.write_register(dst, if result { 1 } else { 0 });
         }
         _ => todo!(
             "Implement ALU operation: {:?}, unsigned: {}, immediate: {}",

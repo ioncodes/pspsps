@@ -233,15 +233,32 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
         AluOperation::Multiply => {
             let result = (x as i32).wrapping_mul(y as i32) as i64;
             cpu.hi = (result >> 32) as u32;
-            cpu.lo = (result & 0xFFFFFFFF) as u32;
+            cpu.lo = (result & 0xFFFF_FFFF) as u32;
         }
-        AluOperation::Divide => {
+        // https://gitlab.com/flio/rustation-ng/-/blob/master/src/psx/cpu.rs?ref_type=heads#L793
+        AluOperation::Divide if UNSIGNED => {
             if y == 0 {
-                cpu.hi = 0;
-                cpu.lo = 0;
+                cpu.lo = 0xFFFF_FFFF;
+                cpu.hi = x;
             } else {
                 cpu.lo = x.wrapping_div(y);
                 cpu.hi = x.wrapping_rem(y);
+            }
+        }
+        AluOperation::Divide if !UNSIGNED => {
+            if y == 0 {
+                if x as i32 >= 0 {
+                    cpu.lo = 0xFFFF_FFFF;
+                } else {
+                    cpu.lo = 1;
+                }
+                cpu.hi = x;
+            } else if x == 0x8000_0000 && y as i32 == -1 {
+                cpu.lo = 0x8000_0000;
+                cpu.hi = 0;
+            } else {
+                cpu.lo = (x as i32).wrapping_div(y as i32) as u32;
+                cpu.hi = (x as i32).wrapping_rem(y as i32) as u32;
             }
         }
         AluOperation::SetLessThan => {

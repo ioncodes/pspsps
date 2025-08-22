@@ -236,7 +236,38 @@ impl Widget for CpuWidget {
                 } else {
                     Label::new(RichText::new(line).monospace())
                 };
-                if ui.add(line).clicked() {
+
+                if ui
+                    .add(line)
+                    .on_hover_text(
+                        RichText::new(format!(
+                            "Raw: {:08X}\n\
+                         Opcode: {}\n\
+                         op: {:02X}\n\
+                         rs: {:02X}\n\
+                         rt: {:02X}\n\
+                         rd: {:02X}\n\
+                         shamt: {:02X}\n\
+                         funct: {:02X}\n\
+                         imm: {:04X}\n\
+                         offset: {}\n\
+                         address: {:08X}\n",
+                            instr.raw,
+                            instr.opcode,
+                            instr.op(),
+                            instr.rs(),
+                            instr.rt(),
+                            instr.rd(),
+                            instr.shamt(),
+                            instr.funct(),
+                            instr.immediate(),
+                            instr.offset(),
+                            instr.address()
+                        ))
+                        .monospace(),
+                    )
+                    .clicked()
+                {
                     if has_breakpoint {
                         context
                             .channel_send

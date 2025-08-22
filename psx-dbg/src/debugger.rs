@@ -165,6 +165,12 @@ impl Debugger {
                     self.is_running = false;
                     self.trace.clear();
 
+                    psx_core::cpu::internal::TTY_BUFFER.lock().unwrap().clear();
+                    psx_core::cpu::internal::TTY_LINE_BUFFER
+                        .lock()
+                        .unwrap()
+                        .clear();
+
                     self.channel_send
                         .send(DebuggerEvent::CpuUpdated(CpuState {
                             pc: self.psx.cpu.pc,

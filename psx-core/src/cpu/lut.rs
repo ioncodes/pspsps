@@ -286,20 +286,160 @@ pub static MIPS_REGIMM_LUT: [Instruction; 32] = [
             { handlers::BranchAddressing::RelativeOffset },
         >
     ),
-    /* 0x02 */ Instruction::invalid(),
-    /* 0x03 */ Instruction::invalid(),
-    /* 0x04 */ Instruction::invalid(),
-    /* 0x05 */ Instruction::invalid(),
-    /* 0x06 */ Instruction::invalid(),
-    /* 0x07 */ Instruction::invalid(),
-    /* 0x08 */ Instruction::invalid(),
-    /* 0x09 */ Instruction::invalid(),
-    /* 0x0A */ Instruction::invalid(),
-    /* 0x0B */ Instruction::invalid(),
-    /* 0x0C */ Instruction::invalid(),
-    /* 0x0D */ Instruction::invalid(),
-    /* 0x0E */ Instruction::invalid(),
-    /* 0x0F */ Instruction::invalid(),
+    /* 0x02 */
+    instruction!(
+        BranchLessThanZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::LessThanZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x03 */
+    instruction!(
+        BranchGreaterEqualZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x04 */
+    instruction!(
+        BranchLessThanZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::LessThanZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x05 */
+    instruction!(
+        BranchGreaterEqualZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x06 */
+    instruction!(
+        BranchLessThanZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::LessThanZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x07 */
+    instruction!(
+        BranchGreaterEqualZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x08 */
+    instruction!(
+        BranchLessThanZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::LessThanZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x09 */
+    instruction!(
+        BranchGreaterEqualZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x0A */
+    instruction!(
+        BranchLessThanZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::LessThanZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x0B */
+    instruction!(
+        BranchGreaterEqualZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x0C */
+    instruction!(
+        BranchLessThanZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::LessThanZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x0D */
+    instruction!(
+        BranchGreaterEqualZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x0E */
+    instruction!(
+        BranchLessThanZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::LessThanZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x0F */
+    instruction!(
+        BranchGreaterEqualZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
     /* 0x10 */
     instruction!(
         BranchLessThanZeroAndLink,
@@ -322,20 +462,160 @@ pub static MIPS_REGIMM_LUT: [Instruction; 32] = [
             { handlers::BranchAddressing::RelativeOffset },
         >
     ),
-    /* 0x12 */ Instruction::invalid(),
-    /* 0x13 */ Instruction::invalid(),
-    /* 0x14 */ Instruction::invalid(),
-    /* 0x15 */ Instruction::invalid(),
-    /* 0x16 */ Instruction::invalid(),
-    /* 0x17 */ Instruction::invalid(),
-    /* 0x18 */ Instruction::invalid(),
-    /* 0x19 */ Instruction::invalid(),
-    /* 0x1A */ Instruction::invalid(),
-    /* 0x1B */ Instruction::invalid(),
-    /* 0x1C */ Instruction::invalid(),
-    /* 0x1D */ Instruction::invalid(),
-    /* 0x1E */ Instruction::invalid(),
-    /* 0x1F */ Instruction::invalid(),
+    /* 0x12 */
+    instruction!(
+        BranchLessThanZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::LessThanZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x13 */
+    instruction!(
+        BranchGreaterEqualZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x14 */
+    instruction!(
+        BranchLessThanZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::LessThanZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x15 */
+    instruction!(
+        BranchGreaterEqualZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x16 */
+    instruction!(
+        BranchLessThanZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::LessThanZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x17 */
+    instruction!(
+        BranchGreaterEqualZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x18 */
+    instruction!(
+        BranchLessThanZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::LessThanZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x19 */
+    instruction!(
+        BranchGreaterEqualZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x1A */
+    instruction!(
+        BranchLessThanZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::LessThanZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x1B */
+    instruction!(
+        BranchGreaterEqualZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x1C */
+    instruction!(
+        BranchLessThanZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::LessThanZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x1D */
+    instruction!(
+        BranchGreaterEqualZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x1E */
+    instruction!(
+        BranchLessThanZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::LessThanZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
+    /* 0x1F */
+    instruction!(
+        BranchGreaterEqualZero,
+        IType,
+        handlers::branch::<
+            false,
+            false,
+            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchAddressing::RelativeOffset },
+        >
+    ),
 ];
 
 // opcode = anything else

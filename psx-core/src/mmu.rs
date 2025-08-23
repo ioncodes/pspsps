@@ -28,7 +28,7 @@ impl Addressable for Mmu {
         match address {
             0x1F80_1D80..=0x1F80_1DBB => self.spu.read(address), // TODO: not complete
             0x1F80_1000..=0x1F80_1FFF => {
-                tracing::error!(target: "psx_core::mmu", "Reading from unimplemented I/O port: {:08X}", address);
+                tracing::error!(target: "psx_core::mmu", address = %format!("{:08X}", address), "Reading from unimplemented I/O port");
                 0xFF
             }
             _ => self.memory[address as usize],
@@ -36,14 +36,13 @@ impl Addressable for Mmu {
     }
 
     #[inline(always)]
+    #[tracing::instrument(level = "trace", skip(self), fields(address = %format!("{:08X}", address), value = %format!("{:02X}", value)))]
     fn write_u8(&mut self, address: u32, value: u8) {
-        tracing::trace!(target: "psx_core::mmu", "write_u8({:08X}, {:02X})", address, value);
-
         let address = Self::canonicalize_virtual_address(address);
         match address {
             0x1F80_1D80..=0x1F80_1DBB => self.spu.write(address, value),
             0x1F80_1000..=0x1F80_1FFF => {
-                tracing::error!(target: "psx_core::mmu", "Writing {:02X} to unimplemented I/O port: {:08X}", value, address);
+                tracing::error!(target: "psx_core::mmu", address = %format!("{:08X}", address), value = %format!("{:02X}", value), "Writing to unimplemented I/O port");
             }
             _ => self.memory[address as usize] = value,
         }

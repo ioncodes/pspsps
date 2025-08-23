@@ -45,13 +45,13 @@ fn bios_putchar(cpu: &mut Cpu) {
 }
 
 fn bios_function_call_a(cpu: &mut Cpu) {
-    tracing::debug!(target: "psx_core::bios", "BIOS @ A({:08X})", cpu.read_register(9));
+    tracing::debug!(target: "psx_core::bios", function = %format!("A({:08X})", cpu.read_register(9)), "BIOS function called");
 }
 
 fn bios_function_call_b(cpu: &mut Cpu) {
-    tracing::debug!(target: "psx_core::bios", "BIOS @ B({:08X})", cpu.read_register(9));
+    tracing::debug!(target: "psx_core::bios", function = %format!("B({:08X})", cpu.read_register(9)), "BIOS function called");
 }
 
 fn bios_function_call_c(cpu: &mut Cpu) {
-    tracing::debug!(target: "psx_core::bios", "BIOS @ C({:08X})", cpu.read_register(9));
+    tracing::debug!(target: "psx_core::bios", function = %format!("C({:08X})", cpu.read_register(9)), "BIOS function called");
 }

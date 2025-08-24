@@ -1,12 +1,46 @@
-# React + Vite
+# PSX Trace Viewer
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A beautiful trace explorer with filtering capabilities. To be used along with `psx-ingestor` and `tracing-subscriber` (Rust).
 
-Currently, two official plugins are available:
+## Database Schema
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+The application expects a PostgreSQL table named `traces` with the following structure:
 
-## Expanding the ESLint configuration
+```sql
+CREATE TABLE traces (
+    id SERIAL PRIMARY KEY,
+    target VARCHAR NOT NULL,
+    level VARCHAR NOT NULL,
+    fields JSONB NOT NULL
+);
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Please ensure that you wipe the database before ingesting a new trace. `psx-ingestor` takes care of ingesting the data, wiping pre-existing data and also creating the schema. The ingestor expects specifically `tracing-subscribers`' JSON stdout (JSON objects line by line, not an actual JSON file).
+
+## Setup
+
+1. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+2. **Run the PostgreSQL database:**
+   ```bash
+   docker run --rm --name psx-trace-viewer -e POSTGRES_USER=psx -e POSTGRES_PASSWORD=psx -e POSTGRES_DB=psx -p 5432:5432 -d postgres:16
+   ```
+
+3. **Update environment variables (optional):**
+   Update the `.env.local`, default is:
+   ```
+   DATABASE_URL=postgresql://psx:psx@localhost:5432/psx
+   ```
+
+5. **Run the development server:**
+   ```bash
+   npm run dev
+   # or for prod
+   npm run build
+   npm start
+   ```
+
+6. **Open** [http://localhost:3000](http://localhost:3000) in your browser

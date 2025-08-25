@@ -7,6 +7,7 @@ const PSX_SIDELOAD_EXE_ADDRESS: u32 = 0x8003_0000;
 
 pub struct Psx {
     pub cpu: Cpu,
+    pub cycles: usize,
     sideload_exe: Option<Exe>,
 }
 
@@ -18,6 +19,7 @@ impl Psx {
 
         Self {
             cpu,
+            cycles: 0,
             sideload_exe: None,
         }
     }
@@ -48,6 +50,11 @@ impl Psx {
             );
         }
 
-        self.cpu.tick()
+        let instr = self.cpu.tick();
+
+        self.cycles += self.cpu.drain_cycles();
+        // TODO: tick according to cycles
+
+        instr
     }
 }

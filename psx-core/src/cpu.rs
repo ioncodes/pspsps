@@ -20,6 +20,7 @@ pub struct Cpu {
     pub delay_slot: Option<(Instruction, u32)>, // Delay slot (instruction, branch destination)
     pub cop0: Cop0,                             // COP0 registers
     pub mmu: Mmu,
+    pub cycles: usize,      // Number of cycles executed
     exception_raised: bool, // Indicates if an exception has been raised
 }
 
@@ -35,6 +36,7 @@ impl Cpu {
             cop0: Cop0::new(),
             mmu: Mmu::new(),
             exception_raised: false,
+            cycles: 0,
         }
     }
 
@@ -164,6 +166,18 @@ impl Cpu {
     #[inline(always)]
     pub fn read_register(&self, index: u8) -> RegisterValue {
         self.registers[index as usize]
+    }
+
+    #[inline(always)]
+    pub(crate) fn add_cycles(&mut self, cycles: usize) {
+        self.cycles += cycles;
+    }
+
+    #[inline(always)]
+    pub(crate) fn drain_cycles(&mut self) -> usize {
+        let cycles = self.cycles;
+        self.cycles = 0;
+        cycles
     }
 
     #[inline(always)]

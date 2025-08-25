@@ -113,6 +113,8 @@ pub fn shift<const DIRECTION: ShiftDirection, const TYPE: ShiftType, const VARIA
 
     let result = shift(value, shift_amount);
     cpu.write_register(instr.rd(), result);
+
+    cpu.add_cycles(1);
 }
 
 pub fn branch<
@@ -170,6 +172,8 @@ pub fn branch<
         // TODO: Verify if this is correct and does not cause weird side effects with the debugger or something
         cpu.set_delay_slot(cpu.pc + 8);
     }
+
+    cpu.add_cycles(1);
 }
 
 pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE: bool>(
@@ -234,6 +238,23 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
             let result = (x as i32).wrapping_mul(y as i32) as i64;
             cpu.hi = (result >> 32) as u32;
             cpu.lo = (result & 0xFFFF_FFFF) as u32;
+
+            let cycles = if UNSIGNED {
+                match x {
+                    0x00000000..=0x000007FF => 6,
+                    0x00000800..=0x000FFFFF => 9,
+                    0x00100000..=0xFFFFFFFF => 12,
+                }
+            } else {
+                match x {
+                    0x00000000..=0x000007FF | 0xFFFFF800..=0xFFFFFFFF => 6,
+                    0x00000800..=0x000FFFFF | 0xFFF00000..=0xFFFFF801 => 9,
+                    0x00100000..=0x7FFFFFFF | 0x80000000..=0xFFF00001 => 12,
+                }
+            };
+
+            cpu.add_cycles(cycles);
+            return;
         }
         // https://gitlab.com/flio/rustation-ng/-/blob/master/src/psx/cpu.rs?ref_type=heads#L793
         AluOperation::Divide if UNSIGNED => {
@@ -277,6 +298,8 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
             IMMEDIATE
         ),
     }
+
+    cpu.add_cycles(1);
 }
 
 pub fn load_store<
@@ -290,6 +313,7 @@ pub fn load_store<
     if IS_LUI {
         let imm = instr.immediate() as u32;
         cpu.write_register(instr.rt(), imm << 16);
+        cpu.add_cycles(1);
         return;
     }
 
@@ -300,9 +324,11 @@ pub fn load_store<
     match TRANSFER_SIZE {
         MemoryTransferSize::Byte if TYPE == MemoryAccessType::Load => {
             cpu.write_register(instr.rt(), cpu.read_u8(vaddr) as u32);
+            cpu.add_cycles(2);
         }
         MemoryTransferSize::Byte if TYPE == MemoryAccessType::Store => {
             cpu.write_u8(vaddr, (cpu.read_register(instr.rt()) & 0xFF) as u8);
+            cpu.add_cycles(1);
         }
         MemoryTransferSize::HalfWord if TYPE == MemoryAccessType::Load => {
             if vaddr % 2 != 0 {
@@ -311,6 +337,7 @@ pub fn load_store<
             }
 
             cpu.write_register(instr.rt(), cpu.read_u16(vaddr) as u32);
+            cpu.add_cycles(2);
         }
         MemoryTransferSize::HalfWord if TYPE == MemoryAccessType::Store => {
             if vaddr % 2 != 0 {
@@ -319,6 +346,7 @@ pub fn load_store<
             }
 
             cpu.write_u16(vaddr, (cpu.read_register(instr.rt()) & 0xFFFF) as u16);
+            cpu.add_cycles(1);
         }
         MemoryTransferSize::Word if TYPE == MemoryAccessType::Load => {
             if vaddr % 4 != 0 {
@@ -327,6 +355,7 @@ pub fn load_store<
             }
 
             cpu.write_register(instr.rt(), cpu.read_u32(vaddr));
+            cpu.add_cycles(2);
         }
         MemoryTransferSize::Word if TYPE == MemoryAccessType::Store => {
             if vaddr % 4 != 0 {
@@ -335,6 +364,7 @@ pub fn load_store<
             }
 
             cpu.write_u32(vaddr, cpu.read_register(instr.rt()));
+            cpu.add_cycles(1);
         }
         _ => todo!(
             "Implement load/store operation with type: {:?}, transfer size: {:?}, portion: {:?}",
@@ -361,6 +391,8 @@ pub fn move_multiply<
             MultiplyMoveRegister::Lo => cpu.write_register(instr.rd(), cpu.lo),
         },
     }
+
+    cpu.add_cycles(1);
 }
 
 pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu) {
@@ -368,12 +400,15 @@ pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu) {
         CopOperation::MoveTo | CopOperation::MoveControlTo => {
             cpu.cop0
                 .write_register(instr.rd() as u32, cpu.read_register(instr.rt()));
+            cpu.add_cycles(1);
         }
         CopOperation::MoveFrom | CopOperation::MoveControlFrom => {
             cpu.write_register(instr.rt(), cpu.cop0.read_register(instr.rd() as u32));
+            cpu.add_cycles(2);
         }
         CopOperation::ReturnFromException => {
             cpu.restore_from_exception();
+            cpu.add_cycles(1);
         }
     }
 }
@@ -382,8 +417,10 @@ pub fn system_call(instr: &Instruction, cpu: &mut Cpu) {
     let function_number = cpu.read_register(4); // BIOS function number is in $a0 (reg 4)
     tracing::debug!(target: "psx_core::cpu", "syscall({:08X})", function_number);
     cpu.cause_exception(Exception::Syscall, instr.is_delay_slot);
+    cpu.add_cycles(1);
 }
 
 pub fn debug_break(instr: &Instruction, cpu: &mut Cpu) {
     cpu.cause_exception(Exception::Breakpoint, instr.is_delay_slot);
+    cpu.add_cycles(1);
 }

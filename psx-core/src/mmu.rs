@@ -1,8 +1,10 @@
+use crate::gpu::{GP0_ADDRESS_END, GP0_ADDRESS_START, GP1_ADDRESS_END, GP1_ADDRESS_START, Gpu};
 use crate::spu::Spu;
 
 pub struct Mmu {
     pub memory: Box<[u8; 0xFFFF_FFFF]>, // 512 KB BIOS
     pub spu: Spu,
+    pub gpu: Gpu,
 }
 
 impl Mmu {
@@ -10,6 +12,7 @@ impl Mmu {
         Self {
             memory: vec![0xFF; 0xFFFF_FFFF].try_into().unwrap(),
             spu: Spu::new(),
+            gpu: Gpu::new(),
         }
     }
 
@@ -27,6 +30,8 @@ impl Addressable for Mmu {
 
         match address {
             0x1F80_1D80..=0x1F80_1DBB => self.spu.read(address), // TODO: not complete
+            GP0_ADDRESS_START..=GP0_ADDRESS_END => self.gpu.read_u8(address),
+            GP1_ADDRESS_START..=GP1_ADDRESS_END => self.gpu.read_u8(address),
             0x1F80_1000..=0x1F80_1FFF => {
                 tracing::error!(target: "psx_core::mmu", address = %format!("{:08X}", address), "Reading from unimplemented I/O port");
                 0xFF
@@ -41,6 +46,8 @@ impl Addressable for Mmu {
         let address = Self::canonicalize_virtual_address(address);
         match address {
             0x1F80_1D80..=0x1F80_1DBB => self.spu.write(address, value),
+            GP0_ADDRESS_START..=GP0_ADDRESS_END => self.gpu.write_u8(address, value),
+            GP1_ADDRESS_START..=GP1_ADDRESS_END => self.gpu.write_u8(address, value),
             0x1F80_1000..=0x1F80_1FFF => {
                 tracing::error!(target: "psx_core::mmu", address = %format!("{:08X}", address), value = %format!("{:02X}", value), "Writing to unimplemented I/O port");
             }

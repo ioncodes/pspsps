@@ -1,5 +1,6 @@
 use proc_bitfield::bitfield;
 
+#[derive(PartialEq, Eq)]
 pub enum Gp0Command {
     Misc,
     PolygonPrimitive,

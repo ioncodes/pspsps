@@ -144,15 +144,15 @@ impl Cpu {
         self.mmu.write_u32(address, value);
     }
 
-    pub fn read_u8(&self, address: u32) -> u8 {
+    pub fn read_u8(&mut self, address: u32) -> u8 {
         self.mmu.read_u8(address)
     }
 
-    pub fn read_u16(&self, address: u32) -> u16 {
+    pub fn read_u16(&mut self, address: u32) -> u16 {
         self.mmu.read_u16(address)
     }
 
-    pub fn read_u32(&self, address: u32) -> u32 {
+    pub fn read_u32(&mut self, address: u32) -> u32 {
         self.mmu.read_u32(address)
     }
 

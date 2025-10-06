@@ -323,7 +323,8 @@ pub fn load_store<
 
     match TRANSFER_SIZE {
         MemoryTransferSize::Byte if TYPE == MemoryAccessType::Load => {
-            cpu.write_register(instr.rt(), cpu.read_u8(vaddr) as u32);
+            let value = cpu.read_u8(vaddr) as u32;
+            cpu.write_register(instr.rt(), value);
             cpu.add_cycles(2);
         }
         MemoryTransferSize::Byte if TYPE == MemoryAccessType::Store => {
@@ -336,7 +337,8 @@ pub fn load_store<
                 return;
             }
 
-            cpu.write_register(instr.rt(), cpu.read_u16(vaddr) as u32);
+            let value = cpu.read_u16(vaddr) as u32;
+            cpu.write_register(instr.rt(), value);
             cpu.add_cycles(2);
         }
         MemoryTransferSize::HalfWord if TYPE == MemoryAccessType::Store => {
@@ -354,7 +356,8 @@ pub fn load_store<
                 return;
             }
 
-            cpu.write_register(instr.rt(), cpu.read_u32(vaddr));
+            let value = cpu.read_u32(vaddr);
+            cpu.write_register(instr.rt(), value);
             cpu.add_cycles(2);
         }
         MemoryTransferSize::Word if TYPE == MemoryAccessType::Store => {

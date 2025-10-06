@@ -52,8 +52,9 @@ impl Psx {
 
         let instr = self.cpu.tick();
 
-        self.cycles += self.cpu.drain_cycles();
-        // TODO: tick according to cycles
+        for _ in 0..self.cpu.drain_cycles() {
+            self.cpu.mmu.gpu.tick();
+        }
 
         instr
     }

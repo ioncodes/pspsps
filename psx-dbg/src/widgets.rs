@@ -3,12 +3,14 @@ use egui_toast::Toasts;
 
 pub mod breakpoints;
 pub mod cpu;
+pub mod gpu;
 pub mod mmu;
 pub mod trace;
 pub mod tty;
 
 pub use breakpoints::BreakpointsWidget;
 pub use cpu::CpuWidget;
+pub use gpu::GpuWidget;
 pub use mmu::MmuWidget;
 pub use trace::TraceWidget;
 pub use tty::TtyWidget;

@@ -13,7 +13,7 @@ use tracing_subscriber::Layer as _;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use widgets::{
-    BreakpointsWidget, CpuWidget, MmuWidget, SharedContext, TraceWidget, TtyWidget, Widget,
+    BreakpointsWidget, CpuWidget, GpuWidget, MmuWidget, SharedContext, TraceWidget, TtyWidget, Widget,
 };
 
 use crate::debugger::Debugger;
@@ -45,6 +45,7 @@ enum TabKind {
     Mmu,
     Breakpoints,
     Tty,
+    Gpu,
 }
 
 impl std::fmt::Display for TabKind {
@@ -55,6 +56,7 @@ impl std::fmt::Display for TabKind {
             TabKind::Mmu => write!(f, "MMU"),
             TabKind::Breakpoints => write!(f, "Breakpoints"),
             TabKind::Tty => write!(f, "TTY"),
+            TabKind::Gpu => write!(f, "GPU"),
         }
     }
 }
@@ -79,8 +81,13 @@ impl Default for PsxDebugger {
 impl PsxDebugger {
     fn new(sideload_file: Option<String>) -> Self {
         let mut dock_state = DockState::new(vec![TabKind::Cpu, TabKind::Trace]);
-        let [_old, mmu_node] = dock_state.main_surface_mut().split_right(
+        let [_left_node, right_node] = dock_state.main_surface_mut().split_right(
             egui_dock::NodeIndex::root(),
+            0.33,
+            vec![TabKind::Gpu],
+        );
+        let [_gpu_node, mmu_node] = dock_state.main_surface_mut().split_right(
+            right_node,
             0.5,
             vec![TabKind::Mmu],
         );
@@ -96,6 +103,7 @@ impl PsxDebugger {
         widgets.insert(TabKind::Mmu, Box::new(MmuWidget::new()));
         widgets.insert(TabKind::Breakpoints, Box::new(BreakpointsWidget::new()));
         widgets.insert(TabKind::Tty, Box::new(TtyWidget::new()));
+        widgets.insert(TabKind::Gpu, Box::new(GpuWidget::new()));
 
         let (request_channel_send, request_channel_recv) = crossbeam_channel::unbounded();
         let (response_channel_send, response_channel_recv) = crossbeam_channel::unbounded();
@@ -162,6 +170,9 @@ impl eframe::App for PsxDebugger {
                 }
                 DebuggerEvent::TtyUpdated(state) => {
                     self.state.tty = state;
+                }
+                DebuggerEvent::GpuUpdated(state) => {
+                    self.state.gpu = state;
                 }
                 DebuggerEvent::Paused => {
                     self.state.is_running = false;
@@ -287,7 +298,7 @@ fn main() -> eframe::Result {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1200.0, 800.0])
+            .with_inner_size([1700.0, 900.0])
             .with_title("pspsps - a cute psx debugger"),
         ..Default::default()
     };

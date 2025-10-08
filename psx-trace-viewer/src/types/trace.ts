@@ -5,11 +5,16 @@ export interface Trace {
   fields: Record<string, unknown>
 }
 
+export type MatchMode = 'wildcard' | 'exact'
+
 export interface TraceFilters {
   target?: string
+  targetMode?: MatchMode
   level?: string
+  levelMode?: MatchMode
   search?: string
-  [key: string]: string | undefined
+  searchMode?: MatchMode
+  [key: string]: string | MatchMode | undefined
 }
 
 export interface TraceQueryResult {

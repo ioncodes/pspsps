@@ -1,6 +1,7 @@
 use crate::io::DebuggerEvent;
 use crate::states::breakpoints::BreakpointsState;
 use crate::states::cpu::CpuState;
+use crate::states::gpu::GpuState;
 use crate::states::mmu::MmuState;
 use crate::states::trace::TraceState;
 use crate::states::tty::TtyState;
@@ -18,6 +19,7 @@ pub struct Debugger {
     trace: VecDeque<(u32, Instruction)>,
     breakpoints: HashSet<u32>,
     sideload_exe: Option<Vec<u8>>,
+    cycle_counter: u32,
 }
 
 static BIOS: &[u8] = include_bytes!("../../bios/SCPH1000.BIN");
@@ -32,6 +34,7 @@ impl Debugger {
             trace: VecDeque::with_capacity(1000),
             breakpoints: HashSet::new(),
             sideload_exe: None,
+            cycle_counter: 0,
         }
     }
 
@@ -61,6 +64,17 @@ impl Debugger {
                     self.trace.push_back((old_pc, instr));
                     if self.trace.len() > 1000 {
                         self.trace.pop_front();
+                    }
+
+                    // Push GPU frame every 100 cycles
+                    self.cycle_counter += 1;
+                    if self.cycle_counter >= 10000 {
+                        self.cycle_counter = 0;
+                        self.channel_send
+                            .send(DebuggerEvent::GpuUpdated(GpuState {
+                                frame: self.psx.cpu.mmu.gpu.internal_frame().clone(),
+                            }))
+                            .expect("Failed to send GPU update event");
                     }
                 } else {
                     // If step fails, we stop running

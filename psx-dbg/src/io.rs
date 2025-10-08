@@ -1,5 +1,6 @@
 use crate::states::breakpoints::BreakpointsState;
 use crate::states::cpu::CpuState;
+use crate::states::gpu::GpuState;
 use crate::states::mmu::MmuState;
 use crate::states::trace::TraceState;
 use crate::states::tty::TtyState;
@@ -24,4 +25,5 @@ pub enum DebuggerEvent {
     TtyUpdated(TtyState),
     CpuUpdated(CpuState),
     MmuUpdated(MmuState),
+    GpuUpdated(GpuState),
 }

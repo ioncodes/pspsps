@@ -288,7 +288,7 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
         }
         AluOperation::SetLessThan => {
             let result = if UNSIGNED {
-                (x as u32) < (y as u32)
+                x < y
             } else {
                 (x as i32) < (y as i32)
             };

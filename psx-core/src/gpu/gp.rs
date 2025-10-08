@@ -25,6 +25,8 @@ pub struct Gp {
     gp1_rw_cache: [u8; 4],
     read_counter: usize,
     gp1_status: u32,
+    vertical_resolution: u16,
+    horizontal_resolution: u16,
 }
 
 impl Gp {
@@ -38,6 +40,8 @@ impl Gp {
             vram: vec![0; 1024 * 1024],
             read_counter: 0,
             gp1_status: 0x1480_2000,
+            vertical_resolution: 240,
+            horizontal_resolution: 256,
         }
     }
 
@@ -189,7 +193,7 @@ impl Gp {
 
     pub fn process_gp1_cmd(&mut self, word: u32) {
         let cmd = (word >> 24) & 0xFF;
-        let _params = word & 0x00FF_FFFF;
+        let params = word & 0x00FF_FFFF;
 
         match cmd {
             0x00 => {
@@ -211,6 +215,27 @@ impl Gp {
                 self.state = State::WaitingForCommand;
                 self.gp0_rw_cache = [0; 4];
             }
+            0x08 => {
+                // Display Mode
+                self.horizontal_resolution = match params & 0b11 {
+                    0 => 256,
+                    1 => 320,
+                    2 => 512,
+                    3 => 640,
+                    _ => unreachable!(),
+                };
+                self.vertical_resolution = match (params >> 2) & 0b1 {
+                    0 => 240,
+                    1 => 480,
+                    _ => unreachable!(),
+                };
+
+                tracing::warn!(
+                    target: "psx_core::gpu",
+                    hres = self.horizontal_resolution, vres = self.vertical_resolution,
+                    "Set GPU display mode via GP1 command"
+                );
+            }
             _ => {}
         }
     }
@@ -223,6 +248,13 @@ impl Gp {
         }
 
         None
+    }
+
+    pub fn resolution(&self) -> (usize, usize) {
+        (
+            self.horizontal_resolution as usize,
+            self.vertical_resolution as usize,
+        )
     }
 }
 

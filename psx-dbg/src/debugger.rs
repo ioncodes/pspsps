@@ -66,13 +66,16 @@ impl Debugger {
                         self.trace.pop_front();
                     }
 
-                    // Push GPU frame every 100 cycles
+                    // Push GPU frame every 10000 cycles
                     self.cycle_counter += 1;
                     if self.cycle_counter >= 10000 {
                         self.cycle_counter = 0;
+                        let (width, height) = self.psx.cpu.mmu.gpu.gp.resolution();
                         self.channel_send
                             .send(DebuggerEvent::GpuUpdated(GpuState {
                                 frame: self.psx.cpu.mmu.gpu.internal_frame().clone(),
+                                width,
+                                height,
                             }))
                             .expect("Failed to send GPU update event");
                     }

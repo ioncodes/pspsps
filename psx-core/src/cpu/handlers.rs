@@ -235,9 +235,13 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
             }
         }
         AluOperation::Multiply => {
-            let result = (x as i32).wrapping_mul(y as i32) as i64;
+            let result = if UNSIGNED {
+                (x as u32 as u64).wrapping_mul(y as u32 as u64)
+            } else {
+                (x as i32 as i64).wrapping_mul(y as i32 as i64) as u64
+            };
             cpu.hi = (result >> 32) as u32;
-            cpu.lo = (result & 0xFFFF_FFFF) as u32;
+            cpu.lo = result as u32;
 
             let cycles = if UNSIGNED {
                 match x {

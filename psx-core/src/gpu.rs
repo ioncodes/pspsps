@@ -56,9 +56,9 @@ impl Gpu {
                         for col in 0..width {
                             let pixel_idx = idx + (row as usize * 256) + col as usize;
                             if pixel_idx < self.internal_frame.len() {
-                                let r = ((cmd.color() >> 16) & 0xFF) as u8;
+                                let r = (cmd.color() & 0xFF) as u8;
                                 let g = ((cmd.color() >> 8) & 0xFF) as u8;
-                                let b = (cmd.color() & 0xFF) as u8;
+                                let b = ((cmd.color() >> 16) & 0xFF) as u8;
                                 self.internal_frame[pixel_idx] = (r, g, b);
                             }
                         }

@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 pub struct ParsedCommand {
     pub cmd: Gp0Command,
     pub data: Vec<u32>,
-    pub ready: bool
+    pub ready: bool,
 }
 
 #[derive(PartialEq, Eq)]
@@ -21,8 +21,10 @@ pub struct Gp {
     fifo: VecDeque<ParsedCommand>,
     expected_data: usize,
     state: State,
-    rw_cache: [u8; 4],
+    gp0_rw_cache: [u8; 4],
+    gp1_rw_cache: [u8; 4],
     read_counter: usize,
+    gp1_status: u32,
 }
 
 impl Gp {
@@ -31,9 +33,11 @@ impl Gp {
             fifo: VecDeque::with_capacity(16),
             expected_data: 0,
             state: State::WaitingForCommand,
-            rw_cache: [0; 4],
+            gp0_rw_cache: [0; 4],
+            gp1_rw_cache: [0; 4],
             vram: vec![0; 1024 * 1024],
             read_counter: 0,
+            gp1_status: 0x1480_2000,
         }
     }
 
@@ -41,7 +45,7 @@ impl Gp {
         if self.fifo.is_empty() {
             return 0xFF;
         }
-        
+
         let last_cmd = self.fifo.back_mut().unwrap();
 
         // Only decrement expected data on word boundaries
@@ -72,7 +76,7 @@ impl Gp {
                 };
 
                 // Calculate current pixel position based on bytes read
-                let pixels_read = self.read_counter / 2;  // 2 bytes per pixel
+                let pixels_read = self.read_counter / 2; // 2 bytes per pixel
                 let current_x = src_x + (pixels_read % width);
                 let current_y = src_y + (pixels_read / width);
 
@@ -100,7 +104,7 @@ impl Gp {
         }
     }
 
-    pub fn process_word(&mut self, value: u32) {
+    pub fn process_gp0_word(&mut self, value: u32) {
         // Are we collecting extra data for a command?
         if self.expected_data > 0 {
             let last_cmd = self.fifo.back_mut().unwrap();
@@ -147,7 +151,7 @@ impl Gp {
                 }
 
                 // Reset current command/data buffer
-                self.rw_cache = [0; 4];
+                self.gp0_rw_cache = [0; 4];
 
                 if self.expected_data > 0 {
                     // Still expecting more data
@@ -170,11 +174,11 @@ impl Gp {
         self.fifo.push_back(ParsedCommand {
             cmd,
             data: Vec::with_capacity(self.expected_data),
-            ready: self.expected_data == 0
+            ready: self.expected_data == 0,
         });
 
         // Reset current command/data buffer
-        self.rw_cache = [0; 4];
+        self.gp0_rw_cache = [0; 4];
         self.read_counter = 0;
 
         // Does the command need any data?
@@ -183,8 +187,38 @@ impl Gp {
         }
     }
 
+    pub fn process_gp1_cmd(&mut self, word: u32) {
+        let cmd = (word >> 24) & 0xFF;
+        let _params = word & 0x00FF_FFFF;
+
+        match cmd {
+            0x00 => {
+                // Reset GPU
+                self.gp1_status = 0x1480_2000;
+                self.vram.fill(0);
+                self.fifo.clear();
+                self.expected_data = 0;
+                self.state = State::WaitingForCommand;
+                self.gp0_rw_cache = [0; 4];
+                self.read_counter = 0;
+
+                tracing::trace!(target: "psx_core::gpu", "GPU Reset via GP1 command");
+            }
+            0x01 => {
+                // Reset Command Buffer
+                self.fifo.clear();
+                self.expected_data = 0;
+                self.state = State::WaitingForCommand;
+                self.gp0_rw_cache = [0; 4];
+            }
+            _ => {}
+        }
+    }
+
     pub fn pop_command(&mut self) -> Option<ParsedCommand> {
-        if let Some(cmd) = self.fifo.front() && cmd.ready {
+        if let Some(cmd) = self.fifo.front()
+            && cmd.ready
+        {
             return self.fifo.pop_front();
         }
 
@@ -195,7 +229,7 @@ impl Gp {
 impl Addressable for Gp {
     fn read_u8(&mut self, address: u32) -> u8 {
         if address >= GP1_ADDRESS_START && address <= GP1_ADDRESS_END {
-            tracing::error!(target: "psx_core::gpu", address = %format!("{:08X}", address), "GP1 not implemented");
+            // TODO: GPUSTAT not implemented
             return 0xFF;
         }
 
@@ -204,20 +238,29 @@ impl Addressable for Gp {
 
     fn write_u8(&mut self, address: u32, value: u8) {
         if address >= GP1_ADDRESS_START && address <= GP1_ADDRESS_END {
-            tracing::error!(target: "psx_core::gpu", address = %format!("{:08X}", address), value = %format!("{:02X}", value), "GP1 not implemented");
-            return;
-        }
-
-        match address % GP0_ADDRESS_START {
-            0 => self.rw_cache[0] = value,
-            1 => self.rw_cache[1] = value,
-            2 => self.rw_cache[2] = value,
-            3 => {
-                self.rw_cache[3] = value;
-                let word = u32::from_le_bytes(self.rw_cache);
-                self.process_word(word);
+            match address % GP1_ADDRESS_START {
+                0 => self.gp1_rw_cache[0] = value,
+                1 => self.gp1_rw_cache[1] = value,
+                2 => self.gp1_rw_cache[2] = value,
+                3 => {
+                    self.gp1_rw_cache[3] = value;
+                    let word = u32::from_le_bytes(self.gp1_rw_cache);
+                    self.process_gp1_cmd(word);
+                }
+                _ => unreachable!(),
             }
-            _ => unreachable!(),
+        } else {
+            match address % GP0_ADDRESS_START {
+                0 => self.gp0_rw_cache[0] = value,
+                1 => self.gp0_rw_cache[1] = value,
+                2 => self.gp0_rw_cache[2] = value,
+                3 => {
+                    self.gp0_rw_cache[3] = value;
+                    let word = u32::from_le_bytes(self.gp0_rw_cache);
+                    self.process_gp0_word(word);
+                }
+                _ => unreachable!(),
+            }
         }
     }
 }

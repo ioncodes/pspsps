@@ -186,10 +186,10 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
         // Sign-extend for arithmetic operations, zero-extend for logical
         match OPERATION {
             AluOperation::Add | AluOperation::Sub | AluOperation::SetLessThan => {
-                instr.immediate() as i16 as i32 as u32  // Sign-extend
+                instr.immediate() as i16 as i32 as u32 // Sign-extend
             }
             _ => {
-                instr.immediate() as u32  // Zero-extend for logical ops
+                instr.immediate() as u32 // Zero-extend for logical ops
             }
         }
     } else {
@@ -362,7 +362,9 @@ pub fn load_store<
             cpu.write_u16(vaddr, (cpu.read_register(instr.rt()) & 0xFFFF) as u16);
             cpu.add_cycles(1);
         }
-        MemoryTransferSize::Word if TYPE == MemoryAccessType::Load => {
+        MemoryTransferSize::Word
+            if TYPE == MemoryAccessType::Load && PORTION == MemoryAccessPortion::Full =>
+        {
             if vaddr % 4 != 0 {
                 cpu.cause_exception(Exception::AddressErrorLoad, instr.is_delay_slot);
                 return;
@@ -372,12 +374,41 @@ pub fn load_store<
             cpu.write_register(instr.rt(), value);
             cpu.add_cycles(2);
         }
-        MemoryTransferSize::Word if TYPE == MemoryAccessType::Store => {
+        MemoryTransferSize::Word
+            if TYPE == MemoryAccessType::Load && PORTION != MemoryAccessPortion::Full =>
+        {
+            // LWL, LWR, SWL, SWR do *not* throw exceptions for address alignment!
+
+            // "It reads bytes only from the word in memory which contains the specified starting byte."
+            let bytes_to_read = (vaddr & 0b11) + 1; // this many bytes in word boundary -> subtract from vaddr when reading
+            let mut register_value = cpu.read_register(instr.rt());
+
+            for idx in 0..bytes_to_read {
+                let shift = 8 * (3 - idx);
+                let mask = 0xFFu32 << shift;
+
+                let value = cpu.read_u8(vaddr - idx);
+                register_value = (register_value & !mask) | ((value as u32) << shift);
+            }
+
+            cpu.write_register(instr.rt(), register_value);
+            cpu.add_cycles(2);
+        }
+        MemoryTransferSize::Word
+            if TYPE == MemoryAccessType::Store && PORTION == MemoryAccessPortion::Full =>
+        {
             if vaddr % 4 != 0 {
                 cpu.cause_exception(Exception::AddressErrorStore, instr.is_delay_slot);
                 return;
             }
 
+            cpu.write_u32(vaddr, cpu.read_register(instr.rt()));
+            cpu.add_cycles(1);
+        }
+        MemoryTransferSize::Word
+            if TYPE == MemoryAccessType::Store && PORTION != MemoryAccessPortion::Full =>
+        {
+            // TODO
             cpu.write_u32(vaddr, cpu.read_register(instr.rt()));
             cpu.add_cycles(1);
         }

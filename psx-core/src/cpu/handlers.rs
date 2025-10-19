@@ -136,21 +136,14 @@ pub fn branch<
         _ => true, // Unconditional branches do not require comparison
     };
 
+    // return address = PC + 8, where:
+    // PC + 0 = current instruction
+    // PC + 4 = next instruction (delay slot)
+    // PC + 8 = instruction after the delay slot
+    let return_address = cpu.pc + 8;
     let perform_branch = compare(cpu.read_register(instr.rs()), cpu.read_register(instr.rt()));
 
     if perform_branch {
-        // return address = PC + 8, where:
-        // PC + 0 = current instruction
-        // PC + 4 = next instruction (delay slot)
-        // PC + 8 = instruction after the delay slot
-        let return_address = cpu.pc + 8;
-
-        // Instructions like jal store the return address in reg 31 by default
-        // however, for instructions like JALR the reg is explicit (and may be different)
-        if LINK && !LINK_REGISTER_DEFINED {
-            cpu.write_register(crate::regidx("$ra"), return_address);
-        }
-
         let branch_target = match ADDRESSING {
             BranchAddressing::AbsoluteImmediate => {
                 (instr.address() << 2) | ((cpu.pc + 4) & 0xF000_0000)
@@ -170,10 +163,6 @@ pub fn branch<
             }
         };
 
-        if LINK && LINK_REGISTER_DEFINED {
-            cpu.write_register(instr.rd(), return_address);
-        }
-
         cpu.set_delay_slot(branch_target);
     } else {
         // If the branch is not taken, we still need to set the delay slot
@@ -181,6 +170,19 @@ pub fn branch<
         // with the branch target being PC + 8 (the instruction after the delay slot)
         // TODO: Verify if this is correct and does not cause weird side effects with the debugger or something
         cpu.set_delay_slot(cpu.pc + 8);
+    }
+
+    // Instructions like jal store the return address in reg 31 by default
+    // however, for instructions like JALR the reg is explicit (and may be different)
+    // This happens unconditionally (regardless of branch taken or not)
+    if LINK {
+        let reg_idx = if LINK_REGISTER_DEFINED {
+            instr.rd()
+        } else {
+            crate::regidx("$ra")
+        };
+
+        cpu.write_register(reg_idx, return_address);
     }
 
     cpu.add_cycles(1);

@@ -375,6 +375,17 @@ pub fn load_store<
             cpu.add_cycles(2);
         }
         MemoryTransferSize::Word
+            if TYPE == MemoryAccessType::Store && PORTION == MemoryAccessPortion::Full =>
+        {
+            if vaddr % 4 != 0 {
+                cpu.cause_exception(Exception::AddressErrorStore, instr.is_delay_slot);
+                return;
+            }
+
+            cpu.write_u32(vaddr, cpu.read_register(instr.rt()));
+            cpu.add_cycles(1);
+        }
+        MemoryTransferSize::Word
             if TYPE == MemoryAccessType::Load && PORTION != MemoryAccessPortion::Full =>
         {
             // LWL, LWR, SWL, SWR do *not* throw exceptions for address alignment!
@@ -410,22 +421,30 @@ pub fn load_store<
             cpu.add_cycles(2);
         }
         MemoryTransferSize::Word
-            if TYPE == MemoryAccessType::Store && PORTION == MemoryAccessPortion::Full =>
-        {
-            if vaddr % 4 != 0 {
-                cpu.cause_exception(Exception::AddressErrorStore, instr.is_delay_slot);
-                return;
-            }
-
-            cpu.write_u32(vaddr, cpu.read_register(instr.rt()));
-            cpu.add_cycles(1);
-        }
-        MemoryTransferSize::Word
             if TYPE == MemoryAccessType::Store && PORTION != MemoryAccessPortion::Full =>
         {
-            // TODO
-            cpu.write_u32(vaddr, cpu.read_register(instr.rt()));
-            cpu.add_cycles(1);
+            let bytes_to_write = match PORTION {
+                MemoryAccessPortion::Left => (vaddr & 0b11) + 1,
+                MemoryAccessPortion::Right => 4 - (vaddr & 0b11),
+                _ => unreachable!(),
+            };
+            let register_value = cpu.read_register(instr.rt());
+
+            for idx in 0..bytes_to_write {
+                let shift = match PORTION {
+                    MemoryAccessPortion::Left => 8 * (3 - idx),
+                    MemoryAccessPortion::Right => 8 * idx,
+                    _ => unreachable!(),
+                };
+                let vaddr = match PORTION {
+                    MemoryAccessPortion::Left => vaddr - idx,
+                    MemoryAccessPortion::Right => vaddr + idx,
+                    _ => unreachable!(),
+                };
+                cpu.write_u8(vaddr, (register_value >> shift) as u8);
+            }
+
+            cpu.add_cycles(2);
         }
         _ => todo!(
             "Implement load/store operation with type: {:?}, transfer size: {:?}, portion: {:?}",

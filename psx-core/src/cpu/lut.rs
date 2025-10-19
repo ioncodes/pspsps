@@ -739,6 +739,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
             { handlers::MemoryAccessType::Load },
             { handlers::MemoryTransferSize::Word },
             { handlers::MemoryAccessPortion::Full },
+            false,
         >
     ),
     /* 0x10 */ Instruction::invalid(),
@@ -766,6 +767,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
             { handlers::MemoryAccessType::Load },
             { handlers::MemoryTransferSize::Byte },
             { handlers::MemoryAccessPortion::Full },
+            true,
         >
     ),
     /* 0x21 */
@@ -777,6 +779,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
             { handlers::MemoryAccessType::Load },
             { handlers::MemoryTransferSize::HalfWord },
             { handlers::MemoryAccessPortion::Full },
+            true,
         >
     ),
     /* 0x22 */
@@ -788,6 +791,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
             { handlers::MemoryAccessType::Load },
             { handlers::MemoryTransferSize::Word },
             { handlers::MemoryAccessPortion::Left },
+            false,
         >
     ),
     /* 0x23 */
@@ -799,6 +803,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
             { handlers::MemoryAccessType::Load },
             { handlers::MemoryTransferSize::Word },
             { handlers::MemoryAccessPortion::Full },
+            false,
         >
     ),
     /* 0x24 */
@@ -810,6 +815,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
             { handlers::MemoryAccessType::Load },
             { handlers::MemoryTransferSize::Byte },
             { handlers::MemoryAccessPortion::Full },
+            false,
         >
     ),
     /* 0x25 */
@@ -821,6 +827,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
             { handlers::MemoryAccessType::Load },
             { handlers::MemoryTransferSize::HalfWord },
             { handlers::MemoryAccessPortion::Full },
+            false,
         >
     ),
     /* 0x26 */
@@ -832,6 +839,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
             { handlers::MemoryAccessType::Load },
             { handlers::MemoryTransferSize::Word },
             { handlers::MemoryAccessPortion::Right },
+            false,
         >
     ),
     /* 0x27 */ Instruction::invalid(),
@@ -844,6 +852,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
             { handlers::MemoryAccessType::Store },
             { handlers::MemoryTransferSize::Byte },
             { handlers::MemoryAccessPortion::Full },
+            false,
         >
     ),
     /* 0x29 */
@@ -855,6 +864,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
             { handlers::MemoryAccessType::Store },
             { handlers::MemoryTransferSize::HalfWord },
             { handlers::MemoryAccessPortion::Full },
+            false,
         >
     ),
     /* 0x2A */
@@ -866,6 +876,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
             { handlers::MemoryAccessType::Store },
             { handlers::MemoryTransferSize::Word },
             { handlers::MemoryAccessPortion::Left },
+            false,
         >
     ),
     /* 0x2B */
@@ -877,6 +888,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
             { handlers::MemoryAccessType::Store },
             { handlers::MemoryTransferSize::Word },
             { handlers::MemoryAccessPortion::Full },
+            false,
         >
     ),
     /* 0x2C */ Instruction::invalid(),
@@ -890,6 +902,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
             { handlers::MemoryAccessType::Store },
             { handlers::MemoryTransferSize::Word },
             { handlers::MemoryAccessPortion::Right },
+            false,
         >
     ),
     /* 0x2F */ Instruction::invalid(),

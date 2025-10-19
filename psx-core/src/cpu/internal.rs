@@ -1,4 +1,4 @@
-use crate::cpu::{Cpu, lut};
+use crate::cpu::Cpu;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
@@ -31,7 +31,7 @@ pub fn tty_line_buffer() -> &'static Mutex<String> {
 }
 
 fn bios_putchar(cpu: &mut Cpu) {
-    let value = cpu.registers[lut::register_to_index("$a0")] as u8 as char;
+    let value = cpu.read_register(crate::regidx("$a0")) as u8 as char;
 
     tty_buffer().lock().unwrap().push(value);
 

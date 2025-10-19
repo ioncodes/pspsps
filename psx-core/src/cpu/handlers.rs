@@ -147,7 +147,7 @@ pub fn branch<
         // Instructions like jal store the return address in reg 31 by default
         // however, for instructions like JALR the reg is explicit (and may be different)
         if LINK && !LINK_REGISTER_DEFINED {
-            cpu.write_register(31, return_address);
+            cpu.write_register(crate::regidx("$ra"), return_address);
         }
 
         let branch_target = match ADDRESSING {
@@ -503,7 +503,7 @@ pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu) {
 }
 
 pub fn system_call(instr: &Instruction, cpu: &mut Cpu) {
-    let function_number = cpu.read_register(4); // BIOS function number is in $a0 (reg 4)
+    let function_number = cpu.read_register(crate::regidx("$a0")); // BIOS function number is in $a0 (reg 4)
     tracing::debug!(target: "psx_core::cpu", "syscall({:08X})", function_number);
     cpu.cause_exception(Exception::Syscall, instr.is_delay_slot);
     cpu.add_cycles(1);

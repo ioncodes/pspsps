@@ -282,7 +282,7 @@ pub static MIPS_REGIMM_LUT: [Instruction; 32] = [
         handlers::branch::<
             false,
             false,
-            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchType::GreaterEqualZero },
             { handlers::BranchAddressing::RelativeOffset },
         >
     ),
@@ -304,7 +304,7 @@ pub static MIPS_REGIMM_LUT: [Instruction; 32] = [
         handlers::branch::<
             false,
             false,
-            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchType::GreaterEqualZero },
             { handlers::BranchAddressing::RelativeOffset },
         >
     ),
@@ -326,7 +326,7 @@ pub static MIPS_REGIMM_LUT: [Instruction; 32] = [
         handlers::branch::<
             false,
             false,
-            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchType::GreaterEqualZero },
             { handlers::BranchAddressing::RelativeOffset },
         >
     ),
@@ -348,7 +348,7 @@ pub static MIPS_REGIMM_LUT: [Instruction; 32] = [
         handlers::branch::<
             false,
             false,
-            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchType::GreaterEqualZero },
             { handlers::BranchAddressing::RelativeOffset },
         >
     ),
@@ -370,7 +370,7 @@ pub static MIPS_REGIMM_LUT: [Instruction; 32] = [
         handlers::branch::<
             false,
             false,
-            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchType::GreaterEqualZero },
             { handlers::BranchAddressing::RelativeOffset },
         >
     ),
@@ -392,7 +392,7 @@ pub static MIPS_REGIMM_LUT: [Instruction; 32] = [
         handlers::branch::<
             false,
             false,
-            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchType::GreaterEqualZero },
             { handlers::BranchAddressing::RelativeOffset },
         >
     ),
@@ -414,7 +414,7 @@ pub static MIPS_REGIMM_LUT: [Instruction; 32] = [
         handlers::branch::<
             false,
             false,
-            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchType::GreaterEqualZero },
             { handlers::BranchAddressing::RelativeOffset },
         >
     ),
@@ -436,7 +436,7 @@ pub static MIPS_REGIMM_LUT: [Instruction; 32] = [
         handlers::branch::<
             false,
             false,
-            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchType::GreaterEqualZero },
             { handlers::BranchAddressing::RelativeOffset },
         >
     ),
@@ -458,7 +458,7 @@ pub static MIPS_REGIMM_LUT: [Instruction; 32] = [
         handlers::branch::<
             true,
             false,
-            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchType::GreaterEqualZero },
             { handlers::BranchAddressing::RelativeOffset },
         >
     ),
@@ -480,7 +480,7 @@ pub static MIPS_REGIMM_LUT: [Instruction; 32] = [
         handlers::branch::<
             false,
             false,
-            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchType::GreaterEqualZero },
             { handlers::BranchAddressing::RelativeOffset },
         >
     ),
@@ -502,7 +502,7 @@ pub static MIPS_REGIMM_LUT: [Instruction; 32] = [
         handlers::branch::<
             false,
             false,
-            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchType::GreaterEqualZero },
             { handlers::BranchAddressing::RelativeOffset },
         >
     ),
@@ -524,7 +524,7 @@ pub static MIPS_REGIMM_LUT: [Instruction; 32] = [
         handlers::branch::<
             false,
             false,
-            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchType::GreaterEqualZero },
             { handlers::BranchAddressing::RelativeOffset },
         >
     ),
@@ -546,7 +546,7 @@ pub static MIPS_REGIMM_LUT: [Instruction; 32] = [
         handlers::branch::<
             false,
             false,
-            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchType::GreaterEqualZero },
             { handlers::BranchAddressing::RelativeOffset },
         >
     ),
@@ -568,7 +568,7 @@ pub static MIPS_REGIMM_LUT: [Instruction; 32] = [
         handlers::branch::<
             false,
             false,
-            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchType::GreaterEqualZero },
             { handlers::BranchAddressing::RelativeOffset },
         >
     ),
@@ -590,7 +590,7 @@ pub static MIPS_REGIMM_LUT: [Instruction; 32] = [
         handlers::branch::<
             false,
             false,
-            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchType::GreaterEqualZero },
             { handlers::BranchAddressing::RelativeOffset },
         >
     ),
@@ -612,7 +612,7 @@ pub static MIPS_REGIMM_LUT: [Instruction; 32] = [
         handlers::branch::<
             false,
             false,
-            { handlers::BranchType::BranchGreaterEqualZero },
+            { handlers::BranchType::GreaterEqualZero },
             { handlers::BranchAddressing::RelativeOffset },
         >
     ),
@@ -684,7 +684,7 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
         handlers::branch::<
             false,
             false,
-            { handlers::BranchType::BranchGreaterThanZero },
+            { handlers::BranchType::GreaterThanZero },
             { handlers::BranchAddressing::RelativeOffset },
         >
     ),

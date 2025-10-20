@@ -1,1 +1,0 @@
-docker run --rm --name psx-trace-viewer -e POSTGRES_USER=psx -e POSTGRES_PASSWORD=psx -e POSTGRES_DB=psx -p 5432:5432 -d postgres:16

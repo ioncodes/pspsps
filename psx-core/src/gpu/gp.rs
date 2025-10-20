@@ -1,6 +1,6 @@
 use crate::gpu::cmd::Gp0Command;
-use crate::gpu::{GP0_ADDRESS_START, GP1_ADDRESS_END, GP1_ADDRESS_START, VRAM_HEIGHT, VRAM_WIDTH};
-use crate::mmu::Addressable;
+use crate::gpu::{GP1_ADDRESS_END, GP1_ADDRESS_START, VRAM_HEIGHT, VRAM_WIDTH};
+use crate::mmu::bus::Bus32;
 use std::collections::VecDeque;
 
 pub struct ParsedCommand {
@@ -21,8 +21,6 @@ pub struct Gp {
     fifo: VecDeque<ParsedCommand>,
     expected_data: usize,
     state: State,
-    gp0_rw_cache: [u8; 4],
-    gp1_rw_cache: [u8; 4],
     read_counter: usize,
     gp1_status: u32,
     vertical_resolution: u16,
@@ -35,8 +33,6 @@ impl Gp {
             fifo: VecDeque::with_capacity(16),
             expected_data: 0,
             state: State::WaitingForCommand,
-            gp0_rw_cache: [0; 4],
-            gp1_rw_cache: [0; 4],
             vram: vec![0; VRAM_WIDTH * VRAM_HEIGHT * 2], // 2 bytes per pixel (16bit)
             read_counter: 0,
             gp1_status: 0x1480_2000,
@@ -45,15 +41,14 @@ impl Gp {
         }
     }
 
-    pub fn process_read(&mut self, address: u32) -> u8 {
+    pub fn process_read(&mut self, address: u32) -> u32 {
         if self.fifo.is_empty() {
             return 0xFF;
         }
 
         let last_cmd = self.fifo.back_mut().unwrap();
 
-        // Only decrement expected data on word boundaries
-        if self.expected_data > 0 && address % 4 == 0 {
+        if self.expected_data > 0 {
             self.expected_data -= 1;
         }
 
@@ -79,23 +74,31 @@ impl Gp {
                     (w as usize, h as usize)
                 };
 
-                // Calculate current pixel position based on bytes read
-                let pixels_read = self.read_counter / 2; // 2 bytes per pixel
-                let current_x = src_x + (pixels_read % width);
-                let current_y = src_y + (pixels_read / width);
+                // Calculate current pixel position based on words read (2 pixels per word)
+                let pixels_read = self.read_counter * 2; // 2 pixels per 32-bit word
+                let pixel0_x = src_x + (pixels_read % width);
+                let pixel0_y = src_y + (pixels_read / width);
+                let pixel1_x = src_x + ((pixels_read + 1) % width);
+                let pixel1_y = src_y + ((pixels_read + 1) / width);
 
-                let byte_in_pixel = self.read_counter % 2;
-                let idx = ((current_y * 1024) + current_x) * 2 + byte_in_pixel;
+                // Read two 16-bit pixels and pack into 32-bit word
+                let idx0 = ((pixel0_y * 1024) + pixel0_x) * 2;
+                let idx1 = ((pixel1_y * 1024) + pixel1_x) * 2;
+
+                let pixel0 = u16::from_le_bytes([self.vram[idx0], self.vram[idx0 + 1]]);
+                let pixel1 = u16::from_le_bytes([self.vram[idx1], self.vram[idx1 + 1]]);
+
+                let word = (pixel1 as u32) << 16 | (pixel0 as u32);
 
                 tracing::debug!(
                     target: "psx_core::gpu",
-                    command = %last_cmd.cmd, vram_addr = %format!("{:08X}", address), self.expected_data, data = %format!("{:08X?}", last_cmd.data), src_x, src_y, current_x, current_y, idx,
+                    command = %last_cmd.cmd, vram_addr = %format!("{:08X}", address), self.expected_data, data = %format!("{:08X?}", last_cmd.data), src_x, src_y, pixel0_x, pixel0_y, pixel1_x, pixel1_y, word = %format!("{:08X}", word),
                     "Reading from VRAM during GP0 VramToCpuBlit command"
                 );
 
                 self.read_counter += 1;
 
-                self.vram[idx]
+                word
             }
             _ => {
                 tracing::error!(
@@ -154,9 +157,6 @@ impl Gp {
                     }
                 }
 
-                // Reset current command/data buffer
-                self.gp0_rw_cache = [0; 4];
-
                 if self.expected_data > 0 {
                     // Still expecting more data
                     return;
@@ -182,7 +182,6 @@ impl Gp {
         });
 
         // Reset current command/data buffer
-        self.gp0_rw_cache = [0; 4];
         self.read_counter = 0;
 
         // Does the command need any data?
@@ -203,7 +202,6 @@ impl Gp {
                 self.fifo.clear();
                 self.expected_data = 0;
                 self.state = State::WaitingForCommand;
-                self.gp0_rw_cache = [0; 4];
                 self.read_counter = 0;
 
                 tracing::trace!(target: "psx_core::gpu", "GPU Reset via GP1 command");
@@ -213,7 +211,6 @@ impl Gp {
                 self.fifo.clear();
                 self.expected_data = 0;
                 self.state = State::WaitingForCommand;
-                self.gp0_rw_cache = [0; 4];
             }
             0x08 => {
                 // Display Mode
@@ -240,6 +237,7 @@ impl Gp {
         }
     }
 
+    #[inline(always)]
     pub fn pop_command(&mut self) -> Option<ParsedCommand> {
         if let Some(cmd) = self.fifo.front()
             && cmd.ready
@@ -250,6 +248,7 @@ impl Gp {
         None
     }
 
+    #[inline(always)]
     pub fn resolution(&self) -> (usize, usize) {
         (
             self.horizontal_resolution as usize,
@@ -257,10 +256,12 @@ impl Gp {
         )
     }
 
+    #[inline(always)]
     pub fn status(&self) -> u32 {
         self.gp1_status
     }
 
+    #[inline(always)]
     pub fn fifo_len(&self) -> usize {
         self.fifo.len()
     }
@@ -294,41 +295,23 @@ impl Gp {
     }
 }
 
-impl Addressable for Gp {
-    fn read_u8(&mut self, address: u32) -> u8 {
+impl Bus32 for Gp {
+    #[inline(always)]
+    fn read_u32(&mut self, address: u32) -> u32 {
         if address >= GP1_ADDRESS_START && address <= GP1_ADDRESS_END {
             // TODO: GPUSTAT not implemented
-            return 0xFF;
+            return 0xFFFFFFFF;
         }
 
         self.process_read(address)
     }
 
-    fn write_u8(&mut self, address: u32, value: u8) {
+    #[inline(always)]
+    fn write_u32(&mut self, address: u32, value: u32) {
         if address >= GP1_ADDRESS_START && address <= GP1_ADDRESS_END {
-            match address % GP1_ADDRESS_START {
-                0 => self.gp1_rw_cache[0] = value,
-                1 => self.gp1_rw_cache[1] = value,
-                2 => self.gp1_rw_cache[2] = value,
-                3 => {
-                    self.gp1_rw_cache[3] = value;
-                    let word = u32::from_le_bytes(self.gp1_rw_cache);
-                    self.process_gp1_cmd(word);
-                }
-                _ => unreachable!(),
-            }
+            self.process_gp1_cmd(value);
         } else {
-            match address % GP0_ADDRESS_START {
-                0 => self.gp0_rw_cache[0] = value,
-                1 => self.gp0_rw_cache[1] = value,
-                2 => self.gp0_rw_cache[2] = value,
-                3 => {
-                    self.gp0_rw_cache[3] = value;
-                    let word = u32::from_le_bytes(self.gp0_rw_cache);
-                    self.process_gp0_word(word);
-                }
-                _ => unreachable!(),
-            }
+            self.process_gp0_word(value);
         }
     }
 }

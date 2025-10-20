@@ -284,6 +284,7 @@ fn main() -> eframe::Result {
     } else {
         targets = targets.with_target("psx_core::cpu", tracing_level);
         targets = targets.with_target("psx_core::mmu", tracing_level);
+        targets = targets.with_target("psx_core::dma", tracing_level);
         targets = targets.with_target("psx_core::tty", tracing_level);
         targets = targets.with_target("psx_core::bios", tracing_level);
         targets = targets.with_target("psx_core::gpu", tracing_level);

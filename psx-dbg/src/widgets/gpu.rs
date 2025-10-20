@@ -1,9 +1,10 @@
 use crate::widgets::{SharedContext, Widget};
 use egui::Ui;
-use psx_core::gpu::{MAX_SCREEN_HEIGHT, MAX_SCREEN_WIDTH};
+use psx_core::gpu::{VRAM_HEIGHT, VRAM_WIDTH};
 
 pub struct GpuWidget {
-    texture: Option<egui::TextureHandle>,
+    vram_texture: Option<egui::TextureHandle>,
+    display_texture: Option<egui::TextureHandle>,
     magnifier_texture: Option<egui::TextureHandle>,
     show_popup: bool,
 }
@@ -11,7 +12,8 @@ pub struct GpuWidget {
 impl GpuWidget {
     pub fn new() -> Self {
         Self {
-            texture: None,
+            vram_texture: None,
+            display_texture: None,
             magnifier_texture: None,
             show_popup: false,
         }
@@ -24,44 +26,90 @@ impl Widget for GpuWidget {
     }
 
     fn ui(&mut self, ui: &mut Ui, shared_context: &mut SharedContext) {
-        let frame = &shared_context.state.gpu.frame;
-        let width = shared_context.state.gpu.width;
-        let height = shared_context.state.gpu.height;
+        let vram_frame = &shared_context.state.gpu.vram_frame;
+        let vram_width = shared_context.state.gpu.vram_width;
+        let vram_height = shared_context.state.gpu.vram_height;
 
-        if frame.len() == MAX_SCREEN_WIDTH * MAX_SCREEN_HEIGHT && width > 0 && height > 0 {
-            // Crop the frame buffer to the actual display resolution
-            let mut cropped_pixels = Vec::with_capacity(width * height);
-            for y in 0..height {
-                for x in 0..width {
-                    let idx = y * MAX_SCREEN_WIDTH + x;
-                    let (r, g, b) = frame[idx];
-                    cropped_pixels.push(egui::Color32::from_rgb(r, g, b));
+        let display_frame = &shared_context.state.gpu.display_frame;
+        let display_width = shared_context.state.gpu.display_width;
+        let display_height = shared_context.state.gpu.display_height;
+
+        // Display VRAM texture
+        ui.heading("VRAM");
+        if vram_frame.len() == VRAM_WIDTH * VRAM_HEIGHT && vram_width > 0 && vram_height > 0 {
+            // Convert VRAM to displayable format
+            let mut vram_pixels = Vec::with_capacity(vram_width * vram_height);
+            for y in 0..vram_height {
+                for x in 0..vram_width {
+                    let idx = y * VRAM_WIDTH + x;
+                    let (r, g, b) = vram_frame[idx];
+                    vram_pixels.push(egui::Color32::from_rgb(r, g, b));
                 }
             }
 
-            let color_image = egui::ColorImage {
-                size: [width, height],
-                pixels: cropped_pixels,
-                source_size: egui::Vec2::new(width as f32, height as f32),
+            let vram_color_image = egui::ColorImage {
+                size: [vram_width, vram_height],
+                pixels: vram_pixels,
+                source_size: egui::Vec2::new(vram_width as f32, vram_height as f32),
             };
 
-            // Update or create texture with nearest neighbor filtering
-            let texture = self.texture.get_or_insert_with(|| {
+            // Update or create VRAM texture
+            let vram_texture = self.vram_texture.get_or_insert_with(|| {
                 ui.ctx().load_texture(
-                    "gpu_frame",
-                    color_image.clone(),
+                    "gpu_vram_frame",
+                    vram_color_image.clone(),
                     egui::TextureOptions::NEAREST,
                 )
             });
+            vram_texture.set(vram_color_image.clone(), egui::TextureOptions::NEAREST);
 
-            // Update the texture with new data
-            texture.set(color_image.clone(), egui::TextureOptions::NEAREST);
+            // Display VRAM image
+            ui.add(egui::Image::new(egui::ImageSource::Texture(
+                egui::load::SizedTexture::new(
+                    vram_texture.id(),
+                    egui::vec2(vram_width as f32, vram_height as f32),
+                ),
+            )));
+        } else {
+            ui.label("Waiting for frame...");
+        }
 
-            // Display the image with click detection
+        ui.separator();
+
+        // Display the actual display frame
+        ui.heading("Display");
+        if !display_frame.is_empty() && display_width > 0 && display_height > 0 {
+            // Convert display frame to displayable format
+            let mut display_pixels = Vec::with_capacity(display_width * display_height);
+            for y in 0..display_height {
+                for x in 0..display_width {
+                    let idx = y * display_width + x;
+                    let (r, g, b) = display_frame[idx];
+                    display_pixels.push(egui::Color32::from_rgb(r, g, b));
+                }
+            }
+
+            let display_color_image = egui::ColorImage {
+                size: [display_width, display_height],
+                pixels: display_pixels,
+                source_size: egui::Vec2::new(display_width as f32, display_height as f32),
+            };
+
+            // Update or create display texture
+            let display_texture = self.display_texture.get_or_insert_with(|| {
+                ui.ctx().load_texture(
+                    "gpu_display_frame",
+                    display_color_image.clone(),
+                    egui::TextureOptions::NEAREST,
+                )
+            });
+            display_texture.set(display_color_image.clone(), egui::TextureOptions::NEAREST);
+
+            // Display the display frame with click detection for magnifier
             let image_response = ui.add(
                 egui::Image::new(egui::ImageSource::Texture(egui::load::SizedTexture::new(
-                    texture.id(),
-                    egui::vec2(width as f32, height as f32),
+                    display_texture.id(),
+                    egui::vec2(display_width as f32, display_height as f32),
                 )))
                 .sense(egui::Sense::click()),
             );
@@ -70,24 +118,25 @@ impl Widget for GpuWidget {
                 self.show_popup = !self.show_popup;
             }
 
-            // Show popup window with 2x scaled texture
+            // Show popup window with 2x scaled display texture
             if self.show_popup {
                 if self.magnifier_texture.is_none() {
                     self.magnifier_texture = Some(ui.ctx().load_texture(
                         "magnifier",
-                        color_image.clone(),
+                        display_color_image.clone(),
                         egui::TextureOptions::NEAREST,
                     ));
                 }
 
                 if let Some(magnifier_texture) = &mut self.magnifier_texture {
-                    magnifier_texture.set(color_image.clone(), egui::TextureOptions::NEAREST);
+                    magnifier_texture
+                        .set(display_color_image.clone(), egui::TextureOptions::NEAREST);
                     let texture_id = magnifier_texture.id();
-                    self.show_magnifier(ui, texture_id, width, height);
+                    self.show_magnifier(ui, texture_id, display_width, display_height);
                 }
             }
         } else {
-            ui.label("Waiting for GPU frame data...");
+            ui.label("Waiting for frame...");
         }
     }
 }

@@ -2,6 +2,8 @@ use super::{SharedContext, Widget};
 use egui::Ui;
 use psx_core::mmu::Addressable;
 
+const ROWS_TO_DISPLAY: u32 = 128;
+
 pub struct MmuWidget {
     memory_address: u32,
 }
@@ -47,7 +49,7 @@ impl Widget for MmuWidget {
 
         let start_addr = self.memory_address & !0xF;
 
-        for row in 0..32 {
+        for row in 0..ROWS_TO_DISPLAY {
             let addr = start_addr + (row * 16);
 
             let mut line = format!("{:08X}: ", addr);

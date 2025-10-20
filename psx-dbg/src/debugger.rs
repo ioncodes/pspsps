@@ -8,8 +8,11 @@ use crate::states::tty::TtyState;
 use crossbeam_channel::{Receiver, Sender};
 use psx_core::cpu::decoder::Instruction;
 use psx_core::cpu::internal;
+use psx_core::gpu::{VRAM_HEIGHT, VRAM_WIDTH};
 use psx_core::psx::Psx;
 use std::collections::{HashSet, VecDeque};
+
+const GPU_UPDATE_INTERVAL: u32 = 100_000;
 
 pub struct Debugger {
     pub psx: Psx,
@@ -66,16 +69,20 @@ impl Debugger {
                         self.trace.pop_front();
                     }
 
-                    // Push GPU frame every 10000 cycles
                     self.cycle_counter += 1;
-                    if self.cycle_counter >= 10000 {
+                    if self.cycle_counter >= GPU_UPDATE_INTERVAL {
                         self.cycle_counter = 0;
-                        let (width, height) = self.psx.cpu.mmu.gpu.gp.resolution();
+
+                        let (display_width, display_height) = self.psx.cpu.mmu.gpu.gp.resolution();
+
                         self.channel_send
                             .send(DebuggerEvent::GpuUpdated(GpuState {
-                                frame: self.psx.cpu.mmu.gpu.internal_frame().clone(),
-                                width,
-                                height,
+                                vram_frame: self.psx.cpu.mmu.gpu.internal_frame(),
+                                vram_width: VRAM_WIDTH,
+                                vram_height: VRAM_HEIGHT,
+                                display_frame: self.psx.cpu.mmu.gpu.display_frame(),
+                                display_width,
+                                display_height,
                             }))
                             .expect("Failed to send GPU update event");
                     }

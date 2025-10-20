@@ -13,7 +13,8 @@ use tracing_subscriber::Layer as _;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use widgets::{
-    BreakpointsWidget, CpuWidget, GpuWidget, MmuWidget, SharedContext, TraceWidget, TtyWidget, Widget,
+    BreakpointsWidget, CpuWidget, GpuWidget, MmuWidget, SharedContext, TraceWidget, TtyWidget,
+    Widget,
 };
 
 use crate::debugger::Debugger;
@@ -86,11 +87,10 @@ impl PsxDebugger {
             0.33,
             vec![TabKind::Gpu],
         );
-        let [_gpu_node, mmu_node] = dock_state.main_surface_mut().split_right(
-            right_node,
-            0.5,
-            vec![TabKind::Mmu],
-        );
+        let [_gpu_node, mmu_node] =
+            dock_state
+                .main_surface_mut()
+                .split_right(right_node, 0.5, vec![TabKind::Mmu]);
         dock_state.main_surface_mut().split_below(
             mmu_node,
             0.5,
@@ -298,7 +298,8 @@ fn main() -> eframe::Result {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1700.0, 900.0])
+            //.with_inner_size([1700.0, 900.0])
+            .with_maximized(true)
             .with_title("pspsps - a cute psx debugger"),
         ..Default::default()
     };

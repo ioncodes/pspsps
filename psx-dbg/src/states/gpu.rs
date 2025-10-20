@@ -6,4 +6,8 @@ pub struct GpuState {
     pub display_frame: Vec<(u8, u8, u8)>,
     pub display_width: usize,
     pub display_height: usize,
+    pub horizontal_resolution: usize,
+    pub vertical_resolution: usize,
+    pub gp1_status: u32,
+    pub fifo_len: usize,
 }

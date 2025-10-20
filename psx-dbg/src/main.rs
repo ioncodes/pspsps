@@ -13,8 +13,8 @@ use tracing_subscriber::Layer as _;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use widgets::{
-    BreakpointsWidget, CpuWidget, GpuWidget, MmuWidget, SharedContext, TraceWidget, TtyWidget,
-    Widget,
+    BreakpointsWidget, CpuWidget, DisplayWidget, GpuWidget, MmuWidget, SharedContext, TraceWidget,
+    TtyWidget, Widget,
 };
 
 use crate::debugger::Debugger;
@@ -47,6 +47,7 @@ enum TabKind {
     Breakpoints,
     Tty,
     Gpu,
+    Display,
 }
 
 impl std::fmt::Display for TabKind {
@@ -58,6 +59,7 @@ impl std::fmt::Display for TabKind {
             TabKind::Breakpoints => write!(f, "Breakpoints"),
             TabKind::Tty => write!(f, "TTY"),
             TabKind::Gpu => write!(f, "GPU"),
+            TabKind::Display => write!(f, "Display"),
         }
     }
 }
@@ -87,10 +89,13 @@ impl PsxDebugger {
             0.33,
             vec![TabKind::Gpu],
         );
-        let [_gpu_node, mmu_node] =
+        let [gpu_node, mmu_node] =
             dock_state
                 .main_surface_mut()
                 .split_right(right_node, 0.5, vec![TabKind::Mmu]);
+        dock_state
+            .main_surface_mut()
+            .split_below(gpu_node, 0.66, vec![TabKind::Display]);
         dock_state.main_surface_mut().split_below(
             mmu_node,
             0.5,
@@ -104,6 +109,7 @@ impl PsxDebugger {
         widgets.insert(TabKind::Breakpoints, Box::new(BreakpointsWidget::new()));
         widgets.insert(TabKind::Tty, Box::new(TtyWidget::new()));
         widgets.insert(TabKind::Gpu, Box::new(GpuWidget::new()));
+        widgets.insert(TabKind::Display, Box::new(DisplayWidget::new()));
 
         let (request_channel_send, request_channel_recv) = crossbeam_channel::unbounded();
         let (response_channel_send, response_channel_recv) = crossbeam_channel::unbounded();
@@ -298,8 +304,8 @@ fn main() -> eframe::Result {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            //.with_inner_size([1700.0, 900.0])
-            .with_maximized(true)
+            .with_inner_size([1700.0, 900.0])
+            //.with_maximized(true)
             .with_title("pspsps - a cute psx debugger"),
         ..Default::default()
     };

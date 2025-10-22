@@ -1,4 +1,5 @@
 use crate::gpu::cmd::Gp0Command;
+use crate::gpu::status::StatusRegister;
 use crate::gpu::{GP1_ADDRESS_END, GP1_ADDRESS_START, VRAM_HEIGHT, VRAM_WIDTH};
 use crate::mmu::bus::Bus32;
 use std::collections::VecDeque;
@@ -23,9 +24,7 @@ pub struct Gp {
     expected_data: usize,
     state: State,
     read_counter: usize,
-    gp1_status: u32,
-    vertical_resolution: u16,
-    horizontal_resolution: u16,
+    gp1_status: StatusRegister,
 }
 
 impl Gp {
@@ -36,9 +35,7 @@ impl Gp {
             state: State::WaitingForCommand,
             vram: vec![0; VRAM_WIDTH * VRAM_HEIGHT * 2], // 2 bytes per pixel (16bit)
             read_counter: 0,
-            gp1_status: 0x1480_2000,
-            vertical_resolution: 240,
-            horizontal_resolution: 256,
+            gp1_status: StatusRegister(0),
         }
     }
 
@@ -197,9 +194,9 @@ impl Gp {
         let params = word & 0x00FF_FFFF;
 
         match cmd {
+            // Reset GPU
             0x00 => {
-                // Reset GPU
-                self.gp1_status = 0x1480_2000;
+                self.gp1_status.0 = 0x1480_2000;
                 self.vram.fill(0);
                 self.fifo.clear();
                 self.expected_data = 0;
@@ -208,34 +205,43 @@ impl Gp {
 
                 tracing::trace!(target: "psx_core::gpu", "GPU Reset via GP1 command");
             }
+            // Reset Command Buffer
             0x01 => {
-                // Reset Command Buffer
                 self.fifo.clear();
                 self.expected_data = 0;
                 self.state = State::WaitingForCommand;
-            }
-            0x08 => {
-                // Display Mode
-                self.horizontal_resolution = match params & 0b11 {
-                    0 => 256,
-                    1 => 320,
-                    2 => 512,
-                    3 => 640,
-                    _ => unreachable!(),
-                };
-                self.vertical_resolution = match (params >> 2) & 0b1 {
-                    0 => 240,
-                    1 => 480,
-                    _ => unreachable!(),
-                };
 
-                tracing::warn!(
+                tracing::trace!(target: "psx_core::gpu", "Command Buffer Reset via GP1 command");
+            }
+            // Display Mode
+            0x08 => {
+                let hres1 = (params & 0b11) as u8;
+                let vres = ((params >> 2) & 0b1) == 1;
+                let video_mode = ((params >> 3) & 0b1) == 1;
+                // TODO: display area color depth
+                let interlace = ((params >> 5) & 0b1) == 1;
+                let hres2 = ((params >> 6) & 0b1) == 1;
+                // TODO: flip screen horizontally
+
+                self.gp1_status.set_horizontal_resolution1(hres1);
+                self.gp1_status.set_horizontal_resolution2(hres2);
+                self.gp1_status.set_vertical_resolution(vres);
+                self.gp1_status.set_vertical_interlace(interlace);
+                self.gp1_status.set_video_mode(video_mode.into());
+
+                tracing::trace!(
                     target: "psx_core::gpu",
-                    hres = self.horizontal_resolution, vres = self.vertical_resolution,
+                    hres = self.gp1_status.hres(), vres = self.gp1_status.vres(),
                     "Set GPU display mode via GP1 command"
                 );
             }
-            _ => {}
+            _ => {
+                tracing::error!(
+                    target: "psx_core::gpu",
+                    cmd = format!("{:02X}", cmd),
+                    "Unknown GP1 command"
+                );
+            }
         }
     }
 
@@ -253,14 +259,19 @@ impl Gp {
     #[inline(always)]
     pub fn resolution(&self) -> (usize, usize) {
         (
-            self.horizontal_resolution as usize,
-            self.vertical_resolution as usize,
+            self.gp1_status.hres() as usize,
+            self.gp1_status.vres() as usize,
         )
     }
 
     #[inline(always)]
-    pub fn status(&self) -> u32 {
-        self.gp1_status
+    pub fn status(&self) -> StatusRegister {
+        // TODO: actually check these
+        let mut gpustat = self.gp1_status;
+        gpustat.set_ready_to_receive_cmd_word(true);
+        gpustat.set_ready_to_receive_dma_block(true);
+        gpustat.set_ready_to_send_vram_to_cpu(true);
+        gpustat
     }
 
     #[inline(always)]
@@ -301,8 +312,7 @@ impl Bus32 for Gp {
     #[inline(always)]
     fn read_u32(&mut self, address: u32) -> u32 {
         if address >= GP1_ADDRESS_START && address <= GP1_ADDRESS_END {
-            // TODO: GPUSTAT not implemented
-            return 0xFFFFFFFF;
+            return self.status().0;
         }
 
         self.process_read(address)

@@ -13,3 +13,4 @@ tracing = "0.1.41"
 egui-toast = { git = "https://github.com/ioncodes/egui-toast" }
 clap = { version = "4.0", features = ["derive"] }
 crossbeam-channel = "0.5.15"
+rayon = "1.11.0"

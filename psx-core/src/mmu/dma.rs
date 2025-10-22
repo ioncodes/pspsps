@@ -1,5 +1,34 @@
 use proc_bitfield::bitfield;
 
+use crate::mmu::bus::{Bus8, Bus16, Bus32};
+
+pub const DMA0_ADDRESS_START: u32 = 0x1F80_1080;
+pub const DMA0_ADDRESS_END: u32 = DMA0_ADDRESS_START + 0xB - 1;
+pub const DMA1_ADDRESS_START: u32 = 0x1F80_1090;
+pub const DMA1_ADDRESS_END: u32 = DMA1_ADDRESS_START + 0xB - 1;
+pub const DMA2_ADDRESS_START: u32 = 0x1F80_10A0;
+pub const DMA2_ADDRESS_END: u32 = DMA2_ADDRESS_START + 0xB - 1;
+pub const DMA3_ADDRESS_START: u32 = 0x1F80_10B0;
+pub const DMA3_ADDRESS_END: u32 = DMA3_ADDRESS_START + 0xB - 1;
+pub const DMA4_ADDRESS_START: u32 = 0x1F80_10C0;
+pub const DMA4_ADDRESS_END: u32 = DMA4_ADDRESS_START + 0xB - 1;
+pub const DMA5_ADDRESS_START: u32 = 0x1F80_10D0;
+pub const DMA5_ADDRESS_END: u32 = DMA5_ADDRESS_START + 0xB - 1;
+pub const DMA6_ADDRESS_START: u32 = 0x1F80_10E0;
+pub const DMA6_ADDRESS_END: u32 = DMA6_ADDRESS_START + 0xB - 1;
+pub const DMA_CONTROL_REGISTER_ADDRESS_START: u32 = 0x1F80_10F0;
+pub const DMA_CONTROL_REGISTER_ADDRESS_END: u32 = DMA_CONTROL_REGISTER_ADDRESS_START + 0x4 - 1;
+pub const DMA_INTERRUPT_REGISTER_ADDRESS_START: u32 = 0x1F80_10F4;
+pub const DMA_INTERRUPT_REGISTER_ADDRESS_END: u32 = DMA_INTERRUPT_REGISTER_ADDRESS_START + 0x4 - 1;
+
+pub const MDEC_IN_CHANNEL_ID: u8 = 0;
+pub const MDEC_OUT_CHANNEL_ID: u8 = 1;
+pub const GPU_CHANNEL_ID: u8 = 2;
+pub const CDROM_CHANNEL_ID: u8 = 3;
+pub const SPU_CHANNEL_ID: u8 = 4;
+pub const PIO_CHANNEL_ID: u8 = 5;
+pub const OTC_CHANNEL_ID: u8 = 6;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransferMode {
     Burst,
@@ -23,6 +52,16 @@ impl TryFrom<u8> for TransferMode {
 impl From<TransferMode> for u8 {
     fn from(mode: TransferMode) -> u8 {
         mode as u8
+    }
+}
+
+impl std::fmt::Display for TransferMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TransferMode::Burst => write!(f, "Burst"),
+            TransferMode::Slice => write!(f, "Slice"),
+            TransferMode::LinkedList => write!(f, "LinkedList"),
+        }
     }
 }
 
@@ -74,29 +113,32 @@ bitfield! {
     }
 }
 
-pub struct Channel {
-    pub id: u8,
+#[derive(Clone, Copy)]
+pub struct Channel<const CHANNEL_ID: u8> {
     pub base_address: u32,               // D#_MADR
     pub block_control: u32,              // D#_BCR
     pub channel_control: ChannelControl, // D#_CHCR
 }
 
-impl Channel {
-    pub fn new(id: u8) -> Self {
+impl<const CHANNEL_ID: u8> Channel<CHANNEL_ID> {
+    pub fn new() -> Self {
         Self {
-            id,
             base_address: 0,
             block_control: 0,
             channel_control: ChannelControl(0),
         }
     }
 
+    /// D#_MADR
+    #[inline(always)]
     pub fn base_address(&self) -> u32 {
         // 0-23  Memory Address where the DMA will start reading from/writing to
         // 24-31 Not used (always zero)
         self.base_address & 0x00FF_FFFF
     }
 
+    /// D#_BCR
+    #[inline(always)]
     pub fn block_control(&self) -> u32 {
         // For SyncMode=0 (ie. for OTC and CDROM):
         //   0-15  BC    Number of words (0001h..FFFFh) (or 0=10000h words)
@@ -109,19 +151,100 @@ impl Channel {
 
         if let Ok(transfer_mode) = self.channel_control.transfer_mode() {
             return match transfer_mode {
-                TransferMode::Burst => 0x69,
-                TransferMode::Slice => 0x69,
+                TransferMode::Burst => self.block_control,
+                TransferMode::Slice => self.block_control,
                 TransferMode::LinkedList => 0,
             };
         }
 
-        tracing::error!(target: "psx_core::dma", channel_id = self.id, "Failed to get transfer mode");
+        tracing::error!(target: "psx_core::dma", channel_id = CHANNEL_ID, "Failed to get transfer mode");
         0
+    }
+
+    /// BC - SyncMode=0 only
+    #[inline(always)]
+    pub fn bcr_word_count(&self) -> u16 {
+        if CHANNEL_ID != OTC_CHANNEL_ID && CHANNEL_ID != CDROM_CHANNEL_ID {
+            tracing::warn!(target: "psx_core::dma", channel_id = CHANNEL_ID, "Accessing BC register in non-OTC or CDROM channel");
+        }
+
+        if let Ok(sync_mode) = self.channel_control.transfer_mode()
+            && sync_mode != TransferMode::Burst
+        {
+            tracing::warn!(target: "psx_core::dma", channel_id = CHANNEL_ID, "Accessing BC register in non-Burst mode");
+        }
+
+        (self.block_control & 0xFFFF) as u16
+    }
+
+    #[inline(always)]
+    pub fn set_completed(&mut self) {
+        self.channel_control.set_start_transfer(false);
+    }
+}
+
+impl<const CHANNEL_ID: u8> Bus8 for Channel<CHANNEL_ID> {
+    #[inline(always)]
+    fn read_u8(&mut self, address: u32) -> u8 {
+        let offset = address & 0b11;
+        match address & 0xF {
+            0x0..=0x03 => (self.base_address >> (offset * 8)) as u8,
+            0x4..=0x07 => (self.block_control >> (offset * 8)) as u8,
+            0x8..=0x0B => (self.channel_control.0 >> (offset * 8)) as u8,
+            _ => unreachable!(),
+        }
+    }
+
+    fn write_u8(&mut self, _address: u32, _value: u8) {
+        unreachable!()
+    }
+}
+
+impl<const CHANNEL_ID: u8> Bus16 for Channel<CHANNEL_ID> {
+    #[inline(always)]
+    fn read_u16(&mut self, address: u32) -> u16 {
+        let lo = self.read_u8(address) as u16;
+        let hi = self.read_u8(address + 1) as u16;
+        lo | (hi << 8)
+    }
+
+    fn write_u16(&mut self, _address: u32, _value: u16) {
+        unreachable!()
+    }
+}
+
+impl<const CHANNEL_ID: u8> Bus32 for Channel<CHANNEL_ID> {
+    #[inline(always)]
+    fn read_u32(&mut self, address: u32) -> u32 {
+        match address & 0xF {
+            0x0 => self.base_address,
+            0x4 => self.block_control,
+            0x8 => self.channel_control.0,
+            _ => unreachable!(),
+        }
+    }
+
+    #[inline(always)]
+    fn write_u32(&mut self, address: u32, value: u32) {
+        match address & 0xF {
+            0x0 => self.base_address = value,
+            0x4 => self.block_control = value,
+            0x8 => self.channel_control.0 = value,
+            _ => unreachable!(),
+        }
     }
 }
 
 pub struct Dma {
-    pub channels: [Channel; 7],
+    pub channels: (
+        Channel<0>,
+        Channel<1>,
+        Channel<2>,
+        Channel<3>,
+        Channel<4>,
+        Channel<5>,
+        Channel<6>,
+    ),
     pub control: ControlRegister,
     pub interrupt: InterruptRegister,
 }
@@ -129,17 +252,121 @@ pub struct Dma {
 impl Dma {
     pub fn new() -> Self {
         Self {
-            channels: [
-                Channel::new(0), // MDECin (RAM to MDEC)
-                Channel::new(1), // MDECout (MDEC to RAM)
-                Channel::new(2), // GPU (lists + image data)
-                Channel::new(3), // CDROM (CDROM to RAM)
-                Channel::new(4), // SPU
-                Channel::new(5), // PIO
-                Channel::new(6), // OTC
-            ],
+            channels: (
+                Channel::<0>::new(), // MDECin (RAM to MDEC)
+                Channel::<1>::new(), // MDECout (MDEC to RAM)
+                Channel::<2>::new(), // GPU (lists + image data)
+                Channel::<3>::new(), // CDROM (CDROM to RAM)
+                Channel::<4>::new(), // SPU
+                Channel::<5>::new(), // PIO
+                Channel::<6>::new(), // OTC
+            ),
             control: ControlRegister(0),
             interrupt: InterruptRegister(0),
+        }
+    }
+}
+
+impl Bus8 for Dma {
+    fn read_u8(&mut self, address: u32) -> u8 {
+        match address {
+            DMA0_ADDRESS_START..=DMA0_ADDRESS_END => self.channels.0.read_u8(address),
+            DMA1_ADDRESS_START..=DMA1_ADDRESS_END => self.channels.1.read_u8(address),
+            DMA2_ADDRESS_START..=DMA2_ADDRESS_END => self.channels.2.read_u8(address),
+            DMA3_ADDRESS_START..=DMA3_ADDRESS_END => self.channels.3.read_u8(address),
+            DMA4_ADDRESS_START..=DMA4_ADDRESS_END => self.channels.4.read_u8(address),
+            DMA5_ADDRESS_START..=DMA5_ADDRESS_END => self.channels.5.read_u8(address),
+            DMA6_ADDRESS_START..=DMA6_ADDRESS_END => self.channels.6.read_u8(address),
+            DMA_CONTROL_REGISTER_ADDRESS_START..=DMA_CONTROL_REGISTER_ADDRESS_END => {
+                let offset = address & 0b11;
+                (self.control.0 >> (offset * 8)) as u8
+            }
+            DMA_INTERRUPT_REGISTER_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => {
+                let offset = address & 0b11;
+                (self.interrupt.0 >> (offset * 8)) as u8
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[tracing::instrument(
+        target = "psx_core::dma",
+        level = "warn",
+        skip(self),
+        fields(address = %format!("{:08X}", address), value = %format!("{:04X}", value))
+    )]
+    #[inline(always)]
+    fn write_u8(&mut self, address: u32, value: u8) {
+        // https://psx-spx.consoledev.net/unpredictablethings/
+        self.write_u32(address, value as u32);
+    }
+}
+
+impl Bus16 for Dma {
+    fn read_u16(&mut self, address: u32) -> u16 {
+        match address {
+            DMA0_ADDRESS_START..=DMA0_ADDRESS_END => self.channels.0.read_u16(address),
+            DMA1_ADDRESS_START..=DMA1_ADDRESS_END => self.channels.1.read_u16(address),
+            DMA2_ADDRESS_START..=DMA2_ADDRESS_END => self.channels.2.read_u16(address),
+            DMA3_ADDRESS_START..=DMA3_ADDRESS_END => self.channels.3.read_u16(address),
+            DMA4_ADDRESS_START..=DMA4_ADDRESS_END => self.channels.4.read_u16(address),
+            DMA5_ADDRESS_START..=DMA5_ADDRESS_END => self.channels.5.read_u16(address),
+            DMA6_ADDRESS_START..=DMA6_ADDRESS_END => self.channels.6.read_u16(address),
+            DMA_CONTROL_REGISTER_ADDRESS_START..=DMA_CONTROL_REGISTER_ADDRESS_END => {
+                let lo = self.read_u8(address) as u16;
+                let hi = self.read_u8(address + 1) as u16;
+                lo | (hi << 8)
+            }
+            DMA_INTERRUPT_REGISTER_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => {
+                let lo = self.read_u8(address) as u16;
+                let hi = self.read_u8(address + 1) as u16;
+                lo | (hi << 8)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[tracing::instrument(
+        target = "psx_core::dma",
+        level = "warn",
+        skip(self),
+        fields(address = %format!("{:08X}", address), value = %format!("{:04X}", value))
+    )]
+    #[inline(always)]
+    fn write_u16(&mut self, address: u32, value: u16) {
+        // https://psx-spx.consoledev.net/unpredictablethings/
+        self.write_u32(address, value as u32);
+    }
+}
+
+impl Bus32 for Dma {
+    fn read_u32(&mut self, address: u32) -> u32 {
+        match address {
+            DMA0_ADDRESS_START..=DMA0_ADDRESS_END => self.channels.0.read_u32(address),
+            DMA1_ADDRESS_START..=DMA1_ADDRESS_END => self.channels.1.read_u32(address),
+            DMA2_ADDRESS_START..=DMA2_ADDRESS_END => self.channels.2.read_u32(address),
+            DMA3_ADDRESS_START..=DMA3_ADDRESS_END => self.channels.3.read_u32(address),
+            DMA4_ADDRESS_START..=DMA4_ADDRESS_END => self.channels.4.read_u32(address),
+            DMA5_ADDRESS_START..=DMA5_ADDRESS_END => self.channels.5.read_u32(address),
+            DMA6_ADDRESS_START..=DMA6_ADDRESS_END => self.channels.6.read_u32(address),
+            DMA_CONTROL_REGISTER_ADDRESS_START => self.control.0,
+            DMA_INTERRUPT_REGISTER_ADDRESS_START => self.interrupt.0,
+            _ => unreachable!(),
+        }
+    }
+
+    fn write_u32(&mut self, address: u32, value: u32) {
+        match address {
+            DMA0_ADDRESS_START..=DMA0_ADDRESS_END => self.channels.0.write_u32(address, value),
+            DMA1_ADDRESS_START..=DMA1_ADDRESS_END => self.channels.1.write_u32(address, value),
+            DMA2_ADDRESS_START..=DMA2_ADDRESS_END => self.channels.2.write_u32(address, value),
+            DMA3_ADDRESS_START..=DMA3_ADDRESS_END => self.channels.3.write_u32(address, value),
+            DMA4_ADDRESS_START..=DMA4_ADDRESS_END => self.channels.4.write_u32(address, value),
+            DMA5_ADDRESS_START..=DMA5_ADDRESS_END => self.channels.5.write_u32(address, value),
+            DMA6_ADDRESS_START..=DMA6_ADDRESS_END => self.channels.6.write_u32(address, value),
+            DMA_CONTROL_REGISTER_ADDRESS_START => self.control.0 = value,
+            DMA_INTERRUPT_REGISTER_ADDRESS_START => self.interrupt.0 = value,
+            _ => unreachable!(),
         }
     }
 }

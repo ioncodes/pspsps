@@ -54,6 +54,7 @@ impl Psx {
 
         for _ in 0..self.cpu.drain_cycles() {
             self.cpu.mmu.gpu.tick();
+            self.cpu.mmu.perform_dma_transfers();
         }
 
         instr

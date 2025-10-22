@@ -4,6 +4,7 @@ use crate::mmu::bus::Bus32;
 use std::collections::VecDeque;
 
 pub struct ParsedCommand {
+    pub raw: u32,
     pub cmd: Gp0Command,
     pub data: Vec<u32>,
     pub ready: bool,
@@ -176,6 +177,7 @@ impl Gp {
         tracing::debug!(target: "psx_core::gpu", command = %cmd, self.expected_data, "Received GP0 command");
 
         self.fifo.push_back(ParsedCommand {
+            raw: value,
             cmd,
             data: Vec::with_capacity(self.expected_data),
             ready: self.expected_data == 0,

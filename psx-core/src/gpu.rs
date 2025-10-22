@@ -78,7 +78,7 @@ impl Gpu {
                     self.process_rectangle_primitive_cmd(parsed_cmd, cmd)
                 }
                 _ => {
-                    tracing::error!(target: "psx_core::gpu", "Unimplemented GP0 command: {}", parsed_cmd.cmd);
+                    tracing::error!(target: "psx_core::gpu", cmd = %parsed_cmd.cmd, raw = %format!("{:032b} / {:08X}", parsed_cmd.raw, parsed_cmd.raw), "Unimplemented GP0 command");
                 }
             }
         }

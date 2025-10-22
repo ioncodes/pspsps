@@ -5,6 +5,7 @@
 pub mod cpu;
 pub mod exe;
 pub mod gpu;
+pub mod irq;
 pub mod mmu;
 pub mod psx;
 pub mod spu;

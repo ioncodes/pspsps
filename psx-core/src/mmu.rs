@@ -2,6 +2,7 @@ pub mod bus;
 pub mod dma;
 
 use crate::gpu::{GP0_ADDRESS_END, GP0_ADDRESS_START, GP1_ADDRESS_END, GP1_ADDRESS_START, Gpu};
+use crate::irq::{I_MASK_ADDR_END, I_MASK_ADDR_START, I_STAT_ADDR_END, I_STAT_ADDR_START, Irq};
 use crate::mmu::bus::{Bus8 as _, Bus32};
 use crate::mmu::dma::{Channel, DMA_INTERRUPT_REGISTER_ADDRESS_END, DMA0_ADDRESS_START, Dma};
 use crate::spu::Spu;
@@ -11,6 +12,7 @@ pub struct Mmu {
     pub spu: Spu,
     pub gpu: Gpu,
     pub dma: Dma,
+    pub irq: Irq,
 }
 
 impl Mmu {
@@ -20,6 +22,7 @@ impl Mmu {
             spu: Spu::new(),
             gpu: Gpu::new(),
             dma: Dma::new(),
+            irq: Irq::new(),
         }
     }
 
@@ -153,6 +156,8 @@ impl bus::Bus8 for Mmu {
 
         match address {
             DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.read_u8(address),
+            I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.read_u8(address),
+            I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.read_u8(address),
             0x1F80_1D80..=0x1F80_1DBB => self.spu.read(address), // TODO: not complete
             0x1F80_1000..=0x1F80_1FFF => {
                 tracing::error!(target: "psx_core::mmu", address = %format!("{:08X}", address), "Reading from unimplemented I/O port");
@@ -169,6 +174,8 @@ impl bus::Bus8 for Mmu {
             DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => {
                 self.dma.write_u8(address, value)
             }
+            I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.write_u8(address, value),
+            I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.write_u8(address, value),
             0x1F80_1D80..=0x1F80_1DBB => self.spu.write(address, value),
             0x1F80_1000..=0x1F80_1FFF => {
                 tracing::error!(target: "psx_core::mmu", address = %format!("{:08X}", address), value = %format!("{:02X}", value), "Writing to unimplemented I/O port");
@@ -184,6 +191,8 @@ impl bus::Bus16 for Mmu {
         let address = Self::canonicalize_virtual_address(address);
         match address {
             DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.read_u16(address),
+            I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.read_u16(address),
+            I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.read_u16(address),
             _ => u16::from_le_bytes([self.read_u8(address), self.read_u8(address + 1)]),
         }
     }
@@ -195,6 +204,8 @@ impl bus::Bus16 for Mmu {
             DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => {
                 self.dma.write_u16(address, value)
             }
+            I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.write_u16(address, value),
+            I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.write_u16(address, value),
             _ => {
                 self.write_u8(address, (value & 0xFF) as u8);
                 self.write_u8(address + 1, ((value >> 8) & 0xFF) as u8);
@@ -211,6 +222,8 @@ impl bus::Bus32 for Mmu {
             DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.read_u32(address),
             GP0_ADDRESS_START..=GP0_ADDRESS_END => self.gpu.read_u32(address),
             GP1_ADDRESS_START..=GP1_ADDRESS_END => self.gpu.read_u32(address),
+            I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.read_u32(address),
+            I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.read_u32(address),
             _ => u32::from_le_bytes([
                 self.read_u8(address),
                 self.read_u8(address + 1),
@@ -229,6 +242,8 @@ impl bus::Bus32 for Mmu {
             }
             GP0_ADDRESS_START..=GP0_ADDRESS_END => self.gpu.write_u32(address, value),
             GP1_ADDRESS_START..=GP1_ADDRESS_END => self.gpu.write_u32(address, value),
+            I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.write_u32(address, value),
+            I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.write_u32(address, value),
             _ => {
                 self.write_u8(address, (value & 0xFF) as u8);
                 self.write_u8(address + 1, ((value >> 8) & 0xFF) as u8);

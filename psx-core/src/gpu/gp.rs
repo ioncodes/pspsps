@@ -20,11 +20,11 @@ enum State {
 
 pub struct Gp {
     pub vram: Vec<u8>,
+    pub gp1_status: StatusRegister,
     fifo: VecDeque<ParsedCommand>,
     expected_data: usize,
     state: State,
     read_counter: usize,
-    gp1_status: StatusRegister,
 }
 
 impl Gp {

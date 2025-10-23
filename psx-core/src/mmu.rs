@@ -129,7 +129,7 @@ impl Mmu {
         };
 
         let mut current_addr = madr - (bcr as u32 * 4);
-        write_u32(current_addr, 0x00FFFFFF); // End marker
+        write_u32(current_addr, 0xFFFFFFFF); // End marker
 
         for _ in 0..bcr {
             let previous_addr = current_addr;
@@ -139,24 +139,60 @@ impl Mmu {
     }
 
     pub fn perform_gpu_dma(&mut self) {
-        let channel = &self.dma.channels.2;
+        let channel = self.dma.channels.2;
 
-        let src_addr = channel.base_address();
+        let mut src_addr = channel.base_address();
         let madr_step = channel.channel_control.madr_step();
 
-        let total_words = match channel.channel_control.transfer_mode() {
-            TransferMode::Burst => channel.bcr_word_count(),
-            TransferMode::Slice => channel.bcr_block_total(),
-            TransferMode::LinkedList => {
-                tracing::error!(target: "psx_core::dma", "LinkedList mode not supported");
-                return;
+        let mut transfer_words = |addr: u32, count: u32| {
+            for idx in 0..count {
+                let addr = addr.wrapping_add_signed(idx as i32 * madr_step);
+                let word = self.read_u32(addr);
+                self.write_u32(GP0_ADDRESS_START, word);
             }
         };
 
-        for idx in 0..total_words {
-            let addr = src_addr.wrapping_add_signed(idx as i32 * madr_step);
-            let word = self.read_u32(addr);
-            self.write_u32(GP0_ADDRESS_START, word);
+        match channel.channel_control.transfer_mode() {
+            TransferMode::Burst => {
+                let total_words = channel.bcr_word_count();
+                transfer_words(src_addr, total_words);
+            }
+            TransferMode::Slice => {
+                let total_words = channel.bcr_block_total();
+                transfer_words(src_addr, total_words);
+            }
+            TransferMode::LinkedList => loop {
+                let header = self.read_u32(src_addr);
+                let next_addr = header & 0x00FFFFFF; // next node
+                let words = header >> 24; // number of words
+
+                if next_addr == 0x00FFFFFF {
+                    break;
+                }
+
+                tracing::trace!(
+                    target: "psx_core::dma",
+                    address = format!("{:08X}", src_addr),
+                    words = words,
+                    next_address = format!("{:08X}", next_addr),
+                    "Transfering DMA linked list node"
+                );
+
+                for idx in 0..words {
+                    let addr = src_addr.wrapping_add_signed((idx + 1) as i32 * madr_step);
+                    let word = self.read_u32(addr);
+                    self.write_u32(GP0_ADDRESS_START, word);
+
+                    tracing::trace!(
+                        target: "psx_core::dma",
+                        address = format!("{:08X}", addr),
+                        word = format!("{:08X}", word),
+                        "Sent word from linked list node to GP0"
+                    );
+                }
+
+                src_addr = next_addr;
+            },
         }
     }
 

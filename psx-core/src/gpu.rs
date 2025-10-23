@@ -157,20 +157,22 @@ impl Gpu {
             "CPU to VRAM blit"
         );
 
-        let mut write_pixel = |idx: usize, pixel: u16| {
-            if idx >= total_pixels {
+        let mut pixel_idx = 0;
+        let mut write_pixel = |pixel: u16| {
+            if pixel_idx >= total_pixels {
                 tracing::warn!(target: "psx_core::gpu", "Pixel index out of bounds");
                 return;
             }
 
-            let x = dest_x as usize + (idx % width);
-            let y = dest_y as usize + (idx / width);
+            let x = dest_x as usize + (pixel_idx % width);
+            let y = dest_y as usize + (pixel_idx / width);
 
             if x < VRAM_WIDTH && y < VRAM_HEIGHT {
                 let vram_idx = (y * VRAM_WIDTH + x) * 2;
                 let bytes = pixel.to_le_bytes();
                 self.gp.vram[vram_idx] = bytes[0];
                 self.gp.vram[vram_idx + 1] = bytes[1];
+                pixel_idx += 1;
             }
         };
 
@@ -181,8 +183,8 @@ impl Gpu {
             let pixel0 = (word & 0xFFFF) as u16;
             let pixel1 = ((word >> 16) & 0xFFFF) as u16;
 
-            write_pixel(word_idx - 2, pixel0);
-            write_pixel(word_idx - 1, pixel1);
+            write_pixel(pixel0);
+            write_pixel(pixel1);
         }
     }
 }

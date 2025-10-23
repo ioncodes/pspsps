@@ -2,6 +2,7 @@ pub mod cmd;
 pub mod gp;
 pub mod status;
 
+use crate::gpu::cmd::poly::DrawPolygonCommand;
 use crate::gpu::cmd::Gp0Command;
 use crate::gpu::cmd::rect::DrawRectangleCommand;
 use crate::gpu::gp::{Gp, ParsedCommand};
@@ -79,6 +80,9 @@ impl Gpu {
                 Gp0Command::RectanglePrimitive(cmd) => {
                     self.process_rectangle_primitive_cmd(parsed_cmd, cmd)
                 }
+                Gp0Command::PolygonPrimitive(cmd) => {
+                    self.process_polygon_primitive_cmd(parsed_cmd, cmd)
+                }
                 Gp0Command::CpuToVramBlit => self.process_cpu_to_vram_blit_cmd(parsed_cmd),
                 _ => {
                     tracing::error!(target: "psx_core::gpu", cmd = %parsed_cmd.cmd, raw = %format!("{:032b} / {:08X}", parsed_cmd.raw, parsed_cmd.raw), "Unimplemented GP0 command");
@@ -141,6 +145,10 @@ impl Gpu {
                 }
             }
         }
+    }
+
+    fn process_polygon_primitive_cmd(&mut self, parsed_cmd: ParsedCommand, cmd: DrawPolygonCommand) {
+        
     }
 
     fn process_cpu_to_vram_blit_cmd(&mut self, parsed_cmd: ParsedCommand) {

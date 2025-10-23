@@ -66,20 +66,17 @@ impl Gp0Command {
                 base
             }
             Gp0Command::PolygonPrimitive(cmd) => {
-                let mut base = if cmd.vertices_count() {
-                    4
-                } else {
-                    3
-                };
+                let vertices = if cmd.vertices_count() { 4 } else { 3 };
+                let mut base = vertices;
 
-                // requires color
+                // requires color for vertices 1..n (color 0 in cmd word)
                 if cmd.gouraud() {
-                    base += 1;
+                    base += vertices - 1;
                 }
 
-                // requires UV
+                // requires UV for each vertex (no vertex in cmd word)
                 if cmd.textured() {
-                    base += 1;
+                    base += vertices;
                 }
 
                 base

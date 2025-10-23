@@ -36,15 +36,13 @@ pub enum TransferMode {
     LinkedList,
 }
 
-impl TryFrom<u8> for TransferMode {
-    type Error = u8;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
+impl From<u8> for TransferMode {
+    fn from(value: u8) -> Self {
         match value {
-            0 => Ok(TransferMode::Burst),
-            1 => Ok(TransferMode::Slice),
-            2 => Ok(TransferMode::LinkedList),
-            _ => Err(value),
+            0 => TransferMode::Burst,
+            1 => TransferMode::Slice,
+            2 => TransferMode::LinkedList,
+            _ => unreachable!(),
         }
     }
 }
@@ -71,13 +69,23 @@ bitfield! {
         pub transfer_direction: bool @ 0,
         pub madr_increment_per_step: bool @ 1,
         pub idk_wtf_this_is: bool @ 8,
-        pub transfer_mode: u8 [try_get TransferMode, set TransferMode] @ 9..=10,
+        pub transfer_mode: u8 [get TransferMode, set TransferMode] @ 9..=10,
         pub chopping_dma_window_size: u8 @ 16..=18,
         pub chopping_cpu_window_size: u8 @ 20..=22,
         pub start_transfer: bool @ 24,
         pub force_transfer_start: bool @ 28,
         pub god_knows_what_this_is: bool @ 29,
         pub bus_snooping: bool @ 30,
+    }
+}
+
+impl ChannelControl {
+    pub fn madr_step(&self) -> i32 {
+        if self.madr_increment_per_step() {
+            -4
+        } else {
+            4
+        }
     }
 }
 
@@ -149,32 +157,51 @@ impl<const CHANNEL_ID: u8> Channel<CHANNEL_ID> {
         // For SyncMode=2 (ie. for GPU-command-lists):
         //   0-31  0     Not used (should be zero) (transfer ends at END-CODE in list)
 
-        if let Ok(transfer_mode) = self.channel_control.transfer_mode() {
-            return match transfer_mode {
-                TransferMode::Burst => self.block_control,
-                TransferMode::Slice => self.block_control,
-                TransferMode::LinkedList => 0,
-            };
+        match self.channel_control.transfer_mode() {
+            TransferMode::Burst => self.block_control,
+            TransferMode::Slice => self.block_control,
+            TransferMode::LinkedList => 0,
         }
-
-        tracing::error!(target: "psx_core::dma", channel_id = CHANNEL_ID, "Failed to get transfer mode");
-        0
     }
 
     /// BC - SyncMode=0 only
     #[inline(always)]
-    pub fn bcr_word_count(&self) -> u16 {
+    pub fn bcr_word_count(&self) -> u32 {
         if CHANNEL_ID != OTC_CHANNEL_ID && CHANNEL_ID != CDROM_CHANNEL_ID {
             tracing::warn!(target: "psx_core::dma", channel_id = CHANNEL_ID, "Accessing BC register in non-OTC or CDROM channel");
         }
 
-        if let Ok(sync_mode) = self.channel_control.transfer_mode()
-            && sync_mode != TransferMode::Burst
-        {
+        if self.channel_control.transfer_mode() != TransferMode::Burst {
             tracing::warn!(target: "psx_core::dma", channel_id = CHANNEL_ID, "Accessing BC register in non-Burst mode");
         }
 
-        (self.block_control & 0xFFFF) as u16
+        let words = self.block_control & 0xFFFF;
+        if words == 0 { 0x10000 } else { words }
+    }
+
+    /// BS - SyncMode=1 only
+    #[inline(always)]
+    pub fn bcr_block_size(&self) -> u32 {
+        if self.channel_control.transfer_mode() != TransferMode::Slice {
+            tracing::warn!(target: "psx_core::dma", channel_id = CHANNEL_ID, "Accessing BS register in non-Slice mode");
+        }
+
+        self.block_control & 0xFFFF
+    }
+
+    /// BA - SyncMode=1 only
+    #[inline(always)]
+    pub fn bcr_block_count(&self) -> u32 {
+        if self.channel_control.transfer_mode() != TransferMode::Slice {
+            tracing::warn!(target: "psx_core::dma", channel_id = CHANNEL_ID, "Accessing BA register in non-Slice mode");
+        }
+
+        (self.block_control & 0xFFFF_0000) >> 16
+    }
+
+    #[inline(always)]
+    pub fn bcr_block_total(&self) -> u32 {
+        self.bcr_block_size() * self.bcr_block_count()
     }
 
     #[inline(always)]

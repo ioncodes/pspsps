@@ -1,10 +1,13 @@
 pub mod bus;
 pub mod dma;
 
+use crate::gpu::status::DmaDirection;
 use crate::gpu::{GP0_ADDRESS_END, GP0_ADDRESS_START, GP1_ADDRESS_END, GP1_ADDRESS_START, Gpu};
 use crate::irq::{I_MASK_ADDR_END, I_MASK_ADDR_START, I_STAT_ADDR_END, I_STAT_ADDR_START, Irq};
 use crate::mmu::bus::{Bus8 as _, Bus32};
-use crate::mmu::dma::{Channel, DMA_INTERRUPT_REGISTER_ADDRESS_END, DMA0_ADDRESS_START, Dma};
+use crate::mmu::dma::{
+    Channel, DMA_INTERRUPT_REGISTER_ADDRESS_END, DMA0_ADDRESS_START, Dma, TransferMode,
+};
 use crate::spu::Spu;
 
 pub struct Mmu {
@@ -36,7 +39,16 @@ impl Mmu {
         }
 
         if self.dma.channels.2.channel_control.start_transfer() {
-            self.transfer_dma_channel(self.dma.channels.2);
+            if self.gpu.gp.gp1_status.dma_direction() == DmaDirection::CpuToGpu {
+                self.transfer_dma_channel(self.dma.channels.2);
+            } else {
+                tracing::warn!(
+                    target: "psx_core::mmu",
+                    channel_id = 2,
+                    dma_direction = %self.gpu.gp.gp1_status.dma_direction(),
+                    "DMA is ready, but GPUSTAT is in wrong state"
+                );
+            }
         }
 
         if self.dma.channels.3.channel_control.start_transfer() {
@@ -67,7 +79,7 @@ impl Mmu {
             } else {
                 "Device to RAM"
             },
-            transfer_mode = %channel.channel_control.transfer_mode().unwrap(),
+            transfer_mode = %channel.channel_control.transfer_mode(),
             block_control = %format!("{:08X}", channel.block_control()),
             madr_step = if channel.channel_control.madr_increment_per_step() {
                 "-4"
@@ -78,6 +90,7 @@ impl Mmu {
         );
 
         match CHANNEL_ID {
+            2 => self.perform_gpu_dma(),
             6 => self.perform_otc_dma(),
             _ => {
                 tracing::error!(target: "psx_core::dma", channel_id = CHANNEL_ID, "DMA transfer not implemented for this channel")
@@ -122,6 +135,28 @@ impl Mmu {
             let previous_addr = current_addr;
             current_addr += 4;
             write_u32(current_addr, previous_addr);
+        }
+    }
+
+    pub fn perform_gpu_dma(&mut self) {
+        let channel = &self.dma.channels.2;
+
+        let src_addr = channel.base_address();
+        let madr_step = channel.channel_control.madr_step();
+
+        let total_words = match channel.channel_control.transfer_mode() {
+            TransferMode::Burst => channel.bcr_word_count(),
+            TransferMode::Slice => channel.bcr_block_total(),
+            TransferMode::LinkedList => {
+                tracing::error!(target: "psx_core::dma", "LinkedList mode not supported");
+                return;
+            }
+        };
+
+        for idx in 0..total_words {
+            let addr = src_addr.wrapping_add_signed(idx as i32 * madr_step);
+            let word = self.read_u32(addr);
+            self.write_u32(GP0_ADDRESS_START, word);
         }
     }
 

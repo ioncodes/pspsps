@@ -78,6 +78,7 @@ impl Gpu {
                 Gp0Command::RectanglePrimitive(cmd) => {
                     self.process_rectangle_primitive_cmd(parsed_cmd, cmd)
                 }
+                Gp0Command::CpuToVramBlit => self.process_cpu_to_vram_blit_cmd(parsed_cmd),
                 _ => {
                     tracing::error!(target: "psx_core::gpu", cmd = %parsed_cmd.cmd, raw = %format!("{:032b} / {:08X}", parsed_cmd.raw, parsed_cmd.raw), "Unimplemented GP0 command");
                 }
@@ -138,6 +139,50 @@ impl Gpu {
                     self.gp.vram[vram_idx + 1] = bytes[1];
                 }
             }
+        }
+    }
+
+    fn process_cpu_to_vram_blit_cmd(&mut self, parsed_cmd: ParsedCommand) {
+        let dest_x = (parsed_cmd.data[0] & 0xFFFF) as u16;
+        let dest_y = ((parsed_cmd.data[0] >> 16) & 0xFFFF) as u16;
+        let width = (parsed_cmd.data[1] & 0xFFFF) as usize;
+        let height = ((parsed_cmd.data[1] >> 16) & 0xFFFF) as usize;
+
+        let total_pixels = width * height;
+
+        tracing::debug!(
+            target: "psx_core::gpu",
+            dest_x, dest_y, width, height,
+            pixel_data_words = parsed_cmd.data.len() - 2,
+            "CPU to VRAM blit"
+        );
+
+        let mut write_pixel = |idx: usize, pixel: u16| {
+            if idx >= total_pixels {
+                tracing::warn!(target: "psx_core::gpu", "Pixel index out of bounds");
+                return;
+            }
+
+            let x = dest_x as usize + (idx % width);
+            let y = dest_y as usize + (idx / width);
+
+            if x < VRAM_WIDTH && y < VRAM_HEIGHT {
+                let vram_idx = (y * VRAM_WIDTH + x) * 2;
+                let bytes = pixel.to_le_bytes();
+                self.gp.vram[vram_idx] = bytes[0];
+                self.gp.vram[vram_idx + 1] = bytes[1];
+            }
+        };
+
+        for word_idx in 2..parsed_cmd.data.len() {
+            let word = parsed_cmd.data[word_idx];
+
+            // Extract two 16-bit pixels from the 32-bit word
+            let pixel0 = (word & 0xFFFF) as u16;
+            let pixel1 = ((word >> 16) & 0xFFFF) as u16;
+
+            write_pixel(word_idx - 2, pixel0);
+            write_pixel(word_idx - 1, pixel1);
         }
     }
 }

@@ -106,12 +106,12 @@ impl Mmu {
         let bcr = channel.bcr_word_count();
 
         let mut write_u32 = |addr, value| {
-            tracing::trace!(
+            /*tracing::trace!(
                 target: "psx_core::dma",
                 addr = %format!("{:08X}", addr),
                 value = %format!("{:08X}", value),
                 "OTC"
-            );
+            );*/
             self.write_u32(addr, value);
         };
 

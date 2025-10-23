@@ -24,7 +24,7 @@ use crate::io::DebuggerEvent;
 #[command(about = "pspsps - a cute psx debugger", long_about = None)]
 struct Args {
     #[arg(long, value_delimiter = ',', help = "List of tracing targets")]
-    targets: Option<Vec<String>>,
+    log_targets: Option<Vec<String>>,
 
     #[arg(long, help = "Path to EXE to sideload")]
     sideload: Option<String>,
@@ -276,7 +276,7 @@ fn main() -> eframe::Result {
     let mut targets = tracing_subscriber::filter::Targets::new();
 
     // Use custom targets if provided, otherwise use defaults
-    if let Some(custom_targets) = &args.targets {
+    if let Some(custom_targets) = &args.log_targets {
         for target in custom_targets {
             let full_target = format!("psx_core::{}", target);
             targets = targets.with_target(full_target, tracing_level);

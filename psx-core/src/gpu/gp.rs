@@ -171,7 +171,12 @@ impl Gp {
         // Extract command/data and push to FIFO
         let cmd = Gp0Command::from(value);
         self.expected_data = cmd.base_extra_data_count();
-        tracing::debug!(target: "psx_core::gpu", command = %cmd, self.expected_data, "Received GP0 command");
+        tracing::debug!(
+            target: "psx_core::gpu", 
+            command = %cmd,
+            raw = %format!("{:08X}", value),
+            expected_data = self.expected_data, 
+            "Received GP0 command");
 
         self.fifo.push_back(ParsedCommand {
             raw: value,

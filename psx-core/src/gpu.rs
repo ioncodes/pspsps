@@ -179,17 +179,26 @@ impl Gpu {
             }
         }
 
+        // extract uvs
+        let mut uvs: Vec<u32> = Vec::new();
+        if cmd.textured() {
+            for idx in 0..cmd.vertex_count() {
+                uvs.push(parsed_cmd.data[cmd.uv_idx(idx)]);
+            }
+        }
+
         tracing::debug!(
             target: "psx_core::gpu",
             vertex_count = cmd.vertex_count(),
             gouraud = cmd.gouraud(),
             vertices = ?vertices.iter().map(|(x, y)| format!("({}, {})", x, y)).collect::<Vec<_>>(),
             colors = ?colors.iter().map(|c| format!("{:06X}", c)).collect::<Vec<_>>(),
+            uvs = ?uvs.iter().map(|uv| format!("{:08X}", uv)).collect::<Vec<_>>(),
             "Rasterizing polygon"
         );
 
         // Rasterize the polygon (triangle or quad) into VRAM
-        rasterizer::rasterize_polygon(&vertices, &colors, &mut self.gp.vram);
+        rasterizer::rasterize_polygon(&vertices, &colors, &uvs, &mut self.gp.vram);
     }
 
     fn process_cpu_to_vram_blit_cmd(&mut self, parsed_cmd: ParsedCommand) {

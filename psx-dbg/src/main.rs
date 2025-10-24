@@ -29,6 +29,9 @@ struct Args {
     #[arg(long, help = "Path to EXE to sideload")]
     sideload: Option<String>,
 
+    #[arg(long, help = "Path to BIOS file (required)")]
+    bios: String,
+
     #[arg(long, help = "Enable debug logging")]
     debug: bool,
 
@@ -77,12 +80,12 @@ pub struct PsxDebugger {
 
 impl Default for PsxDebugger {
     fn default() -> Self {
-        Self::new(None)
+        panic!("BIOS path is required! Use PsxDebugger::new() instead.")
     }
 }
 
 impl PsxDebugger {
-    fn new(sideload_file: Option<String>) -> Self {
+    fn new(bios_path: String, sideload_file: Option<String>) -> Self {
         let mut dock_state = DockState::new(vec![TabKind::Cpu, TabKind::Trace]);
         let [_left_node, right_node] = dock_state.main_surface_mut().split_right(
             egui_dock::NodeIndex::root(),
@@ -115,7 +118,7 @@ impl PsxDebugger {
         let (response_channel_send, response_channel_recv) = crossbeam_channel::unbounded();
 
         let thread = std::thread::spawn(move || {
-            let mut debugger = Debugger::new(response_channel_send, request_channel_recv);
+            let mut debugger = Debugger::new(bios_path, response_channel_send, request_channel_recv);
 
             // Sideload EXE if provided
             if let Some(file_path) = sideload_file {
@@ -315,6 +318,6 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "pspsps - a cute psx debugger",
         options,
-        Box::new(|_cc| Ok(Box::new(PsxDebugger::new(args.sideload)))),
+        Box::new(|_cc| Ok(Box::new(PsxDebugger::new(args.bios, args.sideload)))),
     )
 }

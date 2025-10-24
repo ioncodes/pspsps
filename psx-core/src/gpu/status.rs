@@ -78,13 +78,25 @@ impl std::fmt::Display for DmaDirection {
 bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Default)]
     pub struct StatusRegister(pub u32): Debug, FromStorage, IntoStorage, DerefStorage {
+        pub texture_page_x_base: u32 @ 0..=3,
+        pub texture_page_y_base_1: bool @ 4,
+        pub semi_transparency: u32 @ 5..=6,
+        pub texture_page_colors: u32 @ 7..=8,
+        pub dither: bool @ 9,
         pub drawing_to_display_area: bool @ 10,
-        pub horizontal_resolution2: bool @ 16,
-        pub horizontal_resolution1: u8 @ 17..=18,
+        pub set_mask_bit_when_drawing_pixels: bool @ 11,
+        pub draw_pixels: bool @ 12,
+        pub interlace_field: bool @ 13,
+        pub flip_screen_horizontal: bool @ 14,
+        pub texture_page_y_base_2: bool @ 15,
+        pub horizontal_resolution_2: bool @ 16,
+        pub horizontal_resolution_1: u8 @ 17..=18,
         pub vertical_resolution: bool @ 19,
         pub video_mode: bool [get VideoMode, set VideoMode] @ 20,
+        pub display_area_color_depth: bool @ 21,
         pub vertical_interlace: bool @ 22,
         pub display_enable: bool @ 23,
+        pub interrupt_request: bool @ 24,
         pub data_request: bool @ 25,
         pub ready_to_receive_cmd_word: bool @ 26,
         pub ready_to_send_vram_to_cpu: bool @ 27,
@@ -96,7 +108,7 @@ bitfield! {
 
 impl StatusRegister {
     pub fn hres(&self) -> u32 {
-        match (self.horizontal_resolution1(), self.horizontal_resolution2()) {
+        match (self.horizontal_resolution_1(), self.horizontal_resolution_2()) {
             (0, false) => 256,
             (1, false) => 320,
             (_, true) => 368,

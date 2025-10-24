@@ -1,5 +1,6 @@
 pub mod rect;
 pub mod poly;
+pub mod tex;
 
 use crate::gpu::cmd::{poly::DrawPolygonCommand, rect::DrawRectangleCommand};
 
@@ -12,7 +13,7 @@ pub enum Gp0Command {
     VramToVramBlit,
     CpuToVramBlit,
     VramToCpuBlit,
-    Environment,
+    Environment(u8), // u8 = real command
 }
 
 impl From<u32> for Gp0Command {
@@ -25,7 +26,7 @@ impl From<u32> for Gp0Command {
             0b100 => Gp0Command::VramToVramBlit,
             0b101 => Gp0Command::CpuToVramBlit,
             0b110 => Gp0Command::VramToCpuBlit,
-            0b111 => Gp0Command::Environment,
+            0b111 => Gp0Command::Environment(((value >> 24) & 0xFF) as u8),
             _ => unreachable!(),
         }
     }
@@ -34,14 +35,14 @@ impl From<u32> for Gp0Command {
 impl std::fmt::Display for Gp0Command {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name = match self {
-            Gp0Command::Misc => "Misc. Commands",
+            Gp0Command::Misc => "Misc. Command",
             Gp0Command::PolygonPrimitive(_) => "Polygon Primitive",
             Gp0Command::LinePrimitive => "Line Primitive",
             Gp0Command::RectanglePrimitive(_) => "Rectangle Primitive",
             Gp0Command::VramToVramBlit => "VRAM to VRAM Blit",
             Gp0Command::CpuToVramBlit => "CPU to VRAM Blit",
             Gp0Command::VramToCpuBlit => "VRAM to CPU Blit",
-            Gp0Command::Environment => "Environment Commands",
+            Gp0Command::Environment(cmd) => &format!("Environment Command {:02X}", cmd)
         };
         write!(f, "{}", name)
     }

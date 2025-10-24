@@ -1,11 +1,12 @@
 pub mod cmd;
 pub mod gp;
-pub mod status;
 pub mod rasterizer;
+pub mod status;
 
 use crate::gpu::cmd::Gp0Command;
 use crate::gpu::cmd::poly::DrawPolygonCommand;
 use crate::gpu::cmd::rect::DrawRectangleCommand;
+use crate::gpu::cmd::tex::{DrawModeSettingCommand, TextureWindowSettingCommand};
 use crate::gpu::gp::{Gp, ParsedCommand};
 use crate::mmu::bus::Bus32;
 
@@ -19,11 +20,15 @@ pub const GP1_ADDRESS_END: u32 = 0x1F80_1817;
 
 pub struct Gpu {
     pub gp: Gp,
+    pub texture_window_setting: TextureWindowSettingCommand,
 }
 
 impl Gpu {
     pub fn new() -> Self {
-        Self { gp: Gp::new() }
+        Self {
+            gp: Gp::new(),
+            texture_window_setting: TextureWindowSettingCommand(0),
+        }
     }
 
     /// Generate a texture buffer from the current VRAM contents
@@ -85,6 +90,7 @@ impl Gpu {
                     self.process_polygon_primitive_cmd(parsed_cmd, cmd)
                 }
                 Gp0Command::CpuToVramBlit => self.process_cpu_to_vram_blit_cmd(parsed_cmd),
+                Gp0Command::Environment(cmd) => self.process_environment_cmd(parsed_cmd, cmd),
                 _ => {
                     tracing::error!(target: "psx_core::gpu", cmd = %parsed_cmd.cmd, raw = %format!("{:032b} / {:08X}", parsed_cmd.raw, parsed_cmd.raw), "Unimplemented GP0 command");
                 }
@@ -160,7 +166,7 @@ impl Gpu {
                 (x, y)
             })
             .collect();
-        
+
         // extract colors for all vertices
         let mut colors: Vec<u32> = vec![cmd.color()]; // color for vertex 0
         for idx in 1..cmd.vertex_count() {
@@ -229,6 +235,47 @@ impl Gpu {
 
             write_pixel(pixel0);
             write_pixel(pixel1);
+        }
+    }
+
+    fn process_environment_cmd(&mut self, parsed_cmd: ParsedCommand, cmd: u8) {
+        tracing::debug!(
+            target: "psx_core::gpu",
+            cmd,
+            raw = %format!("{:032b} / {:08X}", parsed_cmd.raw, parsed_cmd.raw),
+            "Processing environment command"
+        );
+
+        match cmd {
+            0xE1 => {
+                let cmd = DrawModeSettingCommand(parsed_cmd.raw);
+                self.gp
+                    .gp1_status
+                    .set_texture_page_x_base(cmd.texture_page_x_base());
+                self.gp
+                    .gp1_status
+                    .set_texture_page_y_base_1(cmd.texture_page_y_base_1());
+                self.gp
+                    .gp1_status
+                    .set_semi_transparency(cmd.semi_transparency());
+                self.gp
+                    .gp1_status
+                    .set_texture_page_colors(cmd.texture_page_colors());
+                self.gp.gp1_status.set_dither(cmd.dither());
+                self.gp
+                    .gp1_status
+                    .set_drawing_to_display_area(cmd.drawing_to_display_area());
+                self.gp
+                    .gp1_status
+                    .set_texture_page_y_base_2(cmd.texture_page_y_base_2());
+                // TODO: textured rectangle x-flip, y-flip
+            }
+            0xE2 => {
+                self.texture_window_setting = TextureWindowSettingCommand(parsed_cmd.raw);
+            }
+            _ => {
+                tracing::error!(target: "psx_core::gpu", cmd, "Unimplemented environment command");
+            }
         }
     }
 }

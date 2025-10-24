@@ -235,8 +235,8 @@ impl Gp {
                 let hres2 = ((params >> 6) & 0b1) == 1;
                 // TODO: flip screen horizontally
 
-                self.gp1_status.set_horizontal_resolution1(hres1);
-                self.gp1_status.set_horizontal_resolution2(hres2);
+                self.gp1_status.set_horizontal_resolution_1(hres1);
+                self.gp1_status.set_horizontal_resolution_2(hres2);
                 self.gp1_status.set_vertical_resolution(vres);
                 self.gp1_status.set_vertical_interlace(interlace);
                 self.gp1_status.set_video_mode(video_mode.into());

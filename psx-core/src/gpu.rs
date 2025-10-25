@@ -198,7 +198,7 @@ impl Gpu {
         );
 
         // Rasterize the polygon (triangle or quad) into VRAM
-        rasterizer::rasterize_polygon(&vertices, &colors, &uvs, &mut self.gp.vram);
+        rasterizer::rasterize_polygon(&vertices, &colors, &uvs, self.texture_window_setting, &mut self.gp.vram);
     }
 
     fn process_cpu_to_vram_blit_cmd(&mut self, parsed_cmd: ParsedCommand) {

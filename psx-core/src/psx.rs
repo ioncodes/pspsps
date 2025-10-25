@@ -66,6 +66,9 @@ impl Psx {
         for _ in 0..cycles {
             self.cpu.mmu.gpu.tick();
         }
+
+        self.cpu.mmu.update_cdrom(cycles as i32);
+
         self.cpu.mmu.perform_dma_transfers();
 
         if self.cycles >= NTSC_VBLANK_DURATION && self.cpu.mmu.irq.status.vblank() {

@@ -1,0 +1,3 @@
+[submodule "submodules/cdrom"]
+	path = submodules/cdrom
+	url = https://github.com/allkern/cdrom.git

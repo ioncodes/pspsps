@@ -41,6 +41,8 @@ impl Cpu {
     }
 
     pub fn tick(&mut self) -> Result<Instruction, ()> {
+        self.check_interrupts();
+
         if let Some(handler) = internal::cpu_hooks().get(&self.pc) {
             handler(self);
         }
@@ -142,6 +144,20 @@ impl Cpu {
             .sr
             .set_previous_interrupt_enable(self.cop0.sr.old_interrupt_enable());
         self.cop0.sr.set_previous_mode(self.cop0.sr.old_mode());
+    }
+
+    fn check_interrupts(&mut self) {
+        if !self.cop0.sr.current_interrupt_enable() || self.exception_raised {
+            return;
+        }
+
+        let i_stat = self.mmu.irq.status.0;
+        let i_mask = self.mmu.irq.mask.0;
+        let pending = i_stat & i_mask;
+
+        if pending != 0 {
+            self.cause_exception(Exception::External, false);
+        }
     }
 
     pub fn write_u8(&mut self, address: u32, value: u8) {
@@ -246,10 +262,7 @@ impl Cpu {
     pub(crate) fn set_delay_slot(&mut self, branch_target: u32) {
         // Load the next instruction into the delay slot
         // Also cache the branch target
-        self.delay_slot = Some((
-            Instruction::decode(self.mmu.read_u32(self.pc + 4)),
-            branch_target,
-        ));
+        self.delay_slot = Some((Instruction::decode(self.mmu.read_u32(self.pc + 4)), branch_target));
     }
 
     #[inline(always)]

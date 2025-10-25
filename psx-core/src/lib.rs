@@ -2,6 +2,7 @@
 #![feature(const_trait_impl)]
 #![feature(const_cmp)]
 
+pub mod cdrom;
 pub mod cpu;
 pub mod exe;
 pub mod gpu;

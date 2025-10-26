@@ -5,7 +5,7 @@ use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 
-static BIOS: &[u8] = include_bytes!("../../bios/SCPH1000.BIN");
+static BIOS: &[u8] = include_bytes!("../../bios/SCPH1001.BIN");
 
 fn main() {
     let targets =
@@ -32,11 +32,11 @@ fn main() {
         if last_report.elapsed().as_secs() >= 1 {
             let elapsed = start_time.elapsed();
             let ips = instruction_count as f64 / elapsed.as_secs_f64();
-            println!(
-                "Instructions executed: {}, MIPS: {:.2}",
-                instruction_count,
-                ips / 1_000_000.0
-            );
+            // println!(
+            //     "Instructions executed: {}, MIPS: {:.2}",
+            //     instruction_count,
+            //     ips / 1_000_000.0
+            // );
             last_report = Instant::now();
         }
     }

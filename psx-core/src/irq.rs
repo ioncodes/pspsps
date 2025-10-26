@@ -105,8 +105,24 @@ impl Bus32 for Irq {
 
     fn write_u32(&mut self, address: u32, value: u32) {
         match address {
-            I_STAT_ADDR_START => self.status.0 = value,
-            I_MASK_ADDR_START => self.mask.0 = value,
+            // I_STAT acknowledge: writing 0 clears bit, writing 1 leaves it unchanged
+            I_STAT_ADDR_START => {
+                let old_status = self.status.0;
+                self.status.0 = self.status.0 & value;
+                tracing::trace!(
+                    target: "psx_core::irq",
+                    "I_STAT write: old={:08X} write_val={:08X} new={:08X}",
+                    old_status, value, self.status.0
+                );
+            }
+            I_MASK_ADDR_START => {
+                tracing::trace!(
+                    target: "psx_core::irq",
+                    "I_MASK write: old={:08X} new={:08X}",
+                    self.mask.0, value
+                );
+                self.mask.0 = value;
+            }
             _ => unreachable!(),
         }
     }

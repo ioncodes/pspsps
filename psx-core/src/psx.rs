@@ -71,7 +71,7 @@ impl Psx {
 
         self.cpu.mmu.perform_dma_transfers();
 
-        if self.cycles >= NTSC_VBLANK_DURATION && self.cpu.mmu.irq.status.vblank() {
+        if self.cycles >= NTSC_VBLANK_DURATION {
             self.cpu.mmu.irq.status.set_vblank(false);
             self.cpu
                 .mmu
@@ -82,7 +82,8 @@ impl Psx {
         }
 
         if self.cycles >= NTSC_VBLANK_CYCLES {
-            self.cycles -= NTSC_VBLANK_CYCLES;
+            self.cycles = 0;
+
             self.cpu.mmu.irq.status.set_vblank(true);
             self.cpu
                 .mmu
@@ -90,6 +91,8 @@ impl Psx {
                 .gp
                 .gp1_status
                 .set_drawing_even_odd_lines_in_interlace_mode(true);
+
+            tracing::trace!(target: "psx_core::psx", "VBLANK period reached, setting I_STAT bit");
         }
 
         instr

@@ -50,11 +50,14 @@ fn bios_function_call_c(cpu: &mut Cpu) {
 }
 
 fn bios_putchar(cpu: &mut Cpu) {
-    let value = cpu.read_register(crate::regidx("$a0")) as u8 as char;
+    let mut value = cpu.read_register(crate::regidx("$a0")) as u8 as char;
+    if value == '\r' {
+        value = '\n';
+    }
 
     tty_buffer().lock().unwrap().push(value);
 
-    if value == '\n' || value == '\r' {
+    if value == '\n' {
         let mut line_buffer = tty_line_buffer().lock().unwrap();
         tracing::info!(target: "psx_core::tty", "{}", line_buffer);
         line_buffer.clear();

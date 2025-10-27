@@ -6,7 +6,9 @@ pub mod status;
 use crate::gpu::cmd::Gp0Command;
 use crate::gpu::cmd::poly::DrawPolygonCommand;
 use crate::gpu::cmd::rect::DrawRectangleCommand;
-use crate::gpu::cmd::tex::{DrawModeSettingCommand, TextureWindowSettingCommand};
+use crate::gpu::cmd::tex::{
+    DrawModeSettingCommand, DrawingAreaBottomRightCommand, DrawingAreaTopLeftCommand, TextureWindowSettingCommand,
+};
 use crate::gpu::gp::{Gp, ParsedCommand};
 use crate::mmu::bus::Bus32;
 
@@ -21,6 +23,10 @@ pub const GP1_ADDRESS_END: u32 = 0x1F80_1817;
 pub struct Gpu {
     pub gp: Gp,
     pub texture_window_setting: TextureWindowSettingCommand,
+    pub drawing_area_x1: u32,
+    pub drawing_area_y1: u32,
+    pub drawing_area_x2: u32,
+    pub drawing_area_y2: u32,
 }
 
 impl Gpu {
@@ -28,6 +34,10 @@ impl Gpu {
         Self {
             gp: Gp::new(),
             texture_window_setting: TextureWindowSettingCommand(0),
+            drawing_area_x1: 0,
+            drawing_area_y1: 0,
+            drawing_area_x2: VRAM_WIDTH as u32,
+            drawing_area_y2: VRAM_HEIGHT as u32,
         }
     }
 
@@ -58,8 +68,7 @@ impl Gpu {
                     let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
 
                     // Read RGB555 pixel from VRAM
-                    let pixel_u16 =
-                        u16::from_le_bytes([self.gp.vram[vram_idx], self.gp.vram[vram_idx + 1]]);
+                    let pixel_u16 = u16::from_le_bytes([self.gp.vram[vram_idx], self.gp.vram[vram_idx + 1]]);
 
                     // Extract RGB555 components
                     let r5 = (pixel_u16 & 0x1F) as u8;
@@ -83,12 +92,8 @@ impl Gpu {
     pub fn tick(&mut self) {
         if let Some(parsed_cmd) = self.gp.pop_command() {
             match parsed_cmd.cmd {
-                Gp0Command::RectanglePrimitive(cmd) => {
-                    self.process_rectangle_primitive_cmd(parsed_cmd, cmd)
-                }
-                Gp0Command::PolygonPrimitive(cmd) => {
-                    self.process_polygon_primitive_cmd(parsed_cmd, cmd)
-                }
+                Gp0Command::RectanglePrimitive(cmd) => self.process_rectangle_primitive_cmd(parsed_cmd, cmd),
+                Gp0Command::PolygonPrimitive(cmd) => self.process_polygon_primitive_cmd(parsed_cmd, cmd),
                 Gp0Command::CpuToVramBlit => self.process_cpu_to_vram_blit_cmd(parsed_cmd),
                 Gp0Command::Environment(cmd) => self.process_environment_cmd(parsed_cmd, cmd),
                 _ => {
@@ -98,9 +103,7 @@ impl Gpu {
         }
     }
 
-    fn process_rectangle_primitive_cmd(
-        &mut self, outer_cmd: ParsedCommand, cmd: DrawRectangleCommand,
-    ) {
+    fn process_rectangle_primitive_cmd(&mut self, outer_cmd: ParsedCommand, cmd: DrawRectangleCommand) {
         let x = (outer_cmd.data[cmd.vertex_idx()] & 0xFFFF) as i16;
         let y = ((outer_cmd.data[cmd.vertex_idx()] >> 16) & 0xFFFF) as i16;
 
@@ -138,14 +141,22 @@ impl Gpu {
         let b5 = (b >> 3) & 0x1F;
         let pixel_value = (b5 as u16) << 10 | (g5 as u16) << 5 | (r5 as u16);
 
-        // write to VRAM
         for row in 0..height {
             for col in 0..width {
                 let vram_x = x as usize + col as usize;
                 let vram_y = y as usize + row as usize;
 
-                if vram_x < 1024 && vram_y < 512 {
-                    let vram_idx = (vram_y * 1024 + vram_x) * 2;
+                // within drawing area?
+                if vram_x < self.drawing_area_x1 as usize
+                    || vram_x >= self.drawing_area_x2 as usize
+                    || vram_y < self.drawing_area_y1 as usize
+                    || vram_y >= self.drawing_area_y2 as usize
+                {
+                    continue;
+                }
+
+                if vram_x < VRAM_WIDTH && vram_y < VRAM_HEIGHT {
+                    let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
                     let bytes = pixel_value.to_le_bytes();
                     self.gp.vram[vram_idx] = bytes[0];
                     self.gp.vram[vram_idx + 1] = bytes[1];
@@ -154,9 +165,7 @@ impl Gpu {
         }
     }
 
-    fn process_polygon_primitive_cmd(
-        &mut self, parsed_cmd: ParsedCommand, cmd: DrawPolygonCommand,
-    ) {
+    fn process_polygon_primitive_cmd(&mut self, parsed_cmd: ParsedCommand, cmd: DrawPolygonCommand) {
         // extract vertex coordinates for all vertices
         let vertices: Vec<(i16, i16)> = (0..cmd.vertex_count())
             .map(|i| {
@@ -198,7 +207,17 @@ impl Gpu {
         );
 
         // Rasterize the polygon (triangle or quad) into VRAM
-        rasterizer::rasterize_polygon(&vertices, &colors, &uvs, self.texture_window_setting, &mut self.gp.vram);
+        rasterizer::rasterize_polygon(
+            &vertices,
+            &colors,
+            &uvs,
+            self.texture_window_setting,
+            self.drawing_area_x1,
+            self.drawing_area_y1,
+            self.drawing_area_x2,
+            self.drawing_area_y2,
+            &mut self.gp.vram,
+        );
     }
 
     fn process_cpu_to_vram_blit_cmd(&mut self, parsed_cmd: ParsedCommand) {
@@ -258,18 +277,12 @@ impl Gpu {
         match cmd {
             0xE1 => {
                 let cmd = DrawModeSettingCommand(parsed_cmd.raw);
-                self.gp
-                    .gp1_status
-                    .set_texture_page_x_base(cmd.texture_page_x_base());
+                self.gp.gp1_status.set_texture_page_x_base(cmd.texture_page_x_base());
                 self.gp
                     .gp1_status
                     .set_texture_page_y_base_1(cmd.texture_page_y_base_1());
-                self.gp
-                    .gp1_status
-                    .set_semi_transparency(cmd.semi_transparency());
-                self.gp
-                    .gp1_status
-                    .set_texture_page_colors(cmd.texture_page_colors());
+                self.gp.gp1_status.set_semi_transparency(cmd.semi_transparency());
+                self.gp.gp1_status.set_texture_page_colors(cmd.texture_page_colors());
                 self.gp.gp1_status.set_dither(cmd.dither());
                 self.gp
                     .gp1_status
@@ -281,6 +294,28 @@ impl Gpu {
             }
             0xE2 => {
                 self.texture_window_setting = TextureWindowSettingCommand(parsed_cmd.raw);
+            }
+            0xE3 => {
+                let cmd = DrawingAreaTopLeftCommand(parsed_cmd.raw);
+                self.drawing_area_x1 = cmd.x1();
+                self.drawing_area_y1 = cmd.y1();
+                tracing::debug!(
+                    target: "psx_core::gpu",
+                    x1 = self.drawing_area_x1,
+                    y1 = self.drawing_area_y1,
+                    "Set drawing area"
+                );
+            }
+            0xE4 => {
+                let cmd = DrawingAreaBottomRightCommand(parsed_cmd.raw);
+                self.drawing_area_x2 = cmd.x2();
+                self.drawing_area_y2 = cmd.y2();
+                tracing::debug!(
+                    target: "psx_core::gpu",
+                    x2 = self.drawing_area_x2,
+                    y2 = self.drawing_area_y2,
+                    "Set drawing area"
+                );
             }
             _ => {
                 tracing::error!(target: "psx_core::gpu", cmd, "Unimplemented environment command");

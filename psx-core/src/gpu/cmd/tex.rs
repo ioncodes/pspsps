@@ -27,3 +27,21 @@ bitfield! {
     }
 }
 
+bitfield! {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub struct DrawingAreaTopLeftCommand(pub u32): Debug, FromStorage, IntoStorage, DerefStorage {
+        pub x1: u32 @ 0..=9,
+        pub y1: u32 @ 10..=18,
+        pub command: u32 @ 24..=31,
+    }
+}
+
+bitfield! {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub struct DrawingAreaBottomRightCommand(pub u32): Debug, FromStorage, IntoStorage, DerefStorage {
+        pub x2: u32 @ 0..=9,
+        pub y2: u32 @ 10..=18,
+        pub command: u32 @ 24..=31,
+    }
+}
+

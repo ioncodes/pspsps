@@ -40,6 +40,9 @@ struct Args {
 
     #[arg(long, help = "Enable json logging")]
     json: bool,
+
+    #[arg(long, help = "Disable ANSI colors in the terminal output")]
+    no_colors: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -292,17 +295,20 @@ fn main() -> eframe::Result {
         targets = targets.with_target("psx_core::bios", tracing_level);
         targets = targets.with_target("psx_core::gpu", tracing_level);
         targets = targets.with_target("psx_core::irq", tracing_level);
+        targets = targets.with_target("psx_core::cdrom", tracing_level);
     }
 
     if args.json {
         let fmt_layer = tracing_subscriber::fmt::layer()
             .without_time()
+            .with_ansi(!args.no_colors)
             .json()
             .with_filter(targets);
         tracing_subscriber::registry().with(fmt_layer).init();
     } else {
         let fmt_layer = tracing_subscriber::fmt::layer()
             .without_time()
+            .with_ansi(!args.no_colors)
             .with_filter(targets);
         tracing_subscriber::registry().with(fmt_layer).init();
     };

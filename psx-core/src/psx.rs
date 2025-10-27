@@ -9,9 +9,9 @@ pub const CPU_CLOCK: usize = 33_868_800;
 pub const NTSC_VBLANK_CYCLES: usize = 33_868_800 / 60;
 pub const PAL_VBLANK_CYCLES: usize = 33_868_800 / 50;
 
-// TODO: very very likely wrong
-pub const NTSC_VBLANK_DURATION: usize = 49_954;
-pub const PAL_VBLANK_DURATION: usize = 125_802;
+// Updated VBLANK durations with 2 CPI
+pub const NTSC_VBLANK_DURATION: usize = NTSC_VBLANK_CYCLES / 2;  // ~282,240 cycles
+pub const PAL_VBLANK_DURATION: usize = PAL_VBLANK_CYCLES / 2;    // ~338,688 cycles
 
 pub struct Psx {
     pub cpu: Cpu,
@@ -66,8 +66,11 @@ impl Psx {
         for _ in 0..cycles {
             self.cpu.mmu.gpu.tick();
         }
-
-        self.cpu.mmu.update_cdrom(cycles as i32);
+        
+        self.cpu.mmu.cdrom.tick(cycles);
+        if self.cpu.mmu.cdrom.check_and_clear_irq() {
+            self.cpu.mmu.irq.status.set_cdrom(true);
+        }
 
         self.cpu.mmu.perform_dma_transfers();
 

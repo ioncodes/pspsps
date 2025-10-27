@@ -31,7 +31,7 @@ fn main() {
 
         if last_report.elapsed().as_secs() >= 1 {
             let elapsed = start_time.elapsed();
-            let ips = instruction_count as f64 / elapsed.as_secs_f64();
+            let _ips = instruction_count as f64 / elapsed.as_secs_f64();
             // println!(
             //     "Instructions executed: {}, MIPS: {:.2}",
             //     instruction_count,

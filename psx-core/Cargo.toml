@@ -6,4 +6,3 @@ edition = "2024"
 [dependencies]
 proc-bitfield = "0.5.2"
 tracing = "0.1.41"
-psx-cdrom-sys = { path = "../psx-cdrom-sys" }

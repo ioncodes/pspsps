@@ -120,95 +120,137 @@ impl Mmu {
         let bcr = channel.bcr_word_count();
 
         let mut write_u32 = |addr, value| {
-            /*tracing::trace!(
-                target: "psx_core::dma",
-                addr = %format!("{:08X}", addr),
-                value = %format!("{:08X}", value),
-                "OTC"
-            );*/
             self.write_u32(addr, value);
         };
 
-        let mut current_addr = madr - (bcr as u32 * 4);
-        write_u32(current_addr, 0xFFFFFFFF); // End marker
+        let mut current_addr = madr;
 
-        for _ in 0..bcr {
-            let previous_addr = current_addr;
-            current_addr += 4;
-            write_u32(current_addr, previous_addr);
+        if bcr == 1 {
+            write_u32(current_addr, 0xFFFFFFFF);
+        } else {
+            for i in 0..bcr {
+                if i == bcr - 1 {
+                    // Last entry gets end marker
+                    write_u32(current_addr, 0xFFFFFFFF);
+                } else {
+                    // Each entry points to next entry
+                    write_u32(current_addr, current_addr.wrapping_sub(4));
+                }
+                current_addr = current_addr.wrapping_sub(4);
+            }
         }
     }
 
     pub fn perform_gpu_dma(&mut self) {
         let channel = self.dma.channels.2;
-
-        let mut src_addr = channel.base_address();
+        let transfer_direction = channel.channel_control.transfer_direction();
         let madr_step = channel.channel_control.madr_step();
-
-        let mut transfer_words = |addr: u32, count: u32| {
-            for idx in 0..count {
-                let addr = addr.wrapping_add_signed(idx as i32 * madr_step);
-                let word = self.read_u32(addr);
-                self.write_u32(GP0_ADDRESS_START, word);
-            }
-        };
 
         match channel.channel_control.transfer_mode() {
             TransferMode::Burst => {
                 let total_words = channel.bcr_word_count();
-                transfer_words(src_addr, total_words);
+                let mut addr = channel.base_address();
+
+                if transfer_direction {
+                    // RAM to GPU
+                    for _ in 0..total_words {
+                        let word = self.read_u32(addr);
+                        self.write_u32(GP0_ADDRESS_START, word);
+                        addr = addr.wrapping_add_signed(madr_step);
+                    }
+                } else {
+                    // GPU to RAM
+                    for _ in 0..total_words {
+                        let word = self.read_u32(GP0_ADDRESS_START);
+                        self.write_u32(addr, word);
+                        addr = addr.wrapping_add_signed(madr_step);
+                    }
+                }
             }
             TransferMode::Slice => {
                 let total_words = channel.bcr_block_total();
-                transfer_words(src_addr, total_words);
+                let mut addr = channel.base_address();
+
+                if transfer_direction {
+                    // RAM to GPU
+                    for _ in 0..total_words {
+                        let word = self.read_u32(addr);
+                        self.write_u32(GP0_ADDRESS_START, word);
+                        addr = addr.wrapping_add_signed(madr_step);
+                    }
+                } else {
+                    // GPU to RAM
+                    for _ in 0..total_words {
+                        let word = self.read_u32(GP0_ADDRESS_START);
+                        self.write_u32(addr, word);
+                        addr = addr.wrapping_add_signed(madr_step);
+                    }
+                }
             }
-            TransferMode::LinkedList => loop {
-                let header = self.read_u32(src_addr);
-                let next_addr = header & 0x00FFFFFF; // next node (24-bit address)
-                let words = header >> 24; // number of words in this node
+            TransferMode::LinkedList => {
+                // Linked list is only for RAM to GPU
+                if !transfer_direction {
+                    tracing::error!(
+                        target: "psx_core::dma",
+                        "GPU DMA LinkedList mode only supports RAM to GPU"
+                    );
+                    return;
+                }
 
-                tracing::trace!(
-                    target: "psx_core::dma",
-                    address = format!("{:08X}", src_addr),
-                    words = words,
-                    next_address = format!("{:08X}", next_addr),
-                    is_end = next_addr == 0x00FFFFFF,
-                    "Transfering DMA linked list node"
-                );
+                let mut src_addr = channel.base_address();
 
-                // Transfer all words from this node
-                for idx in 0..words {
-                    let addr = src_addr.wrapping_add_signed((idx + 1) as i32 * madr_step);
-                    let word = self.read_u32(addr);
-                    self.write_u32(GP0_ADDRESS_START, word);
+                loop {
+                    let header = self.read_u32(src_addr);
+                    let next_addr = header & 0x00FFFFFF; // next node (24-bit address)
+                    let words = header >> 24; // number of words in this node
 
                     tracing::trace!(
                         target: "psx_core::dma",
-                        address = format!("{:08X}", addr),
-                        word = format!("{:08X}", word),
-                        "Sent word from linked list node to GP0"
+                        address = format!("{:08X}", src_addr),
+                        words = words,
+                        next_address = format!("{:08X}", next_addr),
+                        is_end = next_addr == 0x00FFFFFF,
+                        "Transfering DMA linked list node"
                     );
-                }
 
-                // AFTER processing this node's data, check if this was the last node
-                if next_addr == 0x00FFFFFF {
-                    break; // End of linked list
-                }
+                    // Transfer all words from this node
+                    // Start from the word after the header
+                    let mut word_addr = src_addr.wrapping_add(4);
+                    for _ in 0..words {
+                        let word = self.read_u32(word_addr);
+                        self.write_u32(GP0_ADDRESS_START, word);
 
-                src_addr = next_addr;
-            },
+                        tracing::trace!(
+                            target: "psx_core::dma",
+                            address = format!("{:08X}", word_addr),
+                            word = format!("{:08X}", word),
+                            "Sent word from linked list node to GP0"
+                        );
+
+                        word_addr = word_addr.wrapping_add(4);
+                    }
+
+                    // AFTER processing this node's data, check if this was the last node
+                    if next_addr == 0x00FFFFFF {
+                        break;
+                    }
+
+                    src_addr = next_addr;
+                }
+            }
         }
     }
 
     pub fn perform_cdrom_dma(&mut self) {
         let channel = self.dma.channels.3;
 
-        let dest_addr = channel.base_address();
+        let mut dest_addr = channel.base_address();
         let madr_step = channel.channel_control.madr_step();
 
         tracing::debug!(
             target: "psx_core::dma",
             dest_addr = %format!("{:08X}", dest_addr),
+            transfer_mode = %channel.channel_control.transfer_mode(),
             "CDROM DMA transfer starting"
         );
 
@@ -216,24 +258,41 @@ impl Mmu {
             TransferMode::Burst => {
                 let total_words = channel.bcr_word_count();
 
-                for idx in 0..total_words {
+                for _ in 0..total_words {
                     let word = self.read_u32(CDROM_ADDR_START);
-                    let addr = dest_addr.wrapping_add_signed(idx as i32 * madr_step);
-                    self.write_u32(addr, word);
+                    self.write_u32(dest_addr, word);
 
                     tracing::trace!(
                         target: "psx_core::dma",
-                        address = format!("{:08X}", addr),
+                        address = format!("{:08X}", dest_addr),
                         word = format!("{:08X}", word),
                         "CDROM DMA word transferred to RAM"
                     );
+
+                    dest_addr = dest_addr.wrapping_add_signed(madr_step);
                 }
             }
-            _ => {
+            TransferMode::Slice => {
+                let total_words = channel.bcr_block_total();
+
+                for _ in 0..total_words {
+                    let word = self.read_u32(CDROM_ADDR_START);
+                    self.write_u32(dest_addr, word);
+
+                    tracing::trace!(
+                        target: "psx_core::dma",
+                        address = format!("{:08X}", dest_addr),
+                        word = format!("{:08X}", word),
+                        "CDROM DMA word transferred to RAM (Slice mode)"
+                    );
+
+                    dest_addr = dest_addr.wrapping_add_signed(madr_step);
+                }
+            }
+            TransferMode::LinkedList => {
                 tracing::error!(
                     target: "psx_core::dma",
-                    transfer_mode = %channel.channel_control.transfer_mode(),
-                    "CDROM DMA only supports Burst mode"
+                    "CDROM DMA does not support LinkedList mode"
                 );
             }
         }

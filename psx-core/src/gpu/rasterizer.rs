@@ -12,7 +12,7 @@ pub fn rasterize_polygon(
 
     let textured = uvs.len() != 0;
 
-    // We need to extract CLUT and texpage here since inside of rasterize_triangle
+    // We need to extract CLUT and texpage here since inside rasterize_triangle
     // uvs[0] is uvs[1] and uvs[1] is uvs[2] for the second triangle of a quad
     let (clut, texpage) = if textured {
         let clut = ((uvs[0] >> 16) & 0xFFFF) as u16;
@@ -69,8 +69,83 @@ pub fn rasterize_polygon(
     }
 }
 
-pub fn rasterize_rectangle() {
-    // TODO: take texpage from gpu command GP0(E1)
+pub fn rasterize_rectangle(
+    x: i16, y: i16, width: u16, height: u16, uv: u32, texpage: u16, texture_window: TextureWindowSettingCommand,
+    drawing_area_x1: u32, drawing_area_y1: u32, drawing_area_x2: u32, drawing_area_y2: u32, vram: &mut [u8],
+) {
+    // Extract UV and CLUT from the uv parameter
+    let u_base = (uv & 0xFF) as u8;
+    let v_base = ((uv >> 8) & 0xFF) as u8;
+    let clut = ((uv >> 16) & 0xFFFF) as u16;
+
+    // Extract texture page parameters
+    let texture_x_base = ((texpage & 0b1111) as i32) * 64;
+    let texture_y_base = (((texpage >> 4) & 0x1) as i32 * 256) + (((texpage >> 11) & 0x1) as i32 * 512);
+    let color_depth = (texpage >> 7) & 0b11;
+
+    // Extract CLUT coordinates
+    let clut_x = ((clut & 0x3F) as usize) * 16; // CLUT X in 16-halfword steps
+    let clut_y = ((clut >> 6) & 0x1FF) as usize;
+
+    // Rasterize rectangle
+    for row in 0..height {
+        for col in 0..width {
+            let screen_x = x as i32 + col as i32;
+            let screen_y = y as i32 + row as i32;
+
+            // Check drawing area bounds
+            if screen_x < drawing_area_x1 as i32
+                || screen_x >= drawing_area_x2 as i32
+                || screen_y < drawing_area_y1 as i32
+                || screen_y >= drawing_area_y2 as i32
+            {
+                continue;
+            }
+
+            // Check VRAM bounds
+            if screen_x < 0 || screen_x >= VRAM_WIDTH as i32 || screen_y < 0 || screen_y >= VRAM_HEIGHT as i32 {
+                continue;
+            }
+
+            // Calculate texture coordinates with wrapping
+            let u = (u_base as i32 + col as i32) & 0xFF;
+            let v = (v_base as i32 + row as i32) & 0xFF;
+
+            // Apply texture window
+            let u = (u & !(texture_window.texture_window_x_mask() as i32 * 8))
+                | ((texture_window.texture_window_x_offset() as i32 & texture_window.texture_window_x_mask() as i32)
+                    * 8);
+            let v = (v & !(texture_window.texture_window_y_mask() as i32 * 8))
+                | ((texture_window.texture_window_y_offset() as i32 & texture_window.texture_window_y_mask() as i32)
+                    * 8);
+
+            let tex_x_in_page = (u as usize) % 256;
+            let tex_y_in_page = (v as usize) % 256;
+
+            // Sample texture
+            let pixel = sample_texture(
+                tex_x_in_page,
+                tex_y_in_page,
+                texture_x_base,
+                texture_y_base,
+                color_depth,
+                clut_x,
+                clut_y,
+                vram,
+            );
+
+            // Skip transparent pixels
+            if pixel == 0x0000 {
+                continue;
+            }
+
+            // Write pixel to VRAM
+            let vram_idx = (screen_y as usize * VRAM_WIDTH + screen_x as usize) * 2;
+            let bytes = pixel.to_le_bytes();
+            vram[vram_idx] = bytes[0];
+            vram[vram_idx + 1] = bytes[1];
+        }
+    }
 }
 
 fn rasterize_triangle(
@@ -99,7 +174,7 @@ fn rasterize_triangle(
     // Go through each pixel in bounding box
     // PSX excludes lower-right coordinates
     // "Polygons are displayed up to \<excluding> their lower-right coordinates."
-    // HONORY MENTION: CHICHO I LOVE YOU
+    // HONORARY MENTION: CHICHO I LOVE YOU
     for y in min_y..max_y {
         for x in min_x..max_x {
             // Measure the distance from point (x, y) to the edge opposite to the corresponding vertex
@@ -144,6 +219,87 @@ fn rasterize_triangle(
 #[inline]
 fn edge_function(ax: i32, ay: i32, bx: i32, by: i32, px: i32, py: i32) -> i32 {
     (bx - ax) * (py - ay) - (by - ay) * (px - ax)
+}
+
+/// Look up a color from the CLUT
+#[inline]
+fn lookup_clut(clut_x: usize, clut_y: usize, index: usize, vram: &[u8]) -> u16 {
+    let clut_idx = (clut_y * VRAM_WIDTH + clut_x + index) * 2;
+    if clut_idx + 1 < vram.len() {
+        u16::from_le_bytes([vram[clut_idx], vram[clut_idx + 1]])
+    } else {
+        0x0000
+    }
+}
+
+/// Sample a texture at the given coordinates
+/// Returns 0x0000 for transparent pixels or OOB access
+fn sample_texture(
+    tex_x_in_page: usize, tex_y_in_page: usize, texture_x_base: i32, texture_y_base: i32, color_depth: u16,
+    clut_x: usize, clut_y: usize, vram: &[u8],
+) -> u16 {
+    match color_depth {
+        0 => {
+            // 4-bit CLUT mode
+            let vram_x = texture_x_base as usize + (tex_x_in_page / 4);
+            let vram_y = texture_y_base as usize + tex_y_in_page;
+
+            if vram_x >= VRAM_WIDTH || vram_y >= VRAM_HEIGHT {
+                return 0x0000;
+            }
+
+            let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
+            let halfword = u16::from_le_bytes([vram[vram_idx], vram[vram_idx + 1]]);
+            let texel_in_word = tex_x_in_page % 4;
+            let texel_index = ((halfword >> (texel_in_word * 4)) & 0xF) as usize;
+
+            if texel_index == 0 {
+                0x0000
+            } else {
+                lookup_clut(clut_x, clut_y, texel_index, vram)
+            }
+        }
+        1 => {
+            // 8-bit CLUT mode
+            let vram_x = texture_x_base as usize + (tex_x_in_page / 2);
+            let vram_y = texture_y_base as usize + tex_y_in_page;
+
+            if vram_x >= VRAM_WIDTH || vram_y >= VRAM_HEIGHT {
+                return 0x0000;
+            }
+
+            let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
+            let halfword = u16::from_le_bytes([vram[vram_idx], vram[vram_idx + 1]]);
+            let texel_in_word = tex_x_in_page % 2;
+            let texel_index = if texel_in_word == 0 {
+                (halfword & 0xFF) as usize
+            } else {
+                ((halfword >> 8) & 0xFF) as usize
+            };
+
+            if texel_index == 0 {
+                0x0000
+            } else {
+                lookup_clut(clut_x, clut_y, texel_index, vram)
+            }
+        }
+        _ => {
+            // 15-bit direct color mode
+            let texel_x = texture_x_base as usize + tex_x_in_page;
+            let texel_y = texture_y_base as usize + tex_y_in_page;
+
+            if texel_x >= VRAM_WIDTH || texel_y >= VRAM_HEIGHT {
+                return 0x0000;
+            }
+
+            let tex_idx = (texel_y * VRAM_WIDTH + texel_x) * 2;
+            if tex_idx + 1 < vram.len() {
+                u16::from_le_bytes([vram[tex_idx], vram[tex_idx + 1]])
+            } else {
+                0x0000
+            }
+        }
+    }
 }
 
 fn gouraud_shading(colors: [u32; 3], w0: i32, w1: i32, w2: i32, area: i32) -> u16 {
@@ -233,114 +389,14 @@ fn textured_render(
     let tex_x_in_page = (u as usize) % 256;
     let tex_y_in_page = (v as usize) % 256;
 
-    match color_depth {
-        0 => {
-            // 4-bit CLUT mode
-            // PSX-SPX: 16-bit word contains 4 texels:
-            //   bits 0-3: 1st pixel (left)
-            //   bits 4-7: 2nd pixel
-            //   bits 8-11: 3rd pixel
-            //   bits 12-15: 4th pixel (right)
-
-            // texture_x_base is in halfwords (N*64), where each halfword contains 4 texels
-            // Convert to texel coordinates: texture_x_base is already in halfwords,
-            // so we just need to add the in-page texel offset
-            let vram_x = texture_x_base as usize + (tex_x_in_page / 4);
-            let vram_y = texture_y_base as usize + tex_y_in_page;
-
-            if vram_x >= VRAM_WIDTH || vram_y >= VRAM_HEIGHT {
-                return 0x0000; // Transparent black
-            }
-
-            // Read the 16-bit halfword containing our texel
-            // Each halfword at vram[y][x] contains 4 texels
-            let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
-            let halfword = u16::from_le_bytes([vram[vram_idx], vram[vram_idx + 1]]);
-
-            // Extract the correct 4-bit index based on position within the halfword
-            // texel 0 (leftmost) is in bits 0-3, texel 3 (rightmost) is in bits 12-15
-            let texel_in_word = tex_x_in_page % 4;
-            let texel_index = ((halfword >> (texel_in_word * 4)) & 0xF) as u8;
-
-            // Transparent color
-            if texel_index == 0 {
-                return 0x0000;
-            }
-
-            // Lookup in CLUT
-            let clut_x = (clut_x as usize) * 16; // CLUT X in 16-halfword steps
-            let clut_y = clut_y as usize;
-            let clut_idx = (clut_y * VRAM_WIDTH + clut_x + texel_index as usize) * 2;
-
-            if clut_idx + 1 < vram.len() {
-                // In BIOS, the SONY logos will have this color
-                u16::from_le_bytes([vram[clut_idx], vram[clut_idx + 1]])
-            } else {
-                // In BIOS, the surrounding area of the texture of the SONY logos will be this color
-                // -> transparent, handle in caller
-                0x0000
-            }
-        }
-        1 => {
-            // 8-bit CLUT mode
-            // PSX-SPX: 16-bit word contains 2 texels:
-            //   bits 0-7: 1st pixel (left)
-            //   bits 8-15: 2nd pixel (right)
-
-            // texture_x_base is in halfwords (N*64), where each halfword contains 2 texels
-            // Convert to VRAM coordinates
-            let vram_x = texture_x_base as usize + (tex_x_in_page / 2);
-            let vram_y = texture_y_base as usize + tex_y_in_page;
-
-            if vram_x >= VRAM_WIDTH || vram_y >= VRAM_HEIGHT {
-                return 0x0000;
-            }
-
-            // Read the 16-bit halfword containing our texel
-            let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
-            let halfword = u16::from_le_bytes([vram[vram_idx], vram[vram_idx + 1]]);
-
-            // Extract the correct 8-bit index
-            // texel 0 (left) is in bits 0-7, texel 1 (right) is in bits 8-15
-            let texel_in_word = tex_x_in_page % 2;
-            let texel_index = if texel_in_word == 0 {
-                (halfword & 0xFF) as u8
-            } else {
-                ((halfword >> 8) & 0xFF) as u8
-            };
-
-            // Transparent color
-            if texel_index == 0 {
-                return 0x0000;
-            }
-
-            // Lookup in CLUT
-            let clut_x = (clut_x as usize) * 16; // CLUT X in 16-halfword steps
-            let clut_y = clut_y as usize;
-            let clut_idx = (clut_y * VRAM_WIDTH + clut_x + texel_index as usize) * 2;
-
-            if clut_idx + 1 < vram.len() {
-                u16::from_le_bytes([vram[clut_idx], vram[clut_idx + 1]])
-            } else {
-                0x0000
-            }
-        }
-        _ => {
-            // 15-bit direct color mode (texture_depth == 2 or 3)
-
-            let texel_x = texture_x_base as usize + tex_x_in_page;
-            let texel_y = texture_y_base as usize + tex_y_in_page;
-
-            if texel_x >= VRAM_WIDTH || texel_y >= VRAM_HEIGHT {
-                return 0x0000;
-            }
-
-            let tex_idx = (texel_y * VRAM_WIDTH + texel_x) * 2;
-            if tex_idx + 1 < vram.len() {
-                u16::from_le_bytes([vram[tex_idx], vram[tex_idx + 1]])
-            } else {
-                0x0000
-            }
-        }
-    }
+    sample_texture(
+        tex_x_in_page,
+        tex_y_in_page,
+        texture_x_base,
+        texture_y_base,
+        color_depth,
+        (clut_x as usize) * 16,
+        clut_y as usize,
+        vram,
+    )
 }

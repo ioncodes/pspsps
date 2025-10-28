@@ -69,6 +69,10 @@ pub fn rasterize_polygon(
     }
 }
 
+pub fn rasterize_rectangle() {
+    // TODO: take texpage from gpu command GP0(E1)
+}
+
 fn rasterize_triangle(
     vertices: [(i16, i16); 3], colors: [u32; 3], uvs: [u32; 3], textured: bool, clut: u16, texpage: u16,
     texture_window: TextureWindowSettingCommand, drawing_area_x1: u32, drawing_area_y1: u32, drawing_area_x2: u32,

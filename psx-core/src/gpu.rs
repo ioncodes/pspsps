@@ -1,6 +1,7 @@
 pub mod cmd;
 pub mod gp;
 pub mod rasterizer;
+pub mod rgb;
 pub mod status;
 
 use crate::gpu::cmd::poly::DrawPolygonCommand;
@@ -70,18 +71,11 @@ impl Gpu {
                     // Read RGB555 pixel from VRAM
                     let pixel_u16 = u16::from_le_bytes([self.gp.vram[vram_idx], self.gp.vram[vram_idx + 1]]);
 
-                    // Extract RGB555 components
-                    let r5 = (pixel_u16 & 0x1F) as u8;
-                    let g5 = ((pixel_u16 >> 5) & 0x1F) as u8;
-                    let b5 = ((pixel_u16 >> 10) & 0x1F) as u8;
-
                     // Convert RGB555 to RGB888
-                    let r8 = (r5 << 3) | (r5 >> 2);
-                    let g8 = (g5 << 3) | (g5 >> 2);
-                    let b8 = (b5 << 3) | (b5 >> 2);
+                    let (r8, g8, b8) = rgb::rgb555_to_rgb888(pixel_u16);
 
                     let buffer_idx = y * width + x;
-                    buffer[buffer_idx] = (r8, g8, b8);
+                    buffer[buffer_idx] = (r8 as u8, g8 as u8, b8 as u8);
                 }
             }
         }
@@ -158,16 +152,9 @@ impl Gpu {
                 &mut self.gp.vram,
             );
         } else {
-            // extract RGB565 color components
-            let r = (cmd.color() & 0xFF) as u8;
-            let g = ((cmd.color() >> 8) & 0xFF) as u8;
-            let b = ((cmd.color() >> 16) & 0xFF) as u8;
-
             // Convert RGB888 to RGB555
-            let r5 = (r >> 3) & 0x1F;
-            let g5 = (g >> 3) & 0x1F;
-            let b5 = (b >> 3) & 0x1F;
-            let pixel_value = (b5 as u16) << 10 | (g5 as u16) << 5 | (r5 as u16);
+            let (r, g, b) = rgb::extract_rgb888(cmd.color());
+            let pixel_value = rgb::rgb888_to_rgb555(r, g, b);
 
             for row in 0..height {
                 for col in 0..width {
@@ -415,16 +402,9 @@ impl Gpu {
                     "Quick rectangle fill"
                 );
 
-                // extract RGB565 color components
-                let r = (color & 0xFF) as u8;
-                let g = ((color >> 8) & 0xFF) as u8;
-                let b = ((color >> 16) & 0xFF) as u8;
-
                 // Convert RGB888 to RGB555
-                let r5 = (r >> 3) & 0x1F;
-                let g5 = (g >> 3) & 0x1F;
-                let b5 = (b >> 3) & 0x1F;
-                let pixel_value = (b5 as u16) << 10 | (g5 as u16) << 5 | (r5 as u16);
+                let (r, g, b) = rgb::extract_rgb888(color);
+                let pixel_value = rgb::rgb888_to_rgb555(r, g, b);
 
                 for row in 0..height {
                     for col in 0..width {

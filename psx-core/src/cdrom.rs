@@ -15,6 +15,8 @@ crate::define_addr!(CDROM_ADDR, 0x1F80_1800, 0, 0x04, 0x04);
 pub const CYCLE_DELAY: usize = 1000; // TODO: just a random stub
 
 pub struct Cdrom {
+    cdrom_cue: Vec<u8>,
+    cdrom_bin: Vec<u8>,
     address: AddressRegister,
     adpctl: AdpCtlRegister,
     hintmsk: HIntMaskRegister,
@@ -29,6 +31,8 @@ pub struct Cdrom {
 impl Cdrom {
     pub fn new() -> Self {
         Self {
+            cdrom_cue: Vec::new(),
+            cdrom_bin: Vec::new(),
             address: AddressRegister(0),
             adpctl: AdpCtlRegister(0),
             hintmsk: HIntMaskRegister(0),
@@ -77,6 +81,17 @@ impl Cdrom {
         }
 
         false
+    }
+
+    pub fn insert_disk(&mut self, cue: Vec<u8>, bin: Vec<u8>) {
+        self.cdrom_cue = cue;
+        self.cdrom_bin = bin;
+
+        tracing::info!(
+            target: "psx_core::cdrom",
+            size = self.cdrom_bin.len(),
+            "CD-ROM disk inserted",
+        );
     }
 
     fn execute_command(&mut self, command: u8) {
@@ -131,7 +146,7 @@ impl Cdrom {
 
     fn status(&mut self) -> StatusCode {
         let mut status = StatusCode(0);
-        status.set_shell_open(true);
+        status.set_shell_open(self.cdrom_cue.is_empty());
         status
     }
 

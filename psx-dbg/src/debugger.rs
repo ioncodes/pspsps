@@ -22,6 +22,8 @@ pub struct Debugger {
     trace: VecDeque<(u32, Instruction)>,
     breakpoints: HashSet<u32>,
     sideload_exe: Option<Vec<u8>>,
+    cue_file: Option<Vec<u8>>,
+    bin_file: Option<Vec<u8>>,
     bios: Vec<u8>,
     cycle_counter: u32,
 }
@@ -39,14 +41,41 @@ impl Debugger {
             trace: VecDeque::with_capacity(1000),
             breakpoints: HashSet::new(),
             sideload_exe: None,
+            cue_file: None,
+            bin_file: None,
             bios,
             cycle_counter: 0,
         }
     }
 
-    pub fn sideload_exe(&mut self, exe_buffer: Vec<u8>) {
-        self.sideload_exe = Some(exe_buffer); // Store the sideloaded executable, used for reset
-        self.psx.sideload_exe(self.sideload_exe.clone().unwrap());
+    pub fn with_sideloaded_exe(mut self, path: Option<String>) -> Self {
+        if let Some(exe_path) = path {
+            let exe_buffer = std::fs::read(&exe_path)
+                .unwrap_or_else(|e| panic!("Failed to read sideloaded executable file '{}': {}", exe_path, e));
+            self.sideload_exe = Some(exe_buffer.clone());
+            self.psx.sideload_exe(exe_buffer);
+        }
+
+        self
+    }
+
+    pub fn with_cdrom_image(mut self, path: Option<String>) -> Self {
+        if let Some(cdrom_path) = path {
+            let cue_path = cdrom_path.clone();
+            let bin_path = cue_path.replace(".cue", ".bin");
+
+            let cue = std::fs::read(&cdrom_path)
+                .unwrap_or_else(|e| panic!("Failed to read CD-ROM image file '{}': {}", cdrom_path, e));
+            let bin = std::fs::read(&bin_path)
+                .unwrap_or_else(|e| panic!("Failed to read CD-ROM image file '{}': {}", bin_path, e));
+
+            self.cue_file = Some(cue.clone());
+            self.bin_file = Some(bin.clone());
+
+            self.psx.load_cdrom(cue, bin);
+        }
+
+        self
     }
 
     pub fn run(&mut self) {
@@ -185,11 +214,14 @@ impl Debugger {
                 }
                 DebuggerEvent::Reset => {
                     self.psx = Psx::new(&self.bios);
-                    self.psx.sideload_exe(
-                        self.sideload_exe
-                            .take()
-                            .unwrap_or_else(|| panic!("No sideloaded executable found")),
-                    );
+
+                    if let Some(exe_buffer) = &self.sideload_exe {
+                        self.psx.sideload_exe(exe_buffer.clone());
+                    }
+
+                    if let (Some(cue), Some(bin)) = (&self.cue_file, &self.bin_file) {
+                        self.psx.load_cdrom(cue.clone(), bin.clone());
+                    }
 
                     self.is_running = false;
                     self.trace.clear();

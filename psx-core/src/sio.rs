@@ -4,7 +4,7 @@ pub mod sio1;
 
 use crate::mmu::bus::{Bus8, Bus16, Bus32};
 use crate::sio::joy::ControllerState;
-use crate::sio::sio1::{SIO1_CTRL_ADDR_START, Sio1};
+use crate::sio::sio1::Sio1;
 use proc_bitfield::bitfield;
 use sio0::{SIO0_BAUD_ADDR_END, SIO0_TX_DATA_ADDR_START, Sio0};
 use sio1::{SIO1_BAUD_ADDR_END, SIO1_TX_DATA_ADDR_START};
@@ -93,22 +93,14 @@ impl Bus8 for Sio {
     fn read_u8(&mut self, address: u32) -> u8 {
         match address {
             SIO0_TX_DATA_ADDR_START..=SIO0_BAUD_ADDR_END => self.sio0.read_u8(address),
-            SIO1_TX_DATA_ADDR_START..=SIO1_BAUD_ADDR_END => {
-                tracing::warn!(target: "psx_core::sio", address = format!("{:08X}", address), "SIO1 read not implemented");
-                0xFF
-            }
+            SIO1_TX_DATA_ADDR_START..=SIO1_BAUD_ADDR_END => self.sio1.read_u8(address),
             _ => unreachable!("Invalid SIO address: {:08X}", address),
         }
     }
 
     fn write_u8(&mut self, address: u32, value: u8) {
-        match address {
-            SIO0_TX_DATA_ADDR_START..=SIO0_BAUD_ADDR_END => self.sio0.write_u8(address, value),
-            SIO1_TX_DATA_ADDR_START..=SIO1_BAUD_ADDR_END => {
-                tracing::warn!(target: "psx_core::sio", address = format!("{:08X}", address), "SIO1 write not implemented");
-            }
-            _ => unreachable!("Invalid SIO address: {:08X}", address),
-        }
+        tracing::warn!(target: "psx_core::sio", address = format!("{:08X}", address), value = format!("{:02X}", value), "8-bit write detected");
+        self.write_u16(address, value as u16);
     }
 }
 
@@ -116,10 +108,7 @@ impl Bus16 for Sio {
     fn read_u16(&mut self, address: u32) -> u16 {
         match address {
             SIO0_TX_DATA_ADDR_START..=SIO0_BAUD_ADDR_END => self.sio0.read_u16(address),
-            SIO1_TX_DATA_ADDR_START..=SIO1_BAUD_ADDR_END => {
-                tracing::warn!(target: "psx_core::sio", address = format!("{:08X}", address), "SIO1 read not implemented");
-                0xFF
-            }
+            SIO1_TX_DATA_ADDR_START..=SIO1_BAUD_ADDR_END => self.sio1.read_u16(address),
             _ => unreachable!("Invalid SIO address: {:08X}", address),
         }
     }
@@ -127,10 +116,7 @@ impl Bus16 for Sio {
     fn write_u16(&mut self, address: u32, value: u16) {
         match address {
             SIO0_TX_DATA_ADDR_START..=SIO0_BAUD_ADDR_END => self.sio0.write_u16(address, value),
-            SIO1_CTRL_ADDR_START => self.sio1.control.0 = value,
-            SIO1_TX_DATA_ADDR_START..=SIO1_BAUD_ADDR_END => {
-                tracing::warn!(target: "psx_core::sio", address = format!("{:08X}", address), "SIO1 write not implemented");
-            }
+            SIO1_TX_DATA_ADDR_START..=SIO1_BAUD_ADDR_END => self.sio1.write_u16(address, value),
             _ => unreachable!("Invalid SIO address: {:08X}", address),
         }
     }
@@ -140,21 +126,13 @@ impl Bus32 for Sio {
     fn read_u32(&mut self, address: u32) -> u32 {
         match address {
             SIO0_TX_DATA_ADDR_START..=SIO0_BAUD_ADDR_END => self.sio0.read_u32(address),
-            SIO1_TX_DATA_ADDR_START..=SIO1_BAUD_ADDR_END => {
-                tracing::warn!(target: "psx_core::sio", address = format!("{:08X}", address), "SIO1 read not implemented");
-                0xFF
-            }
+            SIO1_TX_DATA_ADDR_START..=SIO1_BAUD_ADDR_END => self.sio1.read_u32(address),
             _ => unreachable!("Invalid SIO address: {:08X}", address),
         }
     }
 
     fn write_u32(&mut self, address: u32, value: u32) {
-        match address {
-            SIO0_TX_DATA_ADDR_START..=SIO0_BAUD_ADDR_END => self.sio0.write_u32(address, value),
-            SIO1_TX_DATA_ADDR_START..=SIO1_BAUD_ADDR_END => {
-                tracing::warn!(target: "psx_core::sio", address = format!("{:08X}", address), "SIO1 write not implemented");
-            }
-            _ => unreachable!("Invalid SIO address: {:08X}", address),
-        }
+        tracing::warn!(target: "psx_core::sio", address = format!("{:08X}", address), value = format!("{:08X}", value), "32-bit write detected");
+        self.write_u16(address, value as u16);
     }
 }

@@ -14,8 +14,7 @@ use tracing_subscriber::Layer as _;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use widgets::{
-    BreakpointsWidget, CpuWidget, DisplayWidget, GpuWidget, MmuWidget, SharedContext, TraceWidget,
-    TtyWidget, Widget,
+    BreakpointsWidget, CpuWidget, DisplayWidget, GpuWidget, MmuWidget, SharedContext, TraceWidget, TtyWidget, Widget,
 };
 
 use crate::debugger::Debugger;
@@ -91,23 +90,19 @@ impl Default for PsxDebugger {
 impl PsxDebugger {
     fn new(bios_path: String, sideload_file: Option<String>) -> Self {
         let mut dock_state = DockState::new(vec![TabKind::Cpu, TabKind::Trace]);
-        let [_left_node, right_node] = dock_state.main_surface_mut().split_right(
-            egui_dock::NodeIndex::root(),
-            0.33,
-            vec![TabKind::Gpu],
-        );
-        let [gpu_node, mmu_node] =
+        let [_left_node, right_node] =
             dock_state
                 .main_surface_mut()
-                .split_right(right_node, 0.5, vec![TabKind::Mmu]);
+                .split_right(egui_dock::NodeIndex::root(), 0.33, vec![TabKind::Gpu]);
+        let [gpu_node, mmu_node] = dock_state
+            .main_surface_mut()
+            .split_right(right_node, 0.5, vec![TabKind::Mmu]);
         dock_state
             .main_surface_mut()
             .split_below(gpu_node, 0.66, vec![TabKind::Display]);
-        dock_state.main_surface_mut().split_below(
-            mmu_node,
-            0.5,
-            vec![TabKind::Breakpoints, TabKind::Tty],
-        );
+        dock_state
+            .main_surface_mut()
+            .split_below(mmu_node, 0.5, vec![TabKind::Breakpoints, TabKind::Tty]);
 
         let mut widgets: HashMap<TabKind, Box<dyn Widget>> = HashMap::new();
         widgets.insert(TabKind::Cpu, Box::new(CpuWidget::new()));
@@ -156,7 +151,6 @@ impl PsxDebugger {
 
 impl eframe::App for PsxDebugger {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Poll keyboard state and build controller state
         let mut controller = ControllerState::default();
 
         ctx.input(|i| {
@@ -167,23 +161,22 @@ impl eframe::App for PsxDebugger {
             controller.d_right = i.key_down(egui::Key::ArrowRight);
 
             // Action buttons
-            controller.cross = i.key_down(egui::Key::Y);      // Y = Cross
-            controller.circle = i.key_down(egui::Key::X);     // X = Circle
-            controller.square = i.key_down(egui::Key::A);     // A = Square
-            controller.triangle = i.key_down(egui::Key::S);   // S = Triangle
+            controller.cross = i.key_down(egui::Key::Y); // Y = Cross
+            controller.circle = i.key_down(egui::Key::X); // X = Circle
+            controller.square = i.key_down(egui::Key::A); // A = Square
+            controller.triangle = i.key_down(egui::Key::S); // S = Triangle
 
             // Shoulder buttons
-            controller.l1 = i.key_down(egui::Key::Q);         // Q = L1
-            controller.l2 = i.key_down(egui::Key::W);         // W = L2
-            controller.r1 = i.key_down(egui::Key::E);         // E = R1
-            controller.r2 = i.key_down(egui::Key::R);         // R = R2
+            controller.l1 = i.key_down(egui::Key::Q); // Q = L1
+            controller.l2 = i.key_down(egui::Key::W); // W = L2
+            controller.r1 = i.key_down(egui::Key::E); // E = R1
+            controller.r2 = i.key_down(egui::Key::R); // R = R2
 
             // System buttons
-            controller.start = i.key_down(egui::Key::Enter);  // Enter = Start
+            controller.start = i.key_down(egui::Key::Enter); // Enter = Start
             controller.select = i.key_down(egui::Key::Space); // Space = Select
         });
 
-        // Send controller state to debugger thread
         let _ = self.channel_send.send(DebuggerEvent::UpdateController(controller));
 
         while let Ok(event) = self.channel_recv.try_recv() {
@@ -194,8 +187,7 @@ impl eframe::App for PsxDebugger {
                     self.toasts.add(Toast {
                         text: format!("Breakpoint hit at {:08X}", addr).into(),
                         kind: ToastKind::Info,
-                        options: egui_toast::ToastOptions::default()
-                            .duration(Some(Duration::from_secs(3))),
+                        options: egui_toast::ToastOptions::default().duration(Some(Duration::from_secs(3))),
                         style: Default::default(),
                     });
                 }
@@ -222,8 +214,7 @@ impl eframe::App for PsxDebugger {
                     self.toasts.add(Toast {
                         text: "Debugger paused".into(),
                         kind: ToastKind::Info,
-                        options: egui_toast::ToastOptions::default()
-                            .duration(Some(Duration::from_secs(3))),
+                        options: egui_toast::ToastOptions::default().duration(Some(Duration::from_secs(3))),
                         style: Default::default(),
                     });
                 }
@@ -232,8 +223,7 @@ impl eframe::App for PsxDebugger {
                     self.toasts.add(Toast {
                         text: "Debugger running".into(),
                         kind: ToastKind::Info,
-                        options: egui_toast::ToastOptions::default()
-                            .duration(Some(Duration::from_secs(3))),
+                        options: egui_toast::ToastOptions::default().duration(Some(Duration::from_secs(3))),
                         style: Default::default(),
                     });
                 }
@@ -328,7 +318,6 @@ fn main() -> eframe::Result {
         targets = targets.with_target("psx_core::irq", tracing_level);
         targets = targets.with_target("psx_core::sio", tracing_level);
         targets = targets.with_target("psx_core::cdrom", tracing_level);
-        targets = targets.with_target("psx_dbg", tracing_level);
     }
 
     if args.json {

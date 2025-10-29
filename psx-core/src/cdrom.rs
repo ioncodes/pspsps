@@ -2,7 +2,6 @@ pub mod irq;
 pub mod reg;
 
 use proc_bitfield::with_bits;
-
 use crate::cdrom::irq::DiskIrq;
 use crate::cdrom::reg::{
     AddressRegister, AdpCtlRegister, HClrCtl, HIntMaskRegister, HIntSts, StatusCode, REG_ADDRESS_ADDR, REG_ADPCTL_ADDR, REG_COMMAND_ADDR, REG_HCLRCTL_ADDR, REG_HINTMSK_ADDR_R, REG_HINTMSK_ADDR_W, REG_HINTSTS_ADDR, REG_HSTS_ADDR, REG_PARAMETER_ADDR, REG_RESULT_ADDR
@@ -140,7 +139,7 @@ impl Cdrom {
     }
 
     fn trigger_irq(&mut self, irq: DiskIrq) {
-        tracing::debug!(target: "psx_core::cdrom", %irq, "Triggering CDROM IRQ");
+        tracing::trace!(target: "psx_core::cdrom", %irq, "Raised CDROM IRQ");
         self.hintsts.set_irq_flags(irq);
     }
 
@@ -176,12 +175,30 @@ impl Bus8 for Cdrom {
                 );
                 self.address.0
             }
-            REG_RESULT_ADDR => self.result_fifo.pop_front().unwrap_or(0xFF),
+            REG_RESULT_ADDR => self.result_fifo.pop_front().unwrap_or_else(|| {
+                tracing::warn!(
+                    target: "psx_core::cdrom",
+                    "Result FIFO underflow on read",
+                );
+                0xFF
+            }),
             // REG_RDDATA_ADDR => self.rdata,
             REG_HINTMSK_ADDR_R if self.address.current_bank() == 0 || self.address.current_bank() == 2 => {
+                tracing::trace!(
+                    target: "psx_core::cdrom",
+                    bank = self.address.current_bank(),
+                    hintmsk = format!("{:08b}", self.hintmsk.0),
+                    "CDROM HINTMSK read",
+                );
                 self.hintmsk.0
             }
             REG_HINTSTS_ADDR if self.address.current_bank() == 1 || self.address.current_bank() == 3 => {
+                tracing::trace!(
+                    target: "psx_core::cdrom",
+                    bank = self.address.current_bank(),
+                    hintsts = format!("{:08b}", self.hintsts.0),
+                    "CDROM HINTSTS read",
+                );
                 with_bits!(self.hintsts.0, 5..=7 = 1)
             }
             _ => {

@@ -7,6 +7,7 @@ use crate::gpu::{GP0_ADDRESS_END, GP0_ADDRESS_START, GP1_ADDRESS_END, GP1_ADDRES
 use crate::irq::{I_MASK_ADDR_END, I_MASK_ADDR_START, I_STAT_ADDR_END, I_STAT_ADDR_START, Irq};
 use crate::mmu::bus::{Bus8 as _, Bus32};
 use crate::mmu::dma::{Channel, DMA_INTERRUPT_REGISTER_ADDRESS_END, DMA0_ADDRESS_START, Dma, TransferMode};
+use crate::sio::{SIO_ADDR_END, SIO_ADDR_START, Sio};
 use crate::spu::Spu;
 
 pub struct Mmu {
@@ -16,6 +17,7 @@ pub struct Mmu {
     pub gpu: Gpu,
     pub dma: Dma,
     pub irq: Irq,
+    pub sio: Sio,
 }
 
 impl Mmu {
@@ -27,6 +29,7 @@ impl Mmu {
             gpu: Gpu::new(),
             dma: Dma::new(),
             irq: Irq::new(),
+            sio: Sio::new()
         }
     }
 
@@ -328,10 +331,11 @@ impl bus::Bus8 for Mmu {
         let address = Self::canonicalize_virtual_address(address);
 
         match address {
-            CDROM_ADDR_START..=CDROM_ADDR_END => self.cdrom.read_u8(address),
-            DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.read_u8(address),
+            SIO_ADDR_START..=SIO_ADDR_END => self.sio.read_u8(address),
             I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.read_u8(address),
             I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.read_u8(address),
+            DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.read_u8(address),
+            CDROM_ADDR_START..=CDROM_ADDR_END => self.cdrom.read_u8(address),
             0x1F80_1D80..=0x1F80_1DBB => self.spu.read(address), // TODO: not complete
             0x1F80_1000..=0x1F80_1FFF => {
                 tracing::error!(target: "psx_core::mmu", address = %format!("{:08X}", address), "Reading from unimplemented I/O port");
@@ -345,10 +349,11 @@ impl bus::Bus8 for Mmu {
     fn write_u8(&mut self, address: u32, value: u8) {
         let address = Self::canonicalize_virtual_address(address);
         match address {
-            CDROM_ADDR_START..=CDROM_ADDR_END => self.cdrom.write_u8(address, value),
-            DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.write_u8(address, value),
+            SIO_ADDR_START..=SIO_ADDR_END => self.sio.write_u8(address, value),
             I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.write_u8(address, value),
             I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.write_u8(address, value),
+            DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.write_u8(address, value),
+            CDROM_ADDR_START..=CDROM_ADDR_END => self.cdrom.write_u8(address, value),
             0x1F80_1D80..=0x1F80_1DBB => self.spu.write(address, value),
             0x1F80_1000..=0x1F80_1FFF => {
                 tracing::error!(target: "psx_core::mmu", address = %format!("{:08X}", address), value = %format!("{:02X}", value), "Writing to unimplemented I/O port");
@@ -363,9 +368,10 @@ impl bus::Bus16 for Mmu {
     fn read_u16(&mut self, address: u32) -> u16 {
         let address = Self::canonicalize_virtual_address(address);
         match address {
-            DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.read_u16(address),
+            SIO_ADDR_START..=SIO_ADDR_END => self.sio.read_u16(address),
             I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.read_u16(address),
             I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.read_u16(address),
+            DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.read_u16(address),
             _ => u16::from_le_bytes([self.read_u8(address), self.read_u8(address + 1)]),
         }
     }
@@ -374,9 +380,10 @@ impl bus::Bus16 for Mmu {
     fn write_u16(&mut self, address: u32, value: u16) {
         let address = Self::canonicalize_virtual_address(address);
         match address {
-            DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.write_u16(address, value),
+            SIO_ADDR_START..=SIO_ADDR_END => self.sio.write_u16(address, value),
             I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.write_u16(address, value),
             I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.write_u16(address, value),
+            DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.write_u16(address, value),
             _ => {
                 self.write_u8(address, (value & 0xFF) as u8);
                 self.write_u8(address + 1, ((value >> 8) & 0xFF) as u8);
@@ -391,11 +398,12 @@ impl bus::Bus32 for Mmu {
         let address = Self::canonicalize_virtual_address(address);
         match address {
             0x1F801100..=0x1F80112F => 0xFF, // TODO: always return 0xFF for these (timers?). helps with getting to shell
+            SIO_ADDR_START..=SIO_ADDR_END => self.irq.read_u32(address),
+            I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.read_u32(address),
+            I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.read_u32(address),
             DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.read_u32(address),
             GP0_ADDRESS_START..=GP0_ADDRESS_END => self.gpu.read_u32(address),
             GP1_ADDRESS_START..=GP1_ADDRESS_END => self.gpu.read_u32(address),
-            I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.read_u32(address),
-            I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.read_u32(address),
             _ => u32::from_le_bytes([
                 self.read_u8(address),
                 self.read_u8(address + 1),
@@ -409,11 +417,12 @@ impl bus::Bus32 for Mmu {
     fn write_u32(&mut self, address: u32, value: u32) {
         let address = Self::canonicalize_virtual_address(address);
         match address {
+            SIO_ADDR_START..=SIO_ADDR_END => self.sio.write_u32(address, value),
+            I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.write_u32(address, value),
+            I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.write_u32(address, value),
             DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.write_u32(address, value),
             GP0_ADDRESS_START..=GP0_ADDRESS_END => self.gpu.write_u32(address, value),
             GP1_ADDRESS_START..=GP1_ADDRESS_END => self.gpu.write_u32(address, value),
-            I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.write_u32(address, value),
-            I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.write_u32(address, value),
             _ => {
                 self.write_u8(address, (value & 0xFF) as u8);
                 self.write_u8(address + 1, ((value >> 8) & 0xFF) as u8);

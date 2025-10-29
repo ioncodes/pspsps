@@ -91,13 +91,31 @@ impl Bus16 for Sio {
 
     fn write_u16(&mut self, address: u32, value: u16) {
         match address {
-            SIO0_CTRL_ADDR_START => self.sio0.control.0 = value,
-            SIO1_CTRL_ADDR_START => self.sio1.control.0 = value,
+            SIO0_CTRL_ADDR_START => {
+                self.sio0.control.0 = value;
+                tracing::debug!(
+                    target: "psx_core::sio",
+                    txen = self.sio0.control.tx_enable(),
+                    rxen = self.sio0.control.rx_enable(),
+                    "SIO0 CTRL set"
+                );
+            },
+            SIO1_CTRL_ADDR_START => {
+                self.sio1.control.0 = value;
+                tracing::debug!(
+                    target: "psx_core::sio",
+                    raw = format!("{:04X}", value),
+                    txen = self.sio0.control.tx_enable(),
+                    rxen = self.sio0.control.rx_enable(),
+                    "SIO1 CTRL set"
+                );
+            },
             _ => {
                 tracing::error!(
                     target: "psx_core::sio",
+                    raw = format!("{:04X}", value),
                     address = format!("{:08X}", address),
-                    value,
+                    value = format!("{:04X}", value),
                     "Unimplemented SIO write"
                 )
             }

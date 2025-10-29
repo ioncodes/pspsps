@@ -99,7 +99,6 @@ impl Bus8 for Sio {
     }
 
     fn write_u8(&mut self, address: u32, value: u8) {
-        tracing::warn!(target: "psx_core::sio", address = format!("{:08X}", address), value = format!("{:02X}", value), "8-bit write detected");
         self.write_u16(address, value as u16);
     }
 }
@@ -132,7 +131,6 @@ impl Bus32 for Sio {
     }
 
     fn write_u32(&mut self, address: u32, value: u32) {
-        tracing::warn!(target: "psx_core::sio", address = format!("{:08X}", address), value = format!("{:08X}", value), "32-bit write detected");
         self.write_u16(address, value as u16);
     }
 }

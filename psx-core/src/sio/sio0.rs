@@ -194,6 +194,8 @@ impl Bus8 for Sio0 {
 impl Bus16 for Sio0 {
     fn read_u16(&mut self, address: u32) -> u16 {
         match address {
+            SIO0_TX_DATA_ADDR_START => self.read_u8(address) as u16,
+            SIO0_STATUS_ADDR_START => self.status.0 as u16,
             SIO0_MODE_ADDR_START => self.mode.0,
             SIO0_CTRL_ADDR_START => self.control.0,
             SIO0_BAUD_ADDR_START => self.baud,
@@ -210,6 +212,11 @@ impl Bus16 for Sio0 {
 
     fn write_u16(&mut self, address: u32, value: u16) {
         match address {
+            SIO0_TX_DATA_ADDR_START => {
+                self.pending_tx = Some(value as u8);
+                self.status.set_tx_ready_1(false);
+                self.status.set_tx_ready_2(false);
+            }
             SIO0_MODE_ADDR_START => {
                 self.mode.0 = value;
                 tracing::debug!(target: "psx_core::sio", mode = format!("{:04X}", value), "MODE");

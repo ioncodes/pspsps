@@ -1,6 +1,7 @@
 use crate::cpu::Cpu;
 use crate::cpu::decoder::Instruction;
 use crate::exe::Exe;
+use crate::sio::joy::ControllerState;
 
 pub const PSX_RESET_ADDRESS: u32 = 0xBFC0_0000;
 pub const PSX_SIDELOAD_EXE_ADDRESS: u32 = 0x8003_0000;
@@ -8,10 +9,8 @@ pub const PSX_SIDELOAD_EXE_ADDRESS: u32 = 0x8003_0000;
 pub const CPU_CLOCK: usize = 33_868_800;
 pub const NTSC_VBLANK_CYCLES: usize = 33_868_800 / 60;
 pub const PAL_VBLANK_CYCLES: usize = 33_868_800 / 50;
-
-// Updated VBLANK durations with 2 CPI
-pub const NTSC_VBLANK_DURATION: usize = NTSC_VBLANK_CYCLES / 2;  // ~282,240 cycles
-pub const PAL_VBLANK_DURATION: usize = PAL_VBLANK_CYCLES / 2;    // ~338,688 cycles
+pub const NTSC_VBLANK_DURATION: usize = NTSC_VBLANK_CYCLES / 2; // ~282,240 cycles
+pub const PAL_VBLANK_DURATION: usize = PAL_VBLANK_CYCLES / 2; // ~338,688 cycles
 
 pub struct Psx {
     pub cpu: Cpu,
@@ -34,6 +33,10 @@ impl Psx {
 
     pub fn sideload_exe(&mut self, exe_buffer: Vec<u8>) {
         self.sideload_exe = Some(Exe::parse(exe_buffer));
+    }
+
+    pub fn set_controller_state(&mut self, state: ControllerState) {
+        self.cpu.mmu.sio.set_controller_state(state);
     }
 
     pub fn step(&mut self) -> Result<Instruction, ()> {
@@ -66,10 +69,15 @@ impl Psx {
         for _ in 0..cycles {
             self.cpu.mmu.gpu.tick();
         }
-        
+
         self.cpu.mmu.cdrom.tick(cycles);
         if self.cpu.mmu.cdrom.check_and_clear_irq() {
             self.cpu.mmu.irq.status.set_cdrom(true);
+        }
+
+        self.cpu.mmu.sio.tick(cycles);
+        if self.cpu.mmu.sio.should_trigger_irq() {
+            self.cpu.mmu.irq.status.set_controller_and_memory_card(true);
         }
 
         self.cpu.mmu.perform_dma_transfers();

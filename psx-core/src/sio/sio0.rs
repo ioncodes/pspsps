@@ -18,6 +18,13 @@ enum ControllerTransferState {
     SendingData(u8), // byte index
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TransferPhase {
+    Idle,
+    ProcessingTx,    // Waiting to process TX byte (1088 cycles)
+    WaitingForFlags, // Waiting to set flags/IRQ after RX (1088 cycles)
+}
+
 pub struct Sio0 {
     pub control: SerialControl,
     pub status: SerialStatus,
@@ -25,8 +32,10 @@ pub struct Sio0 {
     pub baud: u16,
     rx_fifo: VecDeque<u8>,
     pending_tx: Option<u8>,
+    pending_rx: Option<u8>, // Byte waiting to be made available
     cycles: usize,
     target_cycles: usize,
+    transfer_phase: TransferPhase,
     transfer_state: ControllerTransferState,
     controller_state: ControllerState,
 }
@@ -40,8 +49,10 @@ impl Default for Sio0 {
             baud: 0,
             rx_fifo: VecDeque::new(),
             pending_tx: None,
+            pending_rx: None,
             cycles: 0,
-            target_cycles: 500, // TODO: delay per byte?
+            target_cycles: 1088,
+            transfer_phase: TransferPhase::Idle,
             transfer_state: ControllerTransferState::Idle,
             controller_state: ControllerState::default(),
         }
@@ -60,9 +71,20 @@ impl Sio0 {
     pub fn tick(&mut self, cycles: usize) {
         self.cycles += cycles;
 
-        if self.cycles >= self.target_cycles && self.pending_tx.is_some() {
-            self.cycles = 0;
-            self.handle_tx_byte();
+        match self.transfer_phase {
+            TransferPhase::ProcessingTx if self.cycles >= self.target_cycles => {
+                // First 1088 cycles complete: process TX byte
+                self.cycles = 0;
+                self.process_tx_byte();
+                self.transfer_phase = TransferPhase::WaitingForFlags;
+            }
+            TransferPhase::WaitingForFlags if self.cycles >= self.target_cycles => {
+                // Second 1088 cycles complete: set flags and IRQ
+                self.cycles = 0;
+                self.set_rx_flags();
+                self.transfer_phase = TransferPhase::Idle;
+            }
+            _ => {}
         }
 
         // Check if controller was deselected (DTR went low)
@@ -80,37 +102,33 @@ impl Sio0 {
 
     fn process_controller_byte(&mut self, tx_byte: u8) -> u8 {
         match self.transfer_state {
-            ControllerTransferState::Idle if tx_byte == 0x01 => {
-                // First byte should be 0x01 to select controller
-                // DTR bit = 1 means controller port is selected
-                self.transfer_state = ControllerTransferState::Selected;
-                tracing::debug!(target: "psx_core::sio", "Controller selected");
-                0x41
-            }
             ControllerTransferState::Idle => {
-                tracing::error!(
-                    target: "psx_core::sio",
-                    tx = format!("{:02X}", tx_byte),
-                    "Unknown command while controller idle"
-                );
-                0xFF
+                // First byte should be 0x01 to select controller with DTR asserted
+                if tx_byte == 0x01 && self.control.dtr_output_level() {
+                    self.transfer_state = ControllerTransferState::Selected;
+                    tracing::debug!(target: "psx_core::sio", "Controller selected");
+                    0xFF // Hi-Z response (controller present)
+                } else if tx_byte == 0x01 {
+                    tracing::debug!(target: "psx_core::sio", "Controller select byte received but DTR not asserted");
+                    0xFF
+                } else {
+                    tracing::trace!(target: "psx_core::sio", tx = format!("{:02X}", tx_byte), "Byte received while idle");
+                    0xFF
+                }
             }
             // 42h  idlo  Receive ID bit0..7 (variable) and Send Read Command (ASCII "B")
-            ControllerTransferState::Selected if tx_byte == 0x42 => {
-                self.transfer_state = ControllerTransferState::CommandReceived;
-                tracing::trace!(target: "psx_core::sio", "Read controller command");
-                0x41
-            }
             ControllerTransferState::Selected => {
-                tracing::error!(
-                    target: "psx_core::sio",
-                    tx = format!("{:02X}", tx_byte),
-                    "Unknown command while controller selected"
-                );
-                0xFF
+                if tx_byte == 0x42 {
+                    self.transfer_state = ControllerTransferState::CommandReceived;
+                    tracing::trace!(target: "psx_core::sio", "Read controller command");
+                    0x41 // Digital pad ID low byte
+                } else {
+                    tracing::error!(target: "psx_core::sio", tx = format!("{:02X}", tx_byte), "Unknown command while controller selected");
+                    0xFF
+                }
             }
+            // TAP  idhi  Receive ID bit8..15 (usually/always 5Ah)
             ControllerTransferState::CommandReceived => {
-                // TAP  idhi  Receive ID bit8..15 (usually/always 5Ah)
                 self.transfer_state = ControllerTransferState::SendingData(0);
                 0x5A
             }
@@ -137,11 +155,25 @@ impl Sio0 {
         }
     }
 
-    fn handle_tx_byte(&mut self) {
+    fn process_tx_byte(&mut self) {
         if let Some(tx_byte) = self.pending_tx.take() {
             // Process the byte through the controller
             let rx_byte = self.process_controller_byte(tx_byte);
 
+            // Store response for later (after second delay)
+            self.pending_rx = Some(rx_byte);
+
+            tracing::trace!(
+                target: "psx_core::sio",
+                tx = format!("{:02X}", tx_byte),
+                rx = format!("{:02X}", rx_byte),
+                "Byte processed"
+            );
+        }
+    }
+
+    fn set_rx_flags(&mut self) {
+        if let Some(rx_byte) = self.pending_rx.take() {
             // Put response in RX FIFO
             self.rx_fifo.push_back(rx_byte);
             self.status.set_rx_fifo_not_empty(true);
@@ -163,9 +195,8 @@ impl Sio0 {
 
             tracing::trace!(
                 target: "psx_core::sio",
-                tx = format!("{:02X}", tx_byte),
                 rx = format!("{:02X}", rx_byte),
-                "Byte transfer"
+                "RX flags set"
             );
         }
     }
@@ -222,6 +253,8 @@ impl Bus16 for Sio0 {
                 self.pending_tx = Some(value as u8);
                 self.status.set_tx_ready_1(false);
                 self.status.set_tx_ready_2(false);
+                self.cycles = 0; // Reset cycle counter for first 1088 cycle delay
+                self.transfer_phase = TransferPhase::ProcessingTx;
             }
             SIO0_MODE_ADDR_START => {
                 self.mode.0 = value;
@@ -238,7 +271,10 @@ impl Bus16 for Sio0 {
                 if value & 0x40 != 0 {
                     self.rx_fifo.clear();
                     self.pending_tx = None;
+                    self.pending_rx = None;
                     self.transfer_state = ControllerTransferState::Idle;
+                    self.transfer_phase = TransferPhase::Idle;
+                    self.cycles = 0;
                     self.status.set_rx_fifo_not_empty(false);
                     self.status.set_tx_ready_1(true);
                     self.status.set_tx_ready_2(true);
@@ -252,16 +288,7 @@ impl Bus16 for Sio0 {
             }
             SIO0_BAUD_ADDR_START => {
                 self.baud = value;
-                // Update target cycles based on baud rate
-                let factor = match self.mode.baud_reload_factor() {
-                    0 => 1,
-                    1 => 16,
-                    2 => 64,
-                    _ => 1,
-                };
-                if value > 0 {
-                    self.target_cycles = (value as usize * factor).max(100);
-                }
+                self.target_cycles = value as usize * 8; // Acordding to JunstinCase
                 tracing::debug!(target: "psx_core::sio", baud = value, "BAUD");
             }
             _ => {

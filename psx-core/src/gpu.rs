@@ -16,10 +16,8 @@ use crate::mmu::bus::Bus32;
 pub const VRAM_WIDTH: usize = 1024;
 pub const VRAM_HEIGHT: usize = 512;
 
-pub const GP0_ADDRESS_START: u32 = 0x1F80_1810;
-pub const GP0_ADDRESS_END: u32 = 0x1F80_1813;
-pub const GP1_ADDRESS_START: u32 = 0x1F80_1814;
-pub const GP1_ADDRESS_END: u32 = 0x1F80_1817;
+crate::define_addr!(GP0_ADDRESS, 0x1F80_1810, 0, 0x04, 0x04);
+crate::define_addr!(GP1_ADDRESS, 0x1F80_1810, 1, 0x04, 0x04);
 
 pub struct Gpu {
     pub gp: Gp,

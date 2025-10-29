@@ -1,3 +1,6 @@
+crate::define_addr!(SOUND_RAM_TRANSFER_FIFO_ADDR, 0x1F80_1DA8, 0, 0x02, 0x02);
+crate::define_addr!(STATUS_REGISTER_ADDR, 0x1F80_1DAE, 0, 0x02, 0x02);
+
 pub struct Spu {
     pub sound_ram_data_transfer_fifo: u16, // 0x1F80_1DA8
     pub status_register: u16,              // 0x1F80_1DAE

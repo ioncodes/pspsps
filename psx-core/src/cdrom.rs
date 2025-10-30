@@ -20,6 +20,13 @@ pub const SECOND_RESP_GETID_DELAY: usize = 0x0004a00;
 pub const SECOND_RESP_PAUSE_DELAY: usize = 0x021181c;
 pub const SECOND_RESP_STOP_DELAY: usize = 0x0d38aca;
 
+pub const ERROR_INVALID_SUBCOMMAND: u8 = 0x10;
+pub const ERROR_WRONG_NUMBER_OF_PARAMETERS: u8 = 0x20;
+pub const ERROR_INVALID_COMMAND: u8 = 0x40;
+pub const ERROR_CANNOT_RESPONSE: u8 = 0x80;
+pub const ERROR_SEEK_FAILED: u8 = 0x04;
+pub const ERROR_DRIVE_DOOR_BECAME_OPENED: u8 = 0x08;
+
 struct PendingInterrupt {
     irq: DiskIrq,
     response: Vec<u8>,
@@ -137,6 +144,10 @@ impl Cdrom {
                 let subcommand = self.parameter_fifo.pop_front().unwrap();
                 self.execute_subcommand(subcommand);
             }
+            // 0x1A 	GetID 	INT3: status, then INT2: 8 bytes or INT5: 2 bytes (error)
+            0x1A => {
+                self.execute_get_id();
+            }
             _ => {
                 tracing::error!(
                     target: "psx_core::cdrom",
@@ -186,6 +197,54 @@ impl Cdrom {
         }
     }
 
+    fn execute_get_id(&mut self) {
+        // Drive Status           1st Response   2nd Response
+        // Door Open              INT5(11h,80h)  N/A
+        // Spin-up                INT5(01h,80h)  N/A
+        // Detect busy            INT5(03h,80h)  N/A
+        // No Disk                INT3(stat)     INT5(08h,40h, 00h,00h, 00h,00h,00h,00h)
+        // Audio Disk             INT3(stat)     INT5(0Ah,90h, 00h,00h, 00h,00h,00h,00h)
+        // Unlicensed:Mode1       INT3(stat)     INT5(0Ah,80h, 00h,00h, 00h,00h,00h,00h)
+        // Unlicensed:Mode2       INT3(stat)     INT5(0Ah,80h, 20h,00h, 00h,00h,00h,00h)
+        // Unlicensed:Mode2+Audio INT3(stat)     INT5(0Ah,90h, 20h,00h, 00h,00h,00h,00h)
+        // Debug/Yaroze:Mode2     INT3(stat)     INT2(02h,00h, 20h,00h, 20h,20h,20h,20h)
+        // Licensed:Mode2         INT3(stat)     INT2(02h,00h, 20h,00h, 53h,43h,45h,4xh)
+        // Modchip:Audio/Mode1    INT3(stat)     INT2(02h,00h, 00h,00h, 53h,43h,45h,4xh)
+
+        let status = self.status();
+
+        if status.shell_open() {
+            let mut error_stat = status;
+            error_stat.set_error(true);
+            error_stat.set_id_error(true);
+
+            let response = vec![error_stat.0, ERROR_DRIVE_DOOR_BECAME_OPENED];
+            self.queue_interrupt(DiskIrq::DiskError, response, FIRST_RESP_GENERIC_DELAY);
+
+            return;
+        }
+
+        // First response: INT3 acknowledgment with status
+        self.queue_interrupt(DiskIrq::CommandAcknowledged, vec![status.0], FIRST_RESP_GENERIC_DELAY);
+
+        // Second response: INT2 (success) or INT5 (error)
+        if self.disk_inserted() {
+            // Success: Return disk identification (Licensed:Mode2, SCEA region)
+            let response = vec![
+                status.0, 0x00, 0x20, 0x00, b'S', b'C', b'E', b'A', // Region: SCEA (America/NTSC)
+            ];
+            self.queue_interrupt(DiskIrq::CommandCompleted, response, SECOND_RESP_GETID_DELAY);
+        } else {
+            // Error: Disk missing
+            let mut error_stat = status;
+            error_stat.set_error(true);
+            error_stat.set_id_error(true);
+
+            let response = vec![error_stat.0, ERROR_INVALID_COMMAND];
+            self.queue_interrupt(DiskIrq::DiskError, response, SECOND_RESP_GETID_DELAY);
+        }
+    }
+
     fn trigger_irq(&mut self, irq: DiskIrq) {
         tracing::trace!(target: "psx_core::cdrom", %irq, "Raised CDROM IRQ");
         self.hintsts.set_irq_flags(irq);
@@ -193,10 +252,13 @@ impl Cdrom {
 
     fn status(&mut self) -> StatusCode {
         let mut status = StatusCode(0);
-        let has_disc = !self.cdrom_cue.is_empty();
-        status.set_shell_open(!has_disc);
-        status.set_spindle_motor(has_disc); // Motor on when disc is present
+        status.set_shell_open(!self.disk_inserted());
+        status.set_spindle_motor(self.disk_inserted()); // Motor on when disk is present
         status
+    }
+
+    fn disk_inserted(&self) -> bool {
+        !self.cdrom_cue.is_empty()
     }
 }
 

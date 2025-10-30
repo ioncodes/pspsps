@@ -44,6 +44,7 @@ pub struct Cdrom {
     parameter_fifo: VecDeque<u8>,
     result_fifo: VecDeque<u8>,
     interrupt_queue: VecDeque<PendingInterrupt>,
+    cursor: usize,
 }
 
 impl Cdrom {
@@ -59,6 +60,7 @@ impl Cdrom {
             parameter_fifo: VecDeque::new(),
             result_fifo: VecDeque::new(),
             interrupt_queue: VecDeque::new(),
+            cursor: 0,
         }
     }
 
@@ -77,7 +79,7 @@ impl Cdrom {
                     tracing::debug!(
                         target: "psx_core::cdrom",
                         irq = %pending.irq,
-                        response = ?pending.response,
+                        response = format!("{:02X?}", pending.response),
                         "Triggering CDROM interrupt",
                     );
 
@@ -139,12 +141,16 @@ impl Cdrom {
                 let status = self.status();
                 self.queue_interrupt(DiskIrq::CommandAcknowledged, vec![status.0], FIRST_RESP_GENERIC_DELAY);
             }
+            // 0x02 	Setloc 	min, sec, frame 	INT3: status
+            0x02 => {
+                self.execute_setloc();
+            }
             // 0x19 	Test * 	sub, ... 	INT3: ...
             0x19 => {
                 let subcommand = self.parameter_fifo.pop_front().unwrap();
                 self.execute_subcommand(subcommand);
             }
-            // 0x1A 	GetID 	INT3: status, then INT2: 8 bytes or INT5: 2 bytes (error)
+            // 0x1a 	GetID * 		INT3: status 	INT2/INT5: status, flag, type, atip, "SCEx" 	
             0x1A => {
                 self.execute_get_id();
             }
@@ -243,6 +249,19 @@ impl Cdrom {
             let response = vec![error_stat.0, ERROR_INVALID_COMMAND];
             self.queue_interrupt(DiskIrq::DiskError, response, SECOND_RESP_GETID_DELAY);
         }
+    }
+
+    fn execute_setloc(&mut self) {
+        let minutes = self.parameter_fifo.pop_front().unwrap();
+        let seconds = self.parameter_fifo.pop_front().unwrap();
+        let frames = self.parameter_fifo.pop_front().unwrap();
+        tracing::debug!(
+            target: "psx_core::cdrom",
+            min = minutes,
+            sec = seconds,
+            frame = frames,
+            "Setloc",
+        );
     }
 
     fn trigger_irq(&mut self, irq: DiskIrq) {

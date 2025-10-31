@@ -150,7 +150,7 @@ impl Cdrom {
                 let subcommand = self.parameter_fifo.pop_front().unwrap();
                 self.execute_subcommand(subcommand);
             }
-            // 0x1a 	GetID * 		INT3: status 	INT2/INT5: status, flag, type, atip, "SCEx" 	
+            // 0x1a 	GetID * 		INT3: status 	INT2/INT5: status, flag, type, atip, "SCEx"
             0x1A => {
                 self.execute_get_id();
             }
@@ -252,16 +252,33 @@ impl Cdrom {
     }
 
     fn execute_setloc(&mut self) {
-        let minutes = self.parameter_fifo.pop_front().unwrap();
-        let seconds = self.parameter_fifo.pop_front().unwrap();
-        let frames = self.parameter_fifo.pop_front().unwrap();
+        let minutes = self.parameter_fifo.pop_front().unwrap() as usize;
+        let seconds = self.parameter_fifo.pop_front().unwrap() as usize;
+        let frames = self.parameter_fifo.pop_front().unwrap() as usize;
+
+        // "Note that each of these parameters is encoded as BCD values, not binary."
+        let minutes = ((minutes >> 4) * 10) + (minutes & 0x0F);
+        let seconds = ((seconds >> 4) * 10) + (seconds & 0x0F);
+        let frames = ((frames >> 4) * 10) + (frames & 0x0F);
+
+        let block_addr = (((minutes * 60) + seconds) * 75 + frames) - 150;
+
+        // "File.IMG - 2352 (930h) bytes per sector"
+        self.cursor = block_addr * 2352;
+        // TODO: Handle out-of-bounds cursor?
+
         tracing::debug!(
             target: "psx_core::cdrom",
             min = minutes,
             sec = seconds,
             frame = frames,
+            lba = block_addr,
+            cursor = self.cursor,
             "Setloc",
         );
+
+        let status = self.status();
+        self.queue_interrupt(DiskIrq::CommandAcknowledged, vec![status.0], FIRST_RESP_GENERIC_DELAY);
     }
 
     fn trigger_irq(&mut self, irq: DiskIrq) {

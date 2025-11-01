@@ -37,6 +37,14 @@ struct PendingInterrupt {
     is_read: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DriveState {
+    Idle,
+    Seeking { cycles_left: usize },
+    Reading,
+    Playing,
+}
+
 pub struct Cdrom {
     cdrom_cue: Vec<u8>,
     cdrom_bin: Vec<u8>,
@@ -47,10 +55,12 @@ pub struct Cdrom {
     hintsts: HIntSts,
     parameter_fifo: VecDeque<u8>,
     result_fifo: VecDeque<u8>,
+    data_fifo: VecDeque<u8>,
     interrupt_queue: VecDeque<PendingInterrupt>,
     requested_cursor: usize,
     current_cursor: usize,
     read_in_progress: bool,
+    state: DriveState,
 }
 
 impl Cdrom {
@@ -65,16 +75,48 @@ impl Cdrom {
             hintsts: HIntSts(0),
             parameter_fifo: VecDeque::new(),
             result_fifo: VecDeque::new(),
+            data_fifo: VecDeque::new(),
             interrupt_queue: VecDeque::new(),
             requested_cursor: 0,
             current_cursor: 0,
             read_in_progress: false,
+            state: DriveState::Idle,
         }
     }
 
     pub fn tick(&mut self, cycles: usize) {
         self.address.set_parameter_empty(self.parameter_fifo.is_empty());
         self.address.set_parameter_write_ready(self.parameter_fifo.len() < 16);
+
+        // Handle state transitions
+        match self.state {
+            DriveState::Seeking { cycles_left } => {
+                if cycles_left <= cycles {
+                    // Seek complete, transition to Reading state
+                    self.current_cursor = self.requested_cursor;
+                    self.state = DriveState::Reading;
+
+                    tracing::debug!(
+                        target: "psx_core::cdrom",
+                        cursor = self.current_cursor,
+                        "Seek complete, starting read",
+                    );
+
+                    // Immediately queue first sector read
+                    self.load_sector_to_data_fifo();
+                } else {
+                    // Still seeking, decrement cycles
+                    self.state = DriveState::Seeking {
+                        cycles_left: cycles_left - cycles,
+                    };
+                }
+            }
+            DriveState::Reading => {
+                // Continue reading sectors while in Reading state
+                // This is handled after interrupt processing
+            }
+            _ => {}
+        }
 
         // Process pending interrupts
         // Only process the first interrupt if no interrupt is currently active
@@ -104,14 +146,10 @@ impl Cdrom {
                     // Trigger the interrupt
                     self.trigger_irq(pending.irq);
 
-                    if pending.is_read && self.read_in_progress {
-                        self.queue_interrupt(
-                            DiskIrq::DataReady,
-                            vec![self.cdrom_bin[self.current_cursor]],
-                            FIRST_RESP_GENERIC_DELAY,
-                            true,
-                        );
-                        self.current_cursor += 1;
+                    // If this was a data ready interrupt and we're still reading,
+                    // queue the next sector
+                    if pending.is_read && self.read_in_progress && self.state == DriveState::Reading {
+                        self.load_sector_to_data_fifo();
                     }
                 } else {
                     // Decrement the cycle counter
@@ -137,6 +175,61 @@ impl Cdrom {
             cycles_until_fire: delay_cycles,
             is_read,
         });
+    }
+
+    fn load_sector_to_data_fifo(&mut self) {
+        // Read 2048 bytes of user data from the current sector
+        // PSX CD-ROM sectors are 2352 bytes total:
+        // - 12 bytes sync
+        // - 4 bytes header (MM:SS:FF + mode)
+        // - 2048 bytes user data (for Mode1) or 2336 bytes (for Mode2)
+        // - 4 bytes EDC
+        // - 276 bytes ECC (Mode1 only)
+        //
+        // For now, we'll extract the 2048 bytes of user data starting at offset 24
+        // (after sync + header)
+
+        const DATA_OFFSET: usize = 24; // Skip sync (12 bytes) + header (4 bytes) + subheader (8 bytes for Mode2)
+        const DATA_SIZE: usize = 2048; // User data size
+
+        let sector_start = self.current_cursor;
+        let data_start = sector_start + DATA_OFFSET;
+        let data_end = data_start + DATA_SIZE;
+
+        // Ensure we don't read past the end of the disc
+        if data_end <= self.cdrom_bin.len() {
+            // Load sector data into data FIFO
+            for i in data_start..data_end {
+                self.data_fifo.push_back(self.cdrom_bin[i]);
+            }
+
+            tracing::debug!(
+                target: "psx_core::cdrom",
+                cursor = self.current_cursor,
+                sector = self.current_cursor / SECTOR_SIZE,
+                data_size = DATA_SIZE,
+                "Loaded sector to data FIFO",
+            );
+        } else {
+            tracing::warn!(
+                target: "psx_core::cdrom",
+                cursor = self.current_cursor,
+                bin_size = self.cdrom_bin.len(),
+                "Attempted to read past end of disc",
+            );
+        }
+
+        // Queue INT1 with status byte
+        let status = self.status();
+        self.queue_interrupt(
+            DiskIrq::DataReady,
+            vec![status.0],
+            FIRST_RESP_GENERIC_DELAY, // ~13ms for 2x speed
+            true,
+        );
+
+        // Advance to next sector
+        self.current_cursor += SECTOR_SIZE;
     }
 
     pub fn insert_disk(&mut self, cue: Vec<u8>, bin: Vec<u8>) {
@@ -176,6 +269,10 @@ impl Cdrom {
             // ReadN - Command 06h --> INT3(stat) --> INT1(stat) --> datablock
             0x06 => {
                 self.execute_readn();
+            }
+            // Pause - Command 09h --> INT3(stat) --> INT2(stat)
+            0x09 => {
+                self.execute_pause();
             }
             // SeekL - Command 15h --> INT3(stat) --> INT2(stat)
             0x15 => {
@@ -326,6 +423,37 @@ impl Cdrom {
         );
     }
 
+    fn execute_pause(&mut self) {
+        tracing::debug!(
+            target: "psx_core::cdrom",
+            cursor = self.current_cursor,
+            state = ?self.state,
+            "Pause",
+        );
+
+        // First response: INT3 with current status (still shows read/play bit if active)
+        let status_before = self.status();
+        self.queue_interrupt(
+            DiskIrq::CommandAcknowledged,
+            vec![status_before.0],
+            FIRST_RESP_GENERIC_DELAY,
+            false,
+        );
+
+        // Abort reading/playing: transition to Idle
+        self.state = DriveState::Idle;
+        self.read_in_progress = false;
+
+        // Second response: INT2 with new status (read/play bit cleared)
+        let status_after = self.status();
+        self.queue_interrupt(
+            DiskIrq::CommandCompleted,
+            vec![status_after.0],
+            SECOND_RESP_PAUSE_DELAY,
+            false,
+        );
+    }
+
     fn execute_seekl(&mut self) {
         tracing::debug!(
             target: "psx_core::cdrom",
@@ -371,10 +499,12 @@ impl Cdrom {
     fn execute_readn(&mut self) {
         tracing::debug!(
             target: "psx_core::cdrom",
-            cursor = self.current_cursor,
+            from = self.current_cursor,
+            to = self.requested_cursor,
             "ReadN",
         );
 
+        // Immediately send INT3 acknowledgment
         let status = self.status();
         self.queue_interrupt(
             DiskIrq::CommandAcknowledged,
@@ -382,21 +512,32 @@ impl Cdrom {
             FIRST_RESP_GENERIC_DELAY,
             false,
         );
-        self.queue_interrupt(
-            DiskIrq::CommandCompleted,
-            vec![status.0],
-            SECOND_RESP_PAUSE_DELAY,
-            false,
-        );
 
+        // Calculate seek distance and time
+        let distance = if self.requested_cursor > self.current_cursor {
+            self.requested_cursor - self.current_cursor
+        } else {
+            self.current_cursor - self.requested_cursor
+        };
+
+        // Rough seek timing: ~1ms per sector at minimum, with some overhead
+        // For simplicity, using a fixed delay for now (should be distance-based)
+        let seek_cycles = if distance == 0 {
+            // Already at position, minimal delay
+            FIRST_RESP_GENERIC_DELAY
+        } else {
+            // Realistic seek delay based on distance
+            // Approximately 0.1-2 seconds for typical seeks
+            // Using ~1ms per sector difference as a rough estimate
+            let sectors_diff = distance / SECTOR_SIZE;
+            (sectors_diff.max(1) * 33_868).min(SECOND_RESP_PAUSE_DELAY) // ~1ms per sector, max 2 seconds
+        };
+
+        // Enter seeking state
+        self.state = DriveState::Seeking {
+            cycles_left: seek_cycles,
+        };
         self.read_in_progress = true;
-        self.queue_interrupt(
-            DiskIrq::DataReady,
-            vec![self.cdrom_bin[self.current_cursor]],
-            FIRST_RESP_GENERIC_DELAY,
-            true,
-        );
-        self.current_cursor += 1;
     }
 
     fn trigger_irq(&mut self, irq: DiskIrq) {
@@ -408,6 +549,23 @@ impl Cdrom {
         let mut status = StatusCode(0);
         status.set_shell_open(!self.disk_inserted());
         status.set_spindle_motor(self.disk_inserted()); // Motor on when disk is present
+
+        // Set state bits (only one can be set at a time)
+        match self.state {
+            DriveState::Idle => {
+                // All state bits (5-7) are 0
+            }
+            DriveState::Seeking { .. } => {
+                status.set_seek(true); // Bit 6
+            }
+            DriveState::Reading => {
+                status.set_read(true); // Bit 5
+            }
+            DriveState::Playing => {
+                status.set_play(true); // Bit 7
+            }
+        }
+
         status
     }
 
@@ -441,17 +599,19 @@ impl Bus8 for Cdrom {
                 0xFF
             }),
             REG_RDDATA_ADDR => {
-                let value = self.result_fifo.pop_front().unwrap_or_else(|| {
+                // RDDATA reads from the data FIFO, not result FIFO
+                let value = self.data_fifo.pop_front().unwrap_or_else(|| {
                     tracing::warn!(
                         target: "psx_core::cdrom",
-                        "RDDATA underflow on read",
+                        "RDDATA/data FIFO underflow on read",
                     );
                     0xFF
                 });
-                tracing::debug!(
+                tracing::trace!(
                     target: "psx_core::cdrom",
                     bank = self.address.current_bank(),
                     rdata = format!("{:02X}", value),
+                    remaining = self.data_fifo.len(),
                     "CDROM RDDATA read",
                 );
                 value

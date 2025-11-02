@@ -87,3 +87,17 @@ bitfield! {
         pub play: bool @ 7,
     }
 }
+
+bitfield! {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub struct SetModeRegister(pub u8): Debug, FromStorage, IntoStorage, DerefStorage {
+        pub cdda: bool @ 0,
+        pub autopause: bool @ 1,
+        pub report: bool @ 2,
+        pub xa_filter: bool @ 3,
+        pub ignore_bit: bool @ 4,
+        pub sector_size: bool @ 5,
+        pub xa_adpcm: bool @ 6,
+        pub double_speed: bool @ 7,
+    }
+}

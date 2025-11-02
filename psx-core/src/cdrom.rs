@@ -4,8 +4,8 @@ pub mod reg;
 use crate::cdrom::irq::DiskIrq;
 use crate::cdrom::reg::{
     AddressRegister, AdpCtlRegister, HClrCtl, HIntMaskRegister, HIntSts, REG_ADDRESS_ADDR, REG_ADPCTL_ADDR,
-    REG_COMMAND_ADDR, REG_HCLRCTL_ADDR, REG_HINTMSK_ADDR_R, REG_HINTMSK_ADDR_W, REG_HINTSTS_ADDR, REG_HSTS_ADDR,
-    REG_PARAMETER_ADDR, REG_RDDATA_ADDR, REG_RESULT_ADDR, StatusCode,
+    REG_COMMAND_ADDR, REG_HCHPCTL_ADDR, REG_HCLRCTL_ADDR, REG_HINTMSK_ADDR_R, REG_HINTMSK_ADDR_W, REG_HINTSTS_ADDR,
+    REG_HSTS_ADDR, REG_PARAMETER_ADDR, REG_RDDATA_ADDR, REG_RESULT_ADDR, SetModeRegister, StatusCode,
 };
 use crate::mmu::bus::Bus8;
 use proc_bitfield::with_bits;
@@ -13,21 +13,22 @@ use std::collections::VecDeque;
 
 crate::define_addr!(CDROM_ADDR, 0x1F80_1800, 0, 0x04, 0x04);
 
-// CDROM timing constants from PSX-SPX "CDROM - Response Timings"
 pub const FIRST_RESP_GENERIC_DELAY: usize = 0x000c4e1;
 pub const FIRST_RESP_INIT_DELAY: usize = 0x0013cce;
 pub const SECOND_RESP_GETID_DELAY: usize = 0x0004a00;
 pub const SECOND_RESP_PAUSE_DELAY: usize = 0x021181c;
 pub const SECOND_RESP_STOP_DELAY: usize = 0x0d38aca;
 
+pub const SECTOR_READ_DELAY_SINGLE_SPEED: usize = 33_868_800 / 75;
+pub const SECTOR_READ_DELAY_DOUBLE_SPEED: usize = 33_868_800 / (2 * 75);
+
+pub const ERROR_SEEK_FAILED: u8 = 0x04;
+pub const ERROR_DRIVE_DOOR_BECAME_OPENED: u8 = 0x08;
 pub const ERROR_INVALID_SUBCOMMAND: u8 = 0x10;
 pub const ERROR_WRONG_NUMBER_OF_PARAMETERS: u8 = 0x20;
 pub const ERROR_INVALID_COMMAND: u8 = 0x40;
 pub const ERROR_CANNOT_RESPONSE: u8 = 0x80;
-pub const ERROR_SEEK_FAILED: u8 = 0x04;
-pub const ERROR_DRIVE_DOOR_BECAME_OPENED: u8 = 0x08;
 
-// "File.IMG - 2352 (930h) bytes per sector"
 const SECTOR_SIZE: usize = 2352;
 
 struct PendingInterrupt {
@@ -61,6 +62,7 @@ pub struct Cdrom {
     current_cursor: usize,
     read_in_progress: bool,
     state: DriveState,
+    mode: SetModeRegister,
 }
 
 impl Cdrom {
@@ -81,6 +83,7 @@ impl Cdrom {
             current_cursor: 0,
             read_in_progress: false,
             state: DriveState::Idle,
+            mode: SetModeRegister(0x00),
         }
     }
 
@@ -178,27 +181,18 @@ impl Cdrom {
     }
 
     fn load_sector_to_data_fifo(&mut self) {
-        // Read 2048 bytes of user data from the current sector
-        // PSX CD-ROM sectors are 2352 bytes total:
-        // - 12 bytes sync
-        // - 4 bytes header (MM:SS:FF + mode)
-        // - 2048 bytes user data (for Mode1) or 2336 bytes (for Mode2)
-        // - 4 bytes EDC
-        // - 276 bytes ECC (Mode1 only)
-        //
-        // For now, we'll extract the 2048 bytes of user data starting at offset 24
-        // (after sync + header)
+        self.data_fifo.clear();
 
-        const DATA_OFFSET: usize = 24; // Skip sync (12 bytes) + header (4 bytes) + subheader (8 bytes for Mode2)
-        const DATA_SIZE: usize = 2048; // User data size
+        let whole_sector = self.mode.sector_size();
+        let data_offset = if whole_sector { 12 } else { 24 };
+        let data_size = if whole_sector { 0x924 } else { 0x800 };
 
         let sector_start = self.current_cursor;
-        let data_start = sector_start + DATA_OFFSET;
-        let data_end = data_start + DATA_SIZE;
+        let data_start = sector_start + data_offset;
+        let data_end = data_start + data_size;
 
-        // Ensure we don't read past the end of the disc
+        // Load sector data into FIFO (bounds check to prevent reading past disc end)
         if data_end <= self.cdrom_bin.len() {
-            // Load sector data into data FIFO
             for i in data_start..data_end {
                 self.data_fifo.push_back(self.cdrom_bin[i]);
             }
@@ -207,7 +201,10 @@ impl Cdrom {
                 target: "psx_core::cdrom",
                 cursor = self.current_cursor,
                 sector = self.current_cursor / SECTOR_SIZE,
-                data_size = DATA_SIZE,
+                mode = format!("{:02X}", self.mode.0),
+                whole_sector,
+                data_offset,
+                data_size,
                 "Loaded sector to data FIFO",
             );
         } else {
@@ -219,14 +216,15 @@ impl Cdrom {
             );
         }
 
-        // Queue INT1 with status byte
+        // Queue INT1 with status byte, using timing based on read speed
         let status = self.status();
-        self.queue_interrupt(
-            DiskIrq::DataReady,
-            vec![status.0],
-            FIRST_RESP_GENERIC_DELAY, // ~13ms for 2x speed
-            true,
-        );
+        let sector_delay = if self.mode.double_speed() {
+            SECTOR_READ_DELAY_DOUBLE_SPEED
+        } else {
+            SECTOR_READ_DELAY_SINGLE_SPEED
+        };
+
+        self.queue_interrupt(DiskIrq::DataReady, vec![status.0], sector_delay, true);
 
         // Advance to next sector
         self.current_cursor += SECTOR_SIZE;
@@ -262,6 +260,10 @@ impl Cdrom {
             0x02 => {
                 self.execute_setloc();
             }
+            // Init - Command 0Ah --> INT3(stat late) --> INT2(stat)
+            0x0A => {
+                self.execute_init();
+            }
             // Setmode - Command 0Eh,mode --> INT3(stat)
             0x0E => {
                 self.execute_setmode();
@@ -286,6 +288,10 @@ impl Cdrom {
             // 0x1a 	GetID * 		INT3: status 	INT2/INT5: status, flag, type, atip, "SCEx"
             0x1A => {
                 self.execute_get_id();
+            }
+            // ReadTOC - Command 1Eh --> INT3(stat late) --> INT2(stat)
+            0x1E => {
+                self.execute_read_toc();
             }
             _ => {
                 tracing::error!(
@@ -376,7 +382,7 @@ impl Cdrom {
         if self.disk_inserted() {
             // Success: Return disk identification (Licensed:Mode2, SCEA region)
             let response = vec![
-                status.0, 0x00, 0x20, 0x00, b'S', b'C', b'E', b'A', // Region: SCEA (America/NTSC)
+                0x02, 0x00, 0x20, 0x00, b'S', b'C', b'E', b'A', // Region: SCEA (America/NTSC)
             ];
             self.queue_interrupt(DiskIrq::CommandCompleted, response, SECOND_RESP_GETID_DELAY, false);
         } else {
@@ -431,7 +437,6 @@ impl Cdrom {
             "Pause",
         );
 
-        // First response: INT3 with current status (still shows read/play bit if active)
         let status_before = self.status();
         self.queue_interrupt(
             DiskIrq::CommandAcknowledged,
@@ -440,16 +445,73 @@ impl Cdrom {
             false,
         );
 
-        // Abort reading/playing: transition to Idle
         self.state = DriveState::Idle;
         self.read_in_progress = false;
 
-        // Second response: INT2 with new status (read/play bit cleared)
         let status_after = self.status();
         self.queue_interrupt(
             DiskIrq::CommandCompleted,
             vec![status_after.0],
             SECOND_RESP_PAUSE_DELAY,
+            false,
+        );
+    }
+
+    fn execute_init(&mut self) {
+        tracing::debug!(
+            target: "psx_core::cdrom",
+            "Init - resetting CD-ROM to initial state",
+        );
+
+        // Abort all pending operations
+        self.interrupt_queue.clear();
+        self.read_in_progress = false;
+        self.state = DriveState::Idle;
+
+        // Set mode to 0x20 (sector_size=1: whole sector except sync bytes)
+        self.mode = SetModeRegister(0x20);
+
+        // Reset position to start
+        self.requested_cursor = 0;
+        self.current_cursor = 0;
+
+        // Clear data FIFO
+        self.data_fifo.clear();
+
+        let status = self.status();
+
+        self.queue_interrupt(
+            DiskIrq::CommandAcknowledged,
+            vec![status.0],
+            FIRST_RESP_INIT_DELAY,
+            false,
+        );
+        self.queue_interrupt(
+            DiskIrq::CommandCompleted,
+            vec![status.0],
+            FIRST_RESP_INIT_DELAY + SECOND_RESP_GETID_DELAY,
+            false,
+        );
+    }
+
+    fn execute_read_toc(&mut self) {
+        tracing::debug!(
+            target: "psx_core::cdrom",
+            "ReadTOC - reading table of contents",
+        );
+
+        let status = self.status();
+
+        self.queue_interrupt(
+            DiskIrq::CommandAcknowledged,
+            vec![status.0],
+            FIRST_RESP_INIT_DELAY,
+            false,
+        );
+        self.queue_interrupt(
+            DiskIrq::CommandCompleted,
+            vec![status.0],
+            FIRST_RESP_INIT_DELAY + SECOND_RESP_GETID_DELAY,
             false,
         );
     }
@@ -479,11 +541,22 @@ impl Cdrom {
     }
 
     fn execute_setmode(&mut self) {
-        let mode = self.parameter_fifo.pop_front().unwrap();
+        let mode_byte = self.parameter_fifo.pop_front().unwrap();
 
-        tracing::error!(
+        // Store the mode value
+        self.mode = SetModeRegister(mode_byte);
+
+        tracing::debug!(
             target: "psx_core::cdrom",
-            mode = format!("{:08b}", mode as u8),
+            mode = format!("{:08b}", mode_byte),
+            speed = if self.mode.double_speed() { "double" } else { "normal" },
+            xa_adpcm = if self.mode.xa_adpcm() { "on" } else { "off" },
+            sector_size = if self.mode.sector_size() { "924" } else { "2048+12" },
+            ignore_bit = if self.mode.ignore_bit() { "on" } else { "off" },
+            xa_filter = if self.mode.xa_filter() { "on" } else { "off" },
+            report = if self.mode.report() { "on" } else { "off" },
+            autopause = if self.mode.autopause() { "on" } else { "off" },
+            cdda = if self.mode.cdda() { "on" } else { "off" },
             "Setmode",
         );
 
@@ -674,6 +747,18 @@ impl Bus8 for Cdrom {
                     "Command received",
                 );
                 self.execute_command(value);
+            }
+            REG_HCHPCTL_ADDR if self.address.current_bank() == 0 => {
+                // Request Register - controls sector buffer read/write
+                tracing::trace!(
+                    target: "psx_core::cdrom",
+                    value = format!("{:02X}", value),
+                    want_data = (value & 0x80) != 0,
+                    "HCHPCTL write",
+                );
+                // Bit 7: Want Data (sector buffer read request)
+                // For now, we don't need to do anything special as our data FIFO
+                // is always ready for reading when data is available
             }
             REG_HCLRCTL_ADDR if self.address.current_bank() == 1 => {
                 // Clear specified IRQ flags

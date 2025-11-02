@@ -6,17 +6,19 @@ use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 
 static BIOS: &[u8] = include_bytes!("../../bios/SCPH1001.BIN");
+const CUE_PATH: &str = "games\\Crash Bandicoot (USA)\\Crash Bandicoot (USA).cue";
+const BIN_PATH: &str = "games\\Crash Bandicoot (USA)\\Crash Bandicoot (USA).bin";
 
 fn main() {
     let targets = tracing_subscriber::filter::Targets::new()
-        .with_target("psx_core::tty", LevelFilter::INFO);
-        //.with_target("psx_core::cdrom", LevelFilter::TRACE);
+        .with_target("psx_core::tty", LevelFilter::INFO)
+        .with_target("psx_core::cdrom", LevelFilter::TRACE);
     let fmt_layer = tracing_subscriber::fmt::layer().without_time().with_filter(targets);
     tracing_subscriber::registry().with(fmt_layer).init();
 
     let mut psx = Psx::new(BIOS);
-    let cue_buffer = include_bytes!("../../games/Crash Bandicoot (USA)/Crash Bandicoot (USA).cue").to_vec();
-    let bin_buffer = include_bytes!("../../games/Crash Bandicoot (USA)/Crash Bandicoot (USA).bin").to_vec();
+    let cue_buffer = std::fs::read(CUE_PATH).expect("Failed to read CUE file");
+    let bin_buffer = std::fs::read(BIN_PATH).expect("Failed to read BIN file");
     psx.load_cdrom(cue_buffer, bin_buffer);
 
     let mut instruction_count = 0u64;

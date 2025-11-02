@@ -13,6 +13,7 @@ pub struct State {
     pub breakpoints: breakpoints::BreakpointsState,
     pub gpu: gpu::GpuState,
     pub is_running: bool,
+    pub ignore_errors: bool,
 }
 
 impl State {
@@ -25,6 +26,7 @@ impl State {
             breakpoints: breakpoints::BreakpointsState::default(),
             gpu: gpu::GpuState::default(),
             is_running: false,
+            ignore_errors: true,
         }
     }
 }

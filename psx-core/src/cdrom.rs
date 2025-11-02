@@ -137,14 +137,16 @@ impl Cdrom {
                     );
 
                     // Populate result FIFO with response data
-                    for byte in pending.response {
+                    for byte in pending.response.iter().copied() {
                         self.result_fifo.push_back(byte);
                     }
 
-                    // Clear BUSY and set result ready flags
+                    // Clear BUSY and update flags based on interrupt type
                     self.address.set_busy_status(false);
-                    self.address.set_data_request(true);
-                    self.address.set_result_read_ready(true);
+                    // Result ready only if we actually have response bytes
+                    self.address.set_result_read_ready(!self.result_fifo.is_empty());
+                    // Data request only for Data Ready (sector available) interrupts
+                    self.address.set_data_request(pending.is_read && !self.data_fifo.is_empty());
 
                     // Trigger the interrupt
                     self.trigger_irq(pending.irq);
@@ -225,6 +227,8 @@ impl Cdrom {
         };
 
         self.queue_interrupt(DiskIrq::DataReady, vec![status.0], sector_delay, true);
+        // Ensure data request is deasserted until INT1 actually fires
+        self.address.set_data_request(false);
 
         // Advance to next sector
         self.current_cursor += SECTOR_SIZE;
@@ -445,8 +449,13 @@ impl Cdrom {
             false,
         );
 
+        // Stop any ongoing reads and clear queued read-related interrupts/data
         self.state = DriveState::Idle;
         self.read_in_progress = false;
+        self.data_fifo.clear();
+        self.address.set_data_request(false);
+        // Drop any pending DataReady interrupts
+        self.interrupt_queue.retain(|p| !p.is_read);
 
         let status_after = self.status();
         self.queue_interrupt(
@@ -468,8 +477,8 @@ impl Cdrom {
         self.read_in_progress = false;
         self.state = DriveState::Idle;
 
-        // Set mode to 0x20 (sector_size=1: whole sector except sync bytes)
-        self.mode = SetModeRegister(0x20);
+        // Set default mode: 2048-byte user data reads (sector_size=0)
+        self.mode = SetModeRegister(0x00);
 
         // Reset position to start
         self.requested_cursor = 0;
@@ -664,13 +673,20 @@ impl Bus8 for Cdrom {
                 );
                 self.address.0
             }
-            REG_RESULT_ADDR => self.result_fifo.pop_front().unwrap_or_else(|| {
-                tracing::warn!(
-                    target: "psx_core::cdrom",
-                    "Result FIFO underflow on read",
-                );
-                0xFF
-            }),
+            REG_RESULT_ADDR => {
+                let value = self.result_fifo.pop_front().unwrap_or_else(|| {
+                    tracing::warn!(
+                        target: "psx_core::cdrom",
+                        "Result FIFO underflow on read",
+                    );
+                    0xFF
+                });
+                // Clear result ready when FIFO becomes empty
+                if self.result_fifo.is_empty() {
+                    self.address.set_result_read_ready(false);
+                }
+                value
+            },
             REG_RDDATA_ADDR => {
                 // RDDATA reads from the data FIFO, not result FIFO
                 let value = self.data_fifo.pop_front().unwrap_or_else(|| {
@@ -680,6 +696,10 @@ impl Bus8 for Cdrom {
                     );
                     0xFF
                 });
+                // If we've drained the sector buffer, deassert data request
+                if self.data_fifo.is_empty() {
+                    self.address.set_data_request(false);
+                }
                 tracing::trace!(
                     target: "psx_core::cdrom",
                     bank = self.address.current_bank(),
@@ -722,7 +742,9 @@ impl Bus8 for Cdrom {
     fn write_u8(&mut self, address: u32, value: u8) {
         match address {
             REG_ADDRESS_ADDR => {
-                self.address.0 = value;
+                // Only bits 0-1 select bank; other bits are status and read-only
+                let prev = self.address.0;
+                self.address.0 = (prev & !0b11) | (value & 0b11);
                 tracing::debug!(
                     target: "psx_core::cdrom",
                     bank = self.address.current_bank(),
@@ -731,9 +753,8 @@ impl Bus8 for Cdrom {
             }
             REG_PARAMETER_ADDR if self.address.current_bank() == 0 => {
                 self.parameter_fifo.push_back(value);
-                if self.parameter_fifo.len() == 16 {
-                    self.address.set_parameter_empty(false);
-                }
+                // Parameter FIFO is non-empty now
+                self.address.set_parameter_empty(false);
                 tracing::debug!(
                     target: "psx_core::cdrom",
                     fifo = %format!("{:02X?}", self.parameter_fifo),

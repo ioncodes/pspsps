@@ -34,6 +34,7 @@ pub enum Exception {
     Breakpoint = COP0_EXCEPTION_CODE_BREAK,
     ReservedInstruction = COP0_EXCEPTION_CODE_RI,
     ArithmeticOverflow = COP0_EXCEPTION_CODE_OV,
+    Unknown = 0xFFFFFFFF,
 }
 
 impl From<u32> for Exception {
@@ -48,7 +49,10 @@ impl From<u32> for Exception {
             COP0_EXCEPTION_CODE_BREAK => Exception::Breakpoint,
             COP0_EXCEPTION_CODE_RI => Exception::ReservedInstruction,
             COP0_EXCEPTION_CODE_OV => Exception::ArithmeticOverflow,
-            _ => panic!("Invalid exception code: {}", value),
+            _ => {
+                tracing::error!(target: "psx_core::cpu", "Unknown exception code: {}", value);
+                Exception::Unknown
+            },
         }
     }
 }
@@ -65,6 +69,7 @@ impl std::fmt::Display for Exception {
             Exception::Breakpoint => "Breakpoint",
             Exception::ReservedInstruction => "Reserved Instruction",
             Exception::ArithmeticOverflow => "Arithmetic Overflow",
+            Exception::Unknown => "???",
         };
         write!(f, "{}", description)
     }

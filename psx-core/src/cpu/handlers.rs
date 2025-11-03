@@ -87,6 +87,8 @@ pub enum CopOperation {
     MoveControlTo,
     MoveControlFrom,
     ReturnFromException,
+    LoadWordTo,
+    StoreWordFrom,
 }
 
 pub fn shift<const DIRECTION: ShiftDirection, const TYPE: ShiftType, const VARIABLE: bool>(
@@ -509,6 +511,20 @@ pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu) {
         CopOperation::ReturnFromException => {
             cpu.restore_from_exception();
             cpu.add_cycles(1);
+        }
+        CopOperation::LoadWordTo => {
+            let offset = instr.offset();
+            let base = cpu.read_register(instr.base());
+            let vaddr = base.wrapping_add_signed(offset as i32);
+            let value = cpu.read_u32(vaddr);
+            cpu.cop2.write_register(instr.ft() as u32, value);
+        }
+        CopOperation::StoreWordFrom => {
+            let offset = instr.offset();
+            let base = cpu.read_register(instr.base());
+            let vaddr = base.wrapping_add_signed(offset as i32);
+            let value = cpu.cop2.read_register(instr.ft() as u32);
+            cpu.write_u32(vaddr, value);
         }
     }
 }

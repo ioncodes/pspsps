@@ -75,7 +75,7 @@ pub enum Opcode {
     MoveControlToCoprocessor(u8),
     MoveFromCoprocessor(u8),
     MoveToCoprocessor(u8),
-    LoadWordFromCoprocessor(u8),
+    LoadWordToCoprocessor(u8),
     StoreWordFromCoprocessor(u8),
     ReturnFromException,
 
@@ -116,10 +116,9 @@ impl Instruction {
     }
 
     pub const fn nop() -> Self {
-        static NOP_HANDLER: InstructionHandler =
-            |_: &Instruction, _: &mut Cpu| {
-                // No operation
-            };
+        static NOP_HANDLER: InstructionHandler = |_: &Instruction, _: &mut Cpu| {
+            // No operation
+        };
 
         Instruction {
             opcode: Opcode::ShiftLeftLogical, // Using ShiftLeftLogical opcode to represent NOP
@@ -257,6 +256,25 @@ impl Instruction {
                     _ => Instruction::invalid(),
                 }
             }
+            0x30..=0x33 | 0x38..=0x3B => {
+                // LWCn / SWCn instructions for COP0, COP1, COP2, COP3
+                let cop_num = (op & 0x3) as u8; // Extract coprocessor number (bits 1-0 of opcode)
+                Instruction {
+                    opcode: if matches!(op, 0x30..=0x33) {
+                        Opcode::LoadWordToCoprocessor(cop_num)
+                    } else {
+                        Opcode::StoreWordFromCoprocessor(cop_num)
+                    },
+                    raw: opcode,
+                    opcode_type: InstructionType::Cop,
+                    handler: if matches!(op, 0x30..=0x33) {
+                        handlers::cop::<{ handlers::CopOperation::LoadWordTo }>
+                    } else {
+                        handlers::cop::<{ handlers::CopOperation::StoreWordFrom }>
+                    },
+                    is_delay_slot: false,
+                }
+            }
             _ => {
                 if op < 64 {
                     MIPS_OTHER_LUT[op as usize]
@@ -300,6 +318,11 @@ impl Instruction {
     #[inline(always)]
     pub fn rd(&self) -> u8 {
         ((self.raw >> 11) & 0x1F) as u8
+    }
+
+    #[inline(always)]
+    pub fn ft(&self) -> u8 {
+        ((self.raw >> 16) & 0x1F) as u8
     }
 
     #[inline(always)]
@@ -575,7 +598,7 @@ impl std::fmt::Display for Opcode {
             Opcode::MoveToCoprocessor(cop) => return write!(f, "mtc{}", cop),
             Opcode::MoveControlFromCoprocessor(cop) => return write!(f, "cfc{}", cop),
             Opcode::MoveControlToCoprocessor(cop) => return write!(f, "ctc{}", cop),
-            Opcode::LoadWordFromCoprocessor(cop) => return write!(f, "lwc{}", cop),
+            Opcode::LoadWordToCoprocessor(cop) => return write!(f, "lwc{}", cop),
             Opcode::StoreWordFromCoprocessor(cop) => return write!(f, "swc{}", cop),
             Opcode::ReturnFromException => "rfe",
 

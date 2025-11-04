@@ -60,7 +60,7 @@ impl Psx {
 
             tracing::info!(
                 target: "psx_core::psx",
-                address = format!("{:08X}", PSX_SIDELOAD_EXE_ADDRESS), 
+                address = format!("{:08X}", PSX_SIDELOAD_EXE_ADDRESS),
                 entrypoint = format!("{:08X}", exe.entry_point),
                 "Sideloaded EXE"
             );
@@ -76,11 +76,32 @@ impl Psx {
         }
 
         self.cpu.mmu.cdrom.tick(cycles);
-        self.cpu.mmu.irq.status.set_cdrom(self.cpu.mmu.cdrom.check_and_clear_irq());
+        self.cpu
+            .mmu
+            .irq
+            .status
+            .set_cdrom(self.cpu.mmu.cdrom.check_and_clear_irq());
 
         self.cpu.mmu.sio.tick(cycles);
         if self.cpu.mmu.sio.should_trigger_irq() {
             self.cpu.mmu.irq.status.set_controller_and_memory_card(true);
+        }
+
+        const CYCLES_PER_SCANLINE: usize = NTSC_VBLANK_CYCLES / 525;
+        const HBLANK_CYCLES: usize = CYCLES_PER_SCANLINE * 16 / 100;
+        let scanline_position = self.cycles % CYCLES_PER_SCANLINE;
+        let is_hblank = scanline_position >= (CYCLES_PER_SCANLINE - HBLANK_CYCLES);
+        let is_vblank = self.cycles >= NTSC_VBLANK_DURATION;
+        
+        let (tmr0_irq, tmr1_irq, tmr2_irq) = self.cpu.mmu.timers.tick(cycles, is_hblank, is_vblank);
+        if tmr0_irq {
+            self.cpu.mmu.irq.status.set_tmr0(true);
+        }
+        if tmr1_irq {
+            self.cpu.mmu.irq.status.set_tmr1(true);
+        }
+        if tmr2_irq {
+            self.cpu.mmu.irq.status.set_tmr2(true);
         }
 
         self.cpu.mmu.perform_dma_transfers();

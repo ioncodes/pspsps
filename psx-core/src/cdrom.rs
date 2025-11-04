@@ -3,9 +3,7 @@ pub mod reg;
 
 use crate::cdrom::irq::DiskIrq;
 use crate::cdrom::reg::{
-    AddressRegister, AdpCtlRegister, HChpCtl, HClrCtl, HIntMaskRegister, HIntSts, REG_ADDRESS_ADDR, REG_ADPCTL_ADDR,
-    REG_COMMAND_ADDR, REG_HCHPCTL_ADDR, REG_HCLRCTL_ADDR, REG_HINTMSK_ADDR_R, REG_HINTMSK_ADDR_W, REG_HINTSTS_ADDR,
-    REG_HSTS_ADDR, REG_PARAMETER_ADDR, REG_RDDATA_ADDR, REG_RESULT_ADDR, SetModeRegister, StatusCode,
+    AddressRegister, AdpCtlRegister, HChpCtl, HClrCtl, HIntMaskRegister, HIntSts, REG_ADDRESS_ADDR, REG_ADPCTL_ADDR, REG_ATV0_ADDR, REG_ATV1_ADDR, REG_ATV2_ADDR, REG_ATV3_ADDR, REG_CI_ADDR, REG_COMMAND_ADDR, REG_HCHPCTL_ADDR, REG_HCLRCTL_ADDR, REG_HINTMSK_ADDR_R, REG_HINTMSK_ADDR_W, REG_HINTSTS_ADDR, REG_HSTS_ADDR, REG_PARAMETER_ADDR, REG_RDDATA_ADDR, REG_RESULT_ADDR, SetModeRegister, StatusCode
 };
 use crate::mmu::bus::Bus8;
 use proc_bitfield::with_bits;
@@ -72,6 +70,13 @@ pub struct Cdrom {
     hintsts: HIntSts,
     hchpctl: HChpCtl,
 
+    // Audio volume registers (PSX-SPX: "00h=Off, 80h=Normal, FFh=Double")
+    atv0: u8, // Left-to-Left volume
+    atv1: u8, // Left-to-Right volume
+    atv2: u8, // Right-to-Right volume
+    atv3: u8, // Right-to-Left volume
+    ci: u8,   // Channel Information register
+
     /// Stores command parameters written by software (max 16 bytes)
     parameter_fifo: VecDeque<u8>,
     /// Stores response bytes from commands that software reads back (max 16 bytes)
@@ -107,6 +112,11 @@ impl Cdrom {
             hclrctl: HClrCtl(0),
             hintsts: HIntSts(0),
             hchpctl: HChpCtl(0),
+            atv0: 0x80, // PSX-SPX: Default is 80h (normal volume)
+            atv1: 0x80,
+            atv2: 0x80,
+            atv3: 0x80,
+            ci: 0,
             parameter_fifo: VecDeque::new(),
             result_fifo: VecDeque::new(),
             interrupt_queue: VecDeque::new(),
@@ -420,6 +430,10 @@ impl Cdrom {
                 let subcommand = self.parameter_fifo.pop_front().unwrap();
                 self.execute_subcommand(subcommand);
             }
+            // 0x13 GetTN - Get first and last track numbers
+            0x13 => {
+                self.execute_get_tn();
+            }
             // 0x1a 	GetID * 		INT3: status 	INT2/INT5: status, flag, type, atip, "SCEx"
             0x1A => {
                 self.execute_get_id();
@@ -476,6 +490,27 @@ impl Cdrom {
                 );
             }
         }
+    }
+
+    fn execute_get_tn(&mut self) {
+        let status = self.status();
+
+        let first_track = 0x01;
+        let last_track = 0x01;
+
+        self.queue_interrupt(
+            DiskIrq::CommandAcknowledged,
+            vec![status.0, first_track, last_track],
+            FIRST_RESP_GENERIC_DELAY,
+            false,
+        );
+
+        tracing::debug!(
+            target: "psx_core::cdrom",
+            first = format!("{:02X}", first_track),
+            last = format!("{:02X}", last_track),
+            "GetTN"
+        );
     }
 
     fn execute_get_id(&mut self) {
@@ -919,6 +954,46 @@ impl Bus8 for Cdrom {
             }
             REG_HINTMSK_ADDR_W if self.address.current_bank() == 1 => {
                 self.hintmsk.0 = value & 0b0001_1111;
+            }
+            REG_CI_ADDR if self.address.current_bank() == 2 => {
+                self.ci = value;
+                tracing::trace!(
+                    target: "psx_core::cdrom",
+                    value = format!("{:02X}", value),
+                    "CI (Channel Information) write"
+                );
+            }
+            REG_ATV0_ADDR if self.address.current_bank() == 2 => {
+                self.atv0 = value;
+                tracing::trace!(
+                    target: "psx_core::cdrom",
+                    value = format!("{:02X}", value),
+                    "ATV0 (Left-to-Left volume) write"
+                );
+            }
+            REG_ATV1_ADDR if self.address.current_bank() == 2 => {
+                self.atv1 = value;
+                tracing::trace!(
+                    target: "psx_core::cdrom",
+                    value = format!("{:02X}", value),
+                    "ATV1 (Left-to-Right volume) write"
+                );
+            }
+            REG_ATV2_ADDR if self.address.current_bank() == 3 => {
+                self.atv2 = value;
+                tracing::trace!(
+                    target: "psx_core::cdrom",
+                    value = format!("{:02X}", value),
+                    "ATV2 (Right-to-Right volume) write"
+                );
+            }
+            REG_ATV3_ADDR if self.address.current_bank() == 3 => {
+                self.atv3 = value;
+                tracing::trace!(
+                    target: "psx_core::cdrom",
+                    value = format!("{:02X}", value),
+                    "ATV3 (Right-to-Left volume) write"
+                );
             }
             REG_ADPCTL_ADDR if self.address.current_bank() == 3 => self.adpctl = AdpCtlRegister(value),
             _ => tracing::error!(

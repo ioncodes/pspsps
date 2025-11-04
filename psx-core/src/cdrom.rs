@@ -62,8 +62,6 @@ enum DriveState {
 
 pub struct Cdrom {
     // Inserted disc data
-    // TODO: do we need cue?
-    cdrom_cue: Vec<u8>,
     cdrom_bin: Vec<u8>,
 
     // Internal registers
@@ -102,7 +100,6 @@ pub struct Cdrom {
 impl Cdrom {
     pub fn new() -> Self {
         Self {
-            cdrom_cue: Vec::new(),
             cdrom_bin: Vec::new(),
             address: AddressRegister(0),
             adpctl: AdpCtlRegister(0),
@@ -167,7 +164,7 @@ impl Cdrom {
                     // Time to fire this interrupt
                     let pending = self.interrupt_queue.pop_front().unwrap();
 
-                    tracing::debug!(
+                    tracing::trace!(
                         target: "psx_core::cdrom",
                         irq = %pending.irq,
                         response = format!("{:02X?}", pending.response),
@@ -322,7 +319,7 @@ impl Cdrom {
             SECTOR_READ_DELAY_SINGLE_SPEED
         };
 
-        tracing::debug!(
+        tracing::trace!(
             target: "psx_core::cdrom",
             lba = self.sector_lba,
             status = format!("{:02X}", status.0),
@@ -334,8 +331,7 @@ impl Cdrom {
         self.hchpctl.set_request_sector_buffer_read(false);
     }
 
-    pub fn insert_disk(&mut self, cue: Vec<u8>, bin: Vec<u8>) {
-        self.cdrom_cue = cue;
+    pub fn insert_disk(&mut self, bin: Vec<u8>) {
         self.cdrom_bin = bin;
 
         tracing::info!(
@@ -579,7 +575,7 @@ impl Cdrom {
     fn execute_init(&mut self) {
         tracing::debug!(
             target: "psx_core::cdrom",
-            "Init - resetting CD-ROM to initial state",
+            "Init",
         );
 
         // Abort all pending operations
@@ -614,7 +610,7 @@ impl Cdrom {
     fn execute_read_toc(&mut self) {
         tracing::debug!(
             target: "psx_core::cdrom",
-            "ReadTOC - reading table of contents",
+            "ReadTOC",
         );
 
         let status = self.status();
@@ -665,7 +661,7 @@ impl Cdrom {
         // Store the mode value
         self.mode = SetModeRegister(mode_byte);
 
-        tracing::debug!(
+        tracing::trace!(
             target: "psx_core::cdrom",
             mode = format!("{:08b}", mode_byte),
             speed = if self.mode.double_speed() { "double" } else { "normal" },
@@ -757,7 +753,7 @@ impl Cdrom {
     }
 
     fn disk_inserted(&self) -> bool {
-        !self.cdrom_cue.is_empty()
+        !self.cdrom_bin.is_empty()
     }
 }
 
@@ -850,7 +846,7 @@ impl Bus8 for Cdrom {
                 // Only bits 0-1 select bank; other bits are status and read-only
                 let prev = self.address.0;
                 self.address.0 = (prev & !0b11) | (value & 0b11);
-                tracing::debug!(
+                tracing::trace!(
                     target: "psx_core::cdrom",
                     bank = self.address.current_bank(),
                     "Bank switched",
@@ -860,14 +856,14 @@ impl Bus8 for Cdrom {
                 self.parameter_fifo.push_back(value);
                 // Parameter FIFO is non-empty now
                 self.address.set_parameter_empty(false);
-                tracing::debug!(
+                tracing::trace!(
                     target: "psx_core::cdrom",
                     fifo = %format!("{:02X?}", self.parameter_fifo),
                     "Parameter FIFO write",
                 );
             }
             REG_COMMAND_ADDR if self.address.current_bank() == 0 => {
-                tracing::debug!(
+                tracing::trace!(
                     target: "psx_core::cdrom",
                     command = format!("{:02X}", value),
                     "Command received",

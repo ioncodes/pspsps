@@ -23,7 +23,6 @@ pub struct Debugger {
     trace: VecDeque<(u32, Instruction)>,
     breakpoints: HashSet<u32>,
     sideload_exe: Option<Vec<u8>>,
-    cue_file: Option<Vec<u8>>,
     bin_file: Option<Vec<u8>>,
     bios: Vec<u8>,
     cycle_counter: u32,
@@ -43,7 +42,6 @@ impl Debugger {
             trace: VecDeque::with_capacity(1000),
             breakpoints: HashSet::new(),
             sideload_exe: None,
-            cue_file: None,
             bin_file: None,
             bios,
             cycle_counter: 0,
@@ -63,18 +61,10 @@ impl Debugger {
 
     pub fn with_cdrom_image(mut self, path: Option<String>) -> Self {
         if let Some(cdrom_path) = path {
-            let cue_path = cdrom_path.clone();
-            let bin_path = cue_path.replace(".cue", ".bin");
-
-            let cue = std::fs::read(&cdrom_path)
+            let bin = std::fs::read(&cdrom_path)
                 .unwrap_or_else(|e| panic!("Failed to read CD-ROM image file '{}': {}", cdrom_path, e));
-            let bin = std::fs::read(&bin_path)
-                .unwrap_or_else(|e| panic!("Failed to read CD-ROM image file '{}': {}", bin_path, e));
-
-            self.cue_file = Some(cue.clone());
             self.bin_file = Some(bin.clone());
-
-            self.psx.load_cdrom(cue, bin);
+            self.psx.load_cdrom(bin);
         }
 
         self
@@ -227,8 +217,8 @@ impl Debugger {
                         self.psx.sideload_exe(exe_buffer.clone());
                     }
 
-                    if let (Some(cue), Some(bin)) = (&self.cue_file, &self.bin_file) {
-                        self.psx.load_cdrom(cue.clone(), bin.clone());
+                    if let Some(bin) = &self.bin_file {
+                        self.psx.load_cdrom(bin.clone());
                     }
 
                     self.is_running = false;

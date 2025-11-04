@@ -35,8 +35,8 @@ impl Psx {
         self.sideload_exe = Some(Exe::parse(exe_buffer));
     }
 
-    pub fn load_cdrom(&mut self, cue_buffer: Vec<u8>, bin_buffer: Vec<u8>) {
-        self.cpu.mmu.cdrom.insert_disk(cue_buffer, bin_buffer);
+    pub fn load_cdrom(&mut self, bin_buffer: Vec<u8>) {
+        self.cpu.mmu.cdrom.insert_disk(bin_buffer);
     }
 
     pub fn set_controller_state(&mut self, state: ControllerState) {

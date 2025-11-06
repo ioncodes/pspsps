@@ -2,8 +2,8 @@ use crate::gpu::cmd::tex::TextureWindowSettingCommand;
 use crate::gpu::{VRAM_HEIGHT, VRAM_WIDTH};
 
 pub fn rasterize_polygon(
-    vertices: &[(i16, i16)], colors: &[u32], uvs: &[u32],
-    texture_window: TextureWindowSettingCommand, vram: &mut [u8],
+    vertices: &[(i16, i16)], colors: &[u32], uvs: &[u32], texture_window: TextureWindowSettingCommand,
+    drawing_area_x1: u32, drawing_area_y1: u32, drawing_area_x2: u32, drawing_area_y2: u32, vram: &mut [u8],
 ) {
     // Quads must be split into two triangles
     // Vertices received: V0, V1, V2, V3
@@ -26,63 +26,64 @@ pub fn rasterize_polygon(
         rasterize_triangle(
             [vertices[0], vertices[1], vertices[2]],
             [colors[0], colors[1], colors[2]],
-            if textured {
-                [uvs[0], uvs[1], uvs[2]]
-            } else {
-                [0, 0, 0]
-            },
+            if textured { [uvs[0], uvs[1], uvs[2]] } else { [0, 0, 0] },
             textured,
             clut,
             texpage,
             texture_window,
+            drawing_area_x1,
+            drawing_area_y1,
+            drawing_area_x2,
+            drawing_area_y2,
             vram,
         );
         rasterize_triangle(
             [vertices[1], vertices[2], vertices[3]],
             [colors[1], colors[2], colors[3]],
-            if textured {
-                [uvs[1], uvs[2], uvs[3]]
-            } else {
-                [0, 0, 0]
-            },
+            if textured { [uvs[1], uvs[2], uvs[3]] } else { [0, 0, 0] },
             textured,
             clut,
             texpage,
             texture_window,
+            drawing_area_x1,
+            drawing_area_y1,
+            drawing_area_x2,
+            drawing_area_y2,
             vram,
         );
     } else {
         rasterize_triangle(
             [vertices[0], vertices[1], vertices[2]],
             [colors[0], colors[1], colors[2]],
-            if textured {
-                [uvs[0], uvs[1], uvs[2]]
-            } else {
-                [0, 0, 0]
-            },
+            if textured { [uvs[0], uvs[1], uvs[2]] } else { [0, 0, 0] },
             textured,
             clut,
             texpage,
             texture_window,
+            drawing_area_x1,
+            drawing_area_y1,
+            drawing_area_x2,
+            drawing_area_y2,
             vram,
         );
     }
 }
 
 fn rasterize_triangle(
-    vertices: [(i16, i16); 3], colors: [u32; 3], uvs: [u32; 3], textured: bool, clut: u16,
-    texpage: u16, texture_window: TextureWindowSettingCommand, vram: &mut [u8],
+    vertices: [(i16, i16); 3], colors: [u32; 3], uvs: [u32; 3], textured: bool, clut: u16, texpage: u16,
+    texture_window: TextureWindowSettingCommand, drawing_area_x1: u32, drawing_area_y1: u32, drawing_area_x2: u32,
+    drawing_area_y2: u32, vram: &mut [u8],
 ) {
     // Vertex coordinates
     let (x0, y0) = (vertices[0].0 as i32, vertices[0].1 as i32);
     let (x1, y1) = (vertices[1].0 as i32, vertices[1].1 as i32);
     let (x2, y2) = (vertices[2].0 as i32, vertices[2].1 as i32);
 
-    // Bounding box and clamping to VRAM dimensions
-    let min_x = x0.min(x1).min(x2).max(0);
-    let max_x = x0.max(x1).max(x2).min(VRAM_WIDTH as i32);
-    let min_y = y0.min(y1).min(y2).max(0);
-    let max_y = y0.max(y1).max(y2).min(VRAM_HEIGHT as i32);
+    // Bounding box constrained to drawing area
+    let min_x = x0.min(x1).min(x2).max(drawing_area_x1 as i32);
+    let max_x = x0.max(x1).max(x2).min(drawing_area_x2 as i32);
+    let min_y = y0.min(y1).min(y2).max(drawing_area_y1 as i32);
+    let max_y = y0.max(y1).max(y2).min(drawing_area_y2 as i32);
 
     let area = edge_function(x0, y0, x1, y1, x2, y2);
     if area == 0 {
@@ -203,8 +204,7 @@ fn textured_render(
     // (previously extracted incorrectly from uvs array per-triangle)
 
     let texture_x_base = (texpage & 0b1111) as i32 * 64;
-    let texture_y_base =
-        (((texpage >> 4) & 0x1) as i32 * 256) + (((texpage >> 11) & 0x1) as i32 * 512);
+    let texture_y_base = (((texpage >> 4) & 0x1) as i32 * 256) + (((texpage >> 11) & 0x1) as i32 * 512);
 
     let color_depth = (texpage >> 7) & 0b11;
 
@@ -222,13 +222,9 @@ fn textured_render(
     let v = ((v0 * w0) + (v1 * w1) + (v2 * w2)) / area;
 
     let u = (u & !(texture_window.texture_window_x_mask() as i32 * 8))
-        | ((texture_window.texture_window_x_offset() as i32
-            & texture_window.texture_window_x_mask() as i32)
-            * 8);
+        | ((texture_window.texture_window_x_offset() as i32 & texture_window.texture_window_x_mask() as i32) * 8);
     let v = (v & !(texture_window.texture_window_y_mask() as i32 * 8))
-        | ((texture_window.texture_window_y_offset() as i32
-            & texture_window.texture_window_y_mask() as i32)
-            * 8);
+        | ((texture_window.texture_window_y_offset() as i32 & texture_window.texture_window_y_mask() as i32) * 8);
 
     let tex_x_in_page = (u as usize) % 256;
     let tex_y_in_page = (v as usize) % 256;

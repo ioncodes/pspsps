@@ -17,8 +17,8 @@ pub struct Cpu {
     pub hi: u32,
     pub lo: u32,
     pub load_delay: Option<(RegisterIndex, RegisterValue)>, // Loads are delayed by one instruction
-    pub delay_slot: Option<Instruction>, // Instructions following branches are in a delay slot and execute immediately after the branch
-    pub cop0: [RegisterValue; 64],       // COP0 registers
+    pub delay_slot: Option<(Instruction, u32)>, // Delay slot (instruction, branch destination)
+    pub cop0: [RegisterValue; 64],              // COP0 registers
 }
 
 impl Cpu {
@@ -36,16 +36,14 @@ impl Cpu {
 
     #[inline(always)]
     pub fn tick(&mut self, mmu: &mut Mmu) {
-        // If there's a delay slot, execute it first
-        if let Some(delay_instr) = self.delay_slot.take() {
+        if let Some((delay_slot, branch_target)) = self.delay_slot.take() {
             tracing::debug!(
-                target: "psx_core::cpu",
-                "{}",
-                format!("{:08X}: [{:08X}] {: <30}", self.pc, delay_instr.raw, format!("{}", delay_instr)).yellow()
-            );
-            tracing::trace!(target: "psx_core::cpu", "{:?}", delay_instr);
-            (delay_instr.handler)(&delay_instr, self, mmu);
-            return; // TODO: do we have to return here?
+                target: "psx_core::cpu", 
+                "{}", 
+                format!("Executing delay slot instruction: {}, with branch target: {:08X}", delay_slot, branch_target).yellow());
+            (delay_slot.handler)(&delay_slot, self, mmu);
+            self.pc = branch_target; // Set PC to the scheduled branch address
+            return;
         }
 
         let instr = Instruction::decode(mmu.read_u32(self.pc));
@@ -53,14 +51,19 @@ impl Cpu {
         tracing::debug!(target: "psx_core::cpu", "{:08X}: [{:08X}] {: <30}", self.pc, instr.raw, format!("{}", instr));
         tracing::trace!(target: "psx_core::cpu", "{:?}", instr);
 
-        self.pc += 4; // Advance the program counter
-
         (instr.handler)(&instr, self, mmu);
+
+        self.pc += 4;
     }
 
     #[inline(always)]
-    pub(crate) fn queue_delay_slot(&mut self, mmu: &mut Mmu) {
-        self.delay_slot = Some(Instruction::decode(mmu.read_u32(self.pc))); // Load the next instruction into the delay slot
+    pub(crate) fn set_delay_slot(&mut self, mmu: &mut Mmu, branch_target: u32) {
+        // Load the next instruction into the delay slot
+        // Also cache the branch target
+        self.delay_slot = Some((
+            Instruction::decode(mmu.read_u32(self.pc + 4)),
+            branch_target,
+        ));
     }
 }
 

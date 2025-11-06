@@ -93,6 +93,7 @@ impl Gpu {
                 Gp0Command::PolygonPrimitive(cmd) => self.process_polygon_primitive_cmd(parsed_cmd, cmd),
                 Gp0Command::CpuToVramBlit => self.process_cpu_to_vram_blit_cmd(parsed_cmd),
                 Gp0Command::VramToCpuBlit => self.process_vram_to_cpu_blit_cmd(parsed_cmd),
+                Gp0Command::VramToVramBlit => self.process_vram_to_vram_blit_cmd(parsed_cmd),
                 Gp0Command::Environment(cmd) => self.process_environment_cmd(parsed_cmd, cmd),
                 Gp0Command::Misc(cmd) => self.process_misc_cmd(parsed_cmd, cmd),
                 _ => {
@@ -343,12 +344,59 @@ impl Gpu {
             }
         }
 
-        // Here you would typically store or process the pixel_data as needed
+        // TODO: allow retrieving it
+    }
+
+    fn process_vram_to_vram_blit_cmd(&mut self, parsed_cmd: ParsedCommand) {
+        // GP0(80h) - Copy Rectangle (VRAM to VRAM)
+        // Word 0: Command (0x80000000)
+        // Word 1: Source Coord (Ys << 16 | Xs)
+        // Word 2: Destination Coord (Yd << 16 | Xd)
+        // Word 3: Width+Height (H << 16 | W)
+
+        let src_x = (parsed_cmd.data[0] & 0xFFFF) as u16;
+        let src_y = ((parsed_cmd.data[0] >> 16) & 0xFFFF) as u16;
+        let dst_x = (parsed_cmd.data[1] & 0xFFFF) as u16;
+        let dst_y = ((parsed_cmd.data[1] >> 16) & 0xFFFF) as u16;
+        let width = (parsed_cmd.data[2] & 0xFFFF) as usize;
+        let height = ((parsed_cmd.data[2] >> 16) & 0xFFFF) as usize;
+
         tracing::debug!(
             target: "psx_core::gpu",
-            pixels_retrieved = pixel_data.len(),
-            "Retrieved pixel data from VRAM"
+            src_x, src_y, dst_x, dst_y, width, height,
+            "VRAM to VRAM blit"
         );
+
+        // Copy rectangle from source to destination in VRAM
+        // Handle overlapping regions by copying to a temporary buffer first
+        let mut temp_buffer: Vec<u16> = Vec::with_capacity(width * height);
+
+        // Read from source
+        for row in 0..height {
+            for col in 0..width {
+                let vram_x = (src_x as usize + col) & (VRAM_WIDTH - 1);
+                let vram_y = (src_y as usize + row) & (VRAM_HEIGHT - 1);
+                let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
+                let byte0 = self.gp.vram[vram_idx];
+                let byte1 = self.gp.vram[vram_idx + 1];
+                let pixel = u16::from_le_bytes([byte0, byte1]);
+                temp_buffer.push(pixel);
+            }
+        }
+
+        // Write to destination
+        let mut pixel_idx = 0;
+        for row in 0..height {
+            for col in 0..width {
+                let vram_x = (dst_x as usize + col) & (VRAM_WIDTH - 1);
+                let vram_y = (dst_y as usize + row) & (VRAM_HEIGHT - 1);
+                let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
+                let bytes = temp_buffer[pixel_idx].to_le_bytes();
+                self.gp.vram[vram_idx] = bytes[0];
+                self.gp.vram[vram_idx + 1] = bytes[1];
+                pixel_idx += 1;
+            }
+        }
     }
 
     fn process_environment_cmd(&mut self, parsed_cmd: ParsedCommand, cmd: u8) {
@@ -430,6 +478,11 @@ impl Gpu {
         match cmd {
             // NOP
             0x00 => {},
+            // Clear Cache
+            0x01 => {
+                // TODO: flush texture cache? do we even need to?
+                tracing::trace!(target: "psx_core::gpu", "Flush texture cache");
+            }
             // Quick Rectangle Fill
             0x02 => {
                 let color = parsed_cmd.raw & 0x00FF_FFFF;

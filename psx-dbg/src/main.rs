@@ -295,6 +295,7 @@ fn main() -> eframe::Result {
         targets = targets.with_target("psx_core::bios", tracing_level);
         targets = targets.with_target("psx_core::gpu", tracing_level);
         targets = targets.with_target("psx_core::irq", tracing_level);
+        targets = targets.with_target("psx_core::sio", tracing_level);
         targets = targets.with_target("psx_core::cdrom", tracing_level);
     }
 

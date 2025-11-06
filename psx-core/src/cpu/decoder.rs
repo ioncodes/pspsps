@@ -241,43 +241,10 @@ impl Instruction {
                 let cop_num = (op & 0x3) as u8; // Extract coprocessor number (bits 1-0 of opcode)
                 let fmt = (opcode >> 21) & 0x1F; // Extract the format field (bits 25-21)
 
-                match fmt {
-                    0b00000 => Instruction {
-                        opcode: Opcode::MoveFromCoprocessor(cop_num),
-                        raw: opcode,
-                        opcode_type: InstructionType::Cop,
-                        handler: handlers::cop::<{ handlers::CopOperation::MoveFrom }>,
-                        is_delay_slot: false,
-                    },
-                    0b00010 => Instruction {
-                        opcode: Opcode::MoveControlFromCoprocessor(cop_num),
-                        raw: opcode,
-                        opcode_type: InstructionType::Cop,
-                        handler: handlers::cop::<{ handlers::CopOperation::MoveControlFrom }>,
-                        is_delay_slot: false,
-                    },
-                    0b00100 => Instruction {
-                        opcode: Opcode::MoveToCoprocessor(cop_num),
-                        raw: opcode,
-                        opcode_type: InstructionType::Cop,
-                        handler: handlers::cop::<{ handlers::CopOperation::MoveTo }>,
-                        is_delay_slot: false,
-                    },
-                    0b00110 => Instruction {
-                        opcode: Opcode::MoveControlToCoprocessor(cop_num),
-                        raw: opcode,
-                        opcode_type: InstructionType::Cop,
-                        handler: handlers::cop::<{ handlers::CopOperation::MoveControlTo }>,
-                        is_delay_slot: false,
-                    },
-                    16 if cop_num == 0 => Instruction {
-                        opcode: Opcode::ReturnFromException,
-                        raw: opcode,
-                        opcode_type: InstructionType::Cop,
-                        handler: handlers::cop::<{ handlers::CopOperation::ReturnFromException }>,
-                        is_delay_slot: false,
-                    },
-                    _ => Instruction::invalid(),
+                if cop_num == 2 && fmt & 0b10000 != 0 {
+                    Self::decode_gte(opcode)
+                } else {
+                    Self::decode_cop(opcode, cop_num, fmt)
                 }
             }
             0x30..=0x33 | 0x38..=0x3B => {
@@ -379,6 +346,85 @@ impl Instruction {
         let addr_field = self.address();
         let pc_plus_4 = pc + 4;
         (pc_plus_4 & 0xF0000000) | (addr_field << 2)
+    }
+
+    fn decode_cop(opcode: u32, cop_num: u8, fmt: u32) -> Self {
+        match fmt {
+            0b00000 => Instruction {
+                opcode: Opcode::MoveFromCoprocessor(cop_num),
+                raw: opcode,
+                opcode_type: InstructionType::Cop,
+                handler: handlers::cop::<{ handlers::CopOperation::MoveFrom }>,
+                is_delay_slot: false,
+            },
+            0b00010 => Instruction {
+                opcode: Opcode::MoveControlFromCoprocessor(cop_num),
+                raw: opcode,
+                opcode_type: InstructionType::Cop,
+                handler: handlers::cop::<{ handlers::CopOperation::MoveControlFrom }>,
+                is_delay_slot: false,
+            },
+            0b00100 => Instruction {
+                opcode: Opcode::MoveToCoprocessor(cop_num),
+                raw: opcode,
+                opcode_type: InstructionType::Cop,
+                handler: handlers::cop::<{ handlers::CopOperation::MoveTo }>,
+                is_delay_slot: false,
+            },
+            0b00110 => Instruction {
+                opcode: Opcode::MoveControlToCoprocessor(cop_num),
+                raw: opcode,
+                opcode_type: InstructionType::Cop,
+                handler: handlers::cop::<{ handlers::CopOperation::MoveControlTo }>,
+                is_delay_slot: false,
+            },
+            16 if cop_num == 0 => Instruction {
+                opcode: Opcode::ReturnFromException,
+                raw: opcode,
+                opcode_type: InstructionType::Cop,
+                handler: handlers::cop::<{ handlers::CopOperation::ReturnFromException }>,
+                is_delay_slot: false,
+            },
+            _ => Instruction::invalid(),
+        }
+    }
+
+    fn decode_gte(opcode: u32) -> Self {
+        let cmd = (opcode & 0x3F) as u8;
+
+        let gte_opcode = match cmd {
+            0x01 => Opcode::GteRtps,
+            0x06 => Opcode::GteNclip,
+            0x0C => Opcode::GteOp,
+            0x10 => Opcode::GteDpcs,
+            0x11 => Opcode::GteIntpl,
+            0x12 => Opcode::GteMvmva,
+            0x13 => Opcode::GteNcds,
+            0x14 => Opcode::GteCdp,
+            0x16 => Opcode::GteNcdt,
+            0x1B => Opcode::GteNccs,
+            0x1C => Opcode::GteCc,
+            0x1E => Opcode::GteNcs,
+            0x20 => Opcode::GteNct,
+            0x28 => Opcode::GteSqr,
+            0x29 => Opcode::GteDcpl,
+            0x2A => Opcode::GteDpct,
+            0x2D => Opcode::GteAvsz3,
+            0x2E => Opcode::GteAvsz4,
+            0x30 => Opcode::GteRtpt,
+            0x3D => Opcode::GteGpf,
+            0x3E => Opcode::GteGpl,
+            0x3F => Opcode::GteNcct,
+            _ => return Instruction::invalid(),
+        };
+
+        Instruction {
+            opcode: gte_opcode,
+            raw: opcode,
+            opcode_type: InstructionType::Cop,
+            handler: handlers::gte_dispatch,
+            is_delay_slot: false,
+        }
     }
 
     // Helper methods to format instruction fields for display

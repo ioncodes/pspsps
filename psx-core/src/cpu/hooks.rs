@@ -14,5 +14,5 @@ lazy_static! {
 }
 
 fn bios_printf(cpu: &Cpu, mmu: &Mmu) {
-    tracing::debug!(target: "psx_core::bios", "printf called with registers: {:?}", cpu.registers);
+    tracing::debug!(target: "psx_core::cpu", "printf called with registers: {:?}", cpu.registers);
 }

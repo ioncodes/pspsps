@@ -1,5 +1,5 @@
 use super::{SharedContext, Widget};
-use egui::Ui;
+use egui::{ScrollArea, Ui};
 
 pub struct TtyWidget;
 
@@ -15,6 +15,11 @@ impl Widget for TtyWidget {
     }
 
     fn ui(&mut self, ui: &mut Ui, _context: &mut SharedContext) {
-        ui.monospace(psx_core::cpu::internal::TTY_BUFFER.lock().unwrap().clone());
+        ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .stick_to_bottom(true)
+            .show(ui, |ui| {
+                ui.monospace(psx_core::cpu::internal::TTY_BUFFER.lock().unwrap().clone());
+            });
     }
 }

@@ -2,6 +2,7 @@ use crate::cpu::Cpu;
 use crate::cpu::cop::Cop;
 use crate::cpu::cop::cop0::Exception;
 use crate::cpu::decoder::Instruction;
+use crate::mmu::Mmu;
 use std::marker::ConstParamTy;
 
 #[derive(Debug, ConstParamTy, PartialEq, Eq)]
@@ -154,7 +155,16 @@ pub fn branch<
             BranchAddressing::AbsoluteImmediate => {
                 (instr.address() << 2) | ((cpu.pc + 4) & 0xF000_0000)
             }
-            BranchAddressing::AbsoluteRegister => cpu.registers[instr.rs() as usize],
+            BranchAddressing::AbsoluteRegister => {
+                let addr = cpu.registers[instr.rs() as usize];
+                if !Mmu::is_word_aligned(addr) {
+                    cpu.cause_exception(Exception::AddressErrorLoad, instr.is_delay_slot);
+                    // TODO: do we add cycles here?
+                    return;
+                }
+
+                addr
+            }
             BranchAddressing::RelativeOffset => {
                 cpu.pc.wrapping_add_signed((instr.offset() as i32) << 2) + 4 // +4 to account for the delay slot
             }
@@ -179,8 +189,6 @@ pub fn branch<
 pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE: bool>(
     instr: &Instruction, cpu: &mut Cpu,
 ) {
-    // TODO: UNSIGNED = no exception
-
     let x = cpu.read_register(instr.rs());
     let y = if IMMEDIATE {
         // Sign-extend for arithmetic operations, zero-extend for logical
@@ -402,8 +410,8 @@ pub fn load_store<
             // LWL: "It reads bytes only from the word in memory which contains the specified starting byte."
             // this many bytes in word boundary -> subtract from/add to vaddr when reading
             let bytes_to_read = match PORTION {
-                MemoryAccessPortion::Left => (vaddr & 0b11) + 1,
-                MemoryAccessPortion::Right => 4 - (vaddr & 0b11),
+                MemoryAccessPortion::Left => Mmu::word_align(vaddr) + 1,
+                MemoryAccessPortion::Right => 4 - Mmu::word_align(vaddr),
                 _ => unreachable!(),
             };
             let mut register_value = cpu.read_register(instr.rt());
@@ -433,8 +441,8 @@ pub fn load_store<
             if TYPE == MemoryAccessType::Store && PORTION != MemoryAccessPortion::Full =>
         {
             let bytes_to_write = match PORTION {
-                MemoryAccessPortion::Left => (vaddr & 0b11) + 1,
-                MemoryAccessPortion::Right => 4 - (vaddr & 0b11),
+                MemoryAccessPortion::Left => Mmu::word_align(vaddr) + 1,
+                MemoryAccessPortion::Right => 4 - Mmu::word_align(vaddr),
                 _ => unreachable!(),
             };
             let register_value = cpu.read_register(instr.rt());

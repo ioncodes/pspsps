@@ -21,6 +21,16 @@ impl Mmu {
             self.write_u8(address + i as u32, byte);
         }
     }
+
+    #[inline(always)]
+    pub fn is_word_aligned(address: u32) -> bool {
+        address & 0b11 == 0
+    }
+
+    #[inline(always)]
+    pub fn word_align(address: u32) -> u32 {
+        address & 0b11
+    }
 }
 
 impl Addressable for Mmu {

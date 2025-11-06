@@ -5,7 +5,6 @@ use egui_dock::{DockArea, DockState};
 use egui_toast::{Toast, ToastKind, Toasts};
 use psx_core::psx::Psx;
 use std::collections::{HashMap, HashSet};
-use std::time::Duration;
 use tracing_subscriber::Layer as _;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
@@ -97,7 +96,7 @@ impl eframe::App for PsxDebugger {
                 self.psx.step();
             }
 
-            ctx.request_repaint_after(Duration::from_millis(16));
+            ctx.request_repaint();
         }
 
         let mut tab_viewer = TabViewer {

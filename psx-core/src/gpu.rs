@@ -386,8 +386,10 @@ impl Gpu {
         );
 
         match cmd {
+            // NOP
+            0x00 => {},
+            // Quick Rectangle Fill
             0x02 => {
-                // Quick Rectangle Fill
                 let color = parsed_cmd.raw & 0x00FF_FFFF;
                 let x = (parsed_cmd.data[0] & 0xFFFF) as i16;
                 let y = ((parsed_cmd.data[0] >> 16) & 0xFFFF) as i16;

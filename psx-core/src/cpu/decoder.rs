@@ -79,30 +79,6 @@ pub enum Opcode {
     StoreWordFromCoprocessor(u8),
     ReturnFromException,
 
-    // GTE
-    GteRtps,
-    GteNclip,
-    GteOp,
-    GteDpcs,
-    GteIntpl,
-    GteMvmva,
-    GteNcds,
-    GteCdp,
-    GteNcdt,
-    GteNccs,
-    GteCc,
-    GteNcs,
-    GteNct,
-    GteSqr,
-    GteDcpl,
-    GteDpct,
-    GteAvsz3,
-    GteAvsz4,
-    GteRtpt,
-    GteGpf,
-    GteGpl,
-    GteNcct,
-
     // Other
     Invalid,
 }
@@ -181,7 +157,7 @@ impl PartialEq for Instruction {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Register(u8, bool, u8); // (register number, is_coproc, coproc number)
+pub struct Register(u8, bool);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Operand {
@@ -241,12 +217,43 @@ impl Instruction {
                 let cop_num = (op & 0x3) as u8; // Extract coprocessor number (bits 1-0 of opcode)
                 let fmt = (opcode >> 21) & 0x1F; // Extract the format field (bits 25-21)
 
-                if cop_num == 2 && fmt & 0b10000 != 0 {
-                    // GTE
-                    Self::decode_gte(opcode)
-                } else {
-                    // Other coprocessor instructions
-                    Self::decode_other_cop(opcode, fmt, cop_num)
+                match fmt {
+                    0b00000 => Instruction {
+                        opcode: Opcode::MoveFromCoprocessor(cop_num),
+                        raw: opcode,
+                        opcode_type: InstructionType::Cop,
+                        handler: handlers::cop::<{ handlers::CopOperation::MoveFrom }>,
+                        is_delay_slot: false,
+                    },
+                    0b00010 => Instruction {
+                        opcode: Opcode::MoveControlFromCoprocessor(cop_num),
+                        raw: opcode,
+                        opcode_type: InstructionType::Cop,
+                        handler: handlers::cop::<{ handlers::CopOperation::MoveControlFrom }>,
+                        is_delay_slot: false,
+                    },
+                    0b00100 => Instruction {
+                        opcode: Opcode::MoveToCoprocessor(cop_num),
+                        raw: opcode,
+                        opcode_type: InstructionType::Cop,
+                        handler: handlers::cop::<{ handlers::CopOperation::MoveTo }>,
+                        is_delay_slot: false,
+                    },
+                    0b00110 => Instruction {
+                        opcode: Opcode::MoveControlToCoprocessor(cop_num),
+                        raw: opcode,
+                        opcode_type: InstructionType::Cop,
+                        handler: handlers::cop::<{ handlers::CopOperation::MoveControlTo }>,
+                        is_delay_slot: false,
+                    },
+                    16 if cop_num == 0 => Instruction {
+                        opcode: Opcode::ReturnFromException,
+                        raw: opcode,
+                        opcode_type: InstructionType::Cop,
+                        handler: handlers::cop::<{ handlers::CopOperation::ReturnFromException }>,
+                        is_delay_slot: false,
+                    },
+                    _ => Instruction::invalid(),
                 }
             }
             0x30..=0x33 | 0x38..=0x3B => {
@@ -350,230 +357,150 @@ impl Instruction {
         (pc_plus_4 & 0xF0000000) | (addr_field << 2)
     }
 
-    pub fn operand1(&self) -> Option<Operand> {
-        match self.opcode_type {
-            InstructionType::RType => match self.opcode {
-                Opcode::ShiftLeftLogical | Opcode::ShiftRightLogical | Opcode::ShiftRightArithmetic => {
-                    Some(Operand::Register(Register(self.rd(), false, 0)))
-                }
-                Opcode::JumpRegister => Some(Operand::Register(Register(self.rs(), false, 0))),
-                Opcode::JumpAndLinkRegister => Some(Operand::Register(Register(self.rd(), false, 0))),
-                Opcode::MoveFromHi | Opcode::MoveFromLo => Some(Operand::Register(Register(self.rd(), false, 0))),
-                Opcode::MoveToHi | Opcode::MoveToLo => Some(Operand::Register(Register(self.rs(), false, 0))),
-                Opcode::Multiply | Opcode::MultiplyUnsigned | Opcode::Divide | Opcode::DivideUnsigned => {
-                    Some(Operand::Register(Register(self.rs(), false, 0)))
-                }
-                Opcode::SystemCall | Opcode::Break => None,
-                _ => Some(Operand::Register(Register(self.rd(), false, 0))),
-            },
-            InstructionType::IType => match self.opcode {
-                Opcode::LoadUpperImmediate => Some(Operand::Register(Register(self.rt(), false, 0))),
-                Opcode::BranchGreaterThanZero
-                | Opcode::BranchLessEqualZero
-                | Opcode::BranchGreaterEqualZero
-                | Opcode::BranchLessThanZero
-                | Opcode::BranchLessThanZeroAndLink
-                | Opcode::BranchGreaterEqualZeroAndLink
-                | Opcode::BranchEqual
-                | Opcode::BranchNotEqual => Some(Operand::Register(Register(self.rs(), false, 0))),
-                _ => Some(Operand::Register(Register(self.rt(), false, 0))),
-            },
-            InstructionType::JType => Some(Operand::Address(self.address() << 2)),
-            InstructionType::Cop if self.opcode != Opcode::ReturnFromException => {
-                Some(Operand::Register(Register(self.rt(), false, 0)))
-            }
-            _ => None,
+    // Helper methods to format instruction fields for display
+    fn fmt_rd(&self) -> String {
+        lut::REGISTER_NAME_LUT.get(self.rd() as usize).unwrap_or(&"???").to_string()
+    }
+
+    fn fmt_rs(&self) -> String {
+        lut::REGISTER_NAME_LUT.get(self.rs() as usize).unwrap_or(&"???").to_string()
+    }
+
+    fn fmt_rt(&self) -> String {
+        lut::REGISTER_NAME_LUT.get(self.rt() as usize).unwrap_or(&"???").to_string()
+    }
+
+    fn fmt_ft(&self) -> String {
+        lut::COP_REGISTER_NAME_LUT.get(self.ft() as usize).unwrap_or(&"???").to_string()
+    }
+
+    fn fmt_shamt(&self) -> String {
+        format!("0x{:X}", self.shamt())
+    }
+
+    fn fmt_offset(&self) -> String {
+        format!("{}", self.offset())
+    }
+
+    fn fmt_base(&self) -> String {
+        lut::REGISTER_NAME_LUT.get(self.base() as usize).unwrap_or(&"???").to_string()
+    }
+
+    fn fmt_imm(&self) -> String {
+        format!("0x{:X}", self.immediate())
+    }
+
+    fn fmt_simm(&self) -> String {
+        format!("{}", self.immediate() as i16)
+    }
+
+    fn fmt_target(&self) -> String {
+        format!("0x{:08X}", self.address() << 2)
+    }
+
+    fn fmt_branch_offset(&self) -> String {
+        let offset = ((self.offset() as i32) << 2) + 4;
+        if offset >= 0 {
+            format!("+{}", offset)
+        } else {
+            format!("{}", offset)
         }
     }
 
-    pub fn operand2(&self) -> Option<Operand> {
-        match self.opcode_type {
-            InstructionType::RType => match self.opcode {
-                Opcode::ShiftLeftLogical | Opcode::ShiftRightLogical | Opcode::ShiftRightArithmetic => {
-                    Some(Operand::Register(Register(self.rt(), false, 0)))
-                }
-                Opcode::ShiftLeftLogicalVariable
-                | Opcode::ShiftRightLogicalVariable
-                | Opcode::ShiftRightArithmeticVariable => Some(Operand::Register(Register(self.rs(), false, 0))),
-                Opcode::JumpRegister | Opcode::MoveFromHi | Opcode::MoveFromLo | Opcode::SystemCall | Opcode::Break => {
-                    None
-                }
-                Opcode::JumpAndLinkRegister => Some(Operand::Register(Register(self.rs(), false, 0))),
-                Opcode::MoveToHi | Opcode::MoveToLo => None,
-                Opcode::Multiply | Opcode::MultiplyUnsigned | Opcode::Divide | Opcode::DivideUnsigned => {
-                    Some(Operand::Register(Register(self.rt(), false, 0)))
-                }
-                _ => Some(Operand::Register(Register(self.rs(), false, 0))),
-            },
-            InstructionType::IType => match self.opcode {
-                Opcode::LoadUpperImmediate => Some(Operand::Immediate(self.immediate() as u32)),
-                Opcode::BranchGreaterThanZero
-                | Opcode::BranchLessEqualZero
-                | Opcode::BranchGreaterEqualZero
-                | Opcode::BranchLessThanZero
-                | Opcode::BranchLessThanZeroAndLink
-                | Opcode::BranchGreaterEqualZeroAndLink => Some(Operand::Immediate((self.immediate() as i16) as u32)),
-                Opcode::BranchEqual | Opcode::BranchNotEqual => Some(Operand::Register(Register(self.rt(), false, 0))),
-                Opcode::LoadByte
-                | Opcode::LoadByteUnsigned
-                | Opcode::LoadHalfword
-                | Opcode::LoadHalfwordUnsigned
-                | Opcode::LoadWord
-                | Opcode::LoadWordLeft
-                | Opcode::LoadWordRight => Some(Operand::MemoryAddress {
-                    offset: self.offset(),
-                    base: Register(self.rs(), false, 0),
-                }),
-                Opcode::StoreByte
-                | Opcode::StoreHalfword
-                | Opcode::StoreWord
-                | Opcode::StoreWordLeft
-                | Opcode::StoreWordRight => Some(Operand::MemoryAddress {
-                    offset: self.immediate() as i16,
-                    base: Register(self.rs(), false, 0),
-                }),
-                _ => Some(Operand::Register(Register(self.rs(), false, 0))),
-            },
-            InstructionType::JType => None,
-            InstructionType::Cop if self.opcode != Opcode::ReturnFromException => {
-                Some(Operand::Register(Register(self.rd(), true, (self.op() & 0x3) as u8)))
-            }
-            _ => None,
-        }
-    }
+    // Returns the format string for the instruction
+    fn format_string(&self) -> &'static str {
+        match self.opcode {
+            // ALU - R-type
+            Opcode::Add => "@rd, @rs, @rt",
+            Opcode::AddUnsigned => "@rd, @rs, @rt",
+            Opcode::Sub => "@rd, @rs, @rt",
+            Opcode::SubUnsigned => "@rd, @rs, @rt",
+            Opcode::And => "@rd, @rs, @rt",
+            Opcode::Or => "@rd, @rs, @rt",
+            Opcode::Xor => "@rd, @rs, @rt",
+            Opcode::Nor => "@rd, @rs, @rt",
+            Opcode::SetLessThan => "@rd, @rs, @rt",
+            Opcode::SetLessThanUnsigned => "@rd, @rs, @rt",
 
-    pub fn operand3(&self) -> Option<Operand> {
-        match self.opcode_type {
-            InstructionType::RType => match self.opcode {
-                Opcode::ShiftLeftLogical | Opcode::ShiftRightLogical | Opcode::ShiftRightArithmetic => {
-                    Some(Operand::Immediate(self.shamt() as u32))
-                }
-                Opcode::ShiftLeftLogicalVariable
-                | Opcode::ShiftRightLogicalVariable
-                | Opcode::ShiftRightArithmeticVariable => Some(Operand::Register(Register(self.rd(), false, 0))),
-                Opcode::JumpRegister => None,
-                Opcode::JumpAndLinkRegister => None,
-                Opcode::MoveFromHi
-                | Opcode::MoveFromLo
-                | Opcode::MoveToHi
-                | Opcode::MoveToLo
-                | Opcode::SystemCall
-                | Opcode::Break
-                | Opcode::Multiply
-                | Opcode::MultiplyUnsigned
-                | Opcode::Divide
-                | Opcode::DivideUnsigned => None,
-                _ => Some(Operand::Register(Register(self.rt(), false, 0))),
-            },
-            InstructionType::IType => match self.opcode {
-                Opcode::LoadUpperImmediate
-                | Opcode::BranchGreaterThanZero
-                | Opcode::BranchLessEqualZero
-                | Opcode::BranchGreaterEqualZero
-                | Opcode::BranchLessThanZero
-                | Opcode::BranchLessThanZeroAndLink
-                | Opcode::BranchGreaterEqualZeroAndLink => None,
-                Opcode::BranchEqual | Opcode::BranchNotEqual => {
-                    Some(Operand::Offset(((self.offset() as i32) << 2) + 4))
-                }
-                Opcode::LoadByte
-                | Opcode::LoadByteUnsigned
-                | Opcode::LoadHalfword
-                | Opcode::LoadHalfwordUnsigned
-                | Opcode::LoadWord
-                | Opcode::LoadWordLeft
-                | Opcode::LoadWordRight
-                | Opcode::StoreByte
-                | Opcode::StoreHalfword
-                | Opcode::StoreWord
-                | Opcode::StoreWordLeft
-                | Opcode::StoreWordRight => None,
-                Opcode::AddImmediateUnsigned | Opcode::AddImmediate | Opcode::SetLessThanImmediate => {
-                    Some(Operand::SignedImmediate(self.immediate() as i16))
-                }
-                _ => Some(Operand::Immediate((self.immediate() as i16) as u32)),
-            },
-            InstructionType::JType => None,
-            _ => None,
-        }
-    }
+            // ALU - I-type
+            Opcode::AddImmediate => "@rt, @rs, @simm",
+            Opcode::AddImmediateUnsigned => "@rt, @rs, @simm",
+            Opcode::AndImmediate => "@rt, @rs, @imm",
+            Opcode::OrImmediate => "@rt, @rs, @imm",
+            Opcode::XorImmediate => "@rt, @rs, @imm",
+            Opcode::SetLessThanImmediate => "@rt, @rs, @simm",
+            Opcode::SetLessThanImmediateUnsigned => "@rt, @rs, @imm",
+            Opcode::LoadUpperImmediate => "@rt, @imm",
 
-    fn decode_other_cop(opcode: u32, fmt: u32, cop_num: u8) -> Instruction {
-        match fmt {
-            0b00000 => Instruction {
-                opcode: Opcode::MoveFromCoprocessor(cop_num),
-                raw: opcode,
-                opcode_type: InstructionType::Cop,
-                handler: handlers::cop::<{ handlers::CopOperation::MoveFrom }>,
-                is_delay_slot: false,
-            },
-            0b00010 => Instruction {
-                opcode: Opcode::MoveControlFromCoprocessor(cop_num),
-                raw: opcode,
-                opcode_type: InstructionType::Cop,
-                handler: handlers::cop::<{ handlers::CopOperation::MoveControlFrom }>,
-                is_delay_slot: false,
-            },
-            0b00100 => Instruction {
-                opcode: Opcode::MoveToCoprocessor(cop_num),
-                raw: opcode,
-                opcode_type: InstructionType::Cop,
-                handler: handlers::cop::<{ handlers::CopOperation::MoveTo }>,
-                is_delay_slot: false,
-            },
-            0b00110 => Instruction {
-                opcode: Opcode::MoveControlToCoprocessor(cop_num),
-                raw: opcode,
-                opcode_type: InstructionType::Cop,
-                handler: handlers::cop::<{ handlers::CopOperation::MoveControlTo }>,
-                is_delay_slot: false,
-            },
-            0b10000 if cop_num == 0 => Instruction {
-                opcode: Opcode::ReturnFromException,
-                raw: opcode,
-                opcode_type: InstructionType::Cop,
-                handler: handlers::cop::<{ handlers::CopOperation::ReturnFromException }>,
-                is_delay_slot: false,
-            },
-            _ => Instruction::invalid(),
-        }
-    }
+            // Multiply/Divide
+            Opcode::Multiply => "@rs, @rt",
+            Opcode::MultiplyUnsigned => "@rs, @rt",
+            Opcode::Divide => "@rs, @rt",
+            Opcode::DivideUnsigned => "@rs, @rt",
 
-    fn decode_gte(opcode: u32) -> Instruction {
-        let cmd = (opcode & 0x3F) as u8;
+            // Shifter - immediate
+            Opcode::ShiftLeftLogical => "@rd, @rt, @shamt",
+            Opcode::ShiftRightLogical => "@rd, @rt, @shamt",
+            Opcode::ShiftRightArithmetic => "@rd, @rt, @shamt",
 
-        let gte_opcode = match cmd {
-            0x01 => Opcode::GteRtps,
-            0x06 => Opcode::GteNclip,
-            0x0C => Opcode::GteOp,
-            0x10 => Opcode::GteDpcs,
-            0x11 => Opcode::GteIntpl,
-            0x12 => Opcode::GteMvmva,
-            0x13 => Opcode::GteNcds,
-            0x14 => Opcode::GteCdp,
-            0x16 => Opcode::GteNcdt,
-            0x1B => Opcode::GteNccs,
-            0x1C => Opcode::GteCc,
-            0x1E => Opcode::GteNcs,
-            0x20 => Opcode::GteNct,
-            0x28 => Opcode::GteSqr,
-            0x29 => Opcode::GteDcpl,
-            0x2A => Opcode::GteDpct,
-            0x2D => Opcode::GteAvsz3,
-            0x2E => Opcode::GteAvsz4,
-            0x30 => Opcode::GteRtpt,
-            0x3D => Opcode::GteGpf,
-            0x3E => Opcode::GteGpl,
-            0x3F => Opcode::GteNcct,
-            _ => return Instruction::invalid(),
-        };
+            // Shifter - variable
+            Opcode::ShiftLeftLogicalVariable => "@rd, @rs, @rt",
+            Opcode::ShiftRightLogicalVariable => "@rd, @rs, @rt",
+            Opcode::ShiftRightArithmeticVariable => "@rd, @rs, @rt",
 
-        Instruction {
-            opcode: gte_opcode,
-            raw: opcode,
-            opcode_type: InstructionType::Cop,
-            handler: handlers::gte_dispatch,
-            is_delay_slot: false,
+            // Memory Access - Load
+            Opcode::LoadByte => "@rt, @offset(@base)",
+            Opcode::LoadByteUnsigned => "@rt, @offset(@base)",
+            Opcode::LoadHalfword => "@rt, @offset(@base)",
+            Opcode::LoadHalfwordUnsigned => "@rt, @offset(@base)",
+            Opcode::LoadWord => "@rt, @offset(@base)",
+            Opcode::LoadWordLeft => "@rt, @offset(@base)",
+            Opcode::LoadWordRight => "@rt, @offset(@base)",
+
+            // Memory Access - Store
+            Opcode::StoreByte => "@rt, @offset(@base)",
+            Opcode::StoreHalfword => "@rt, @offset(@base)",
+            Opcode::StoreWord => "@rt, @offset(@base)",
+            Opcode::StoreWordLeft => "@rt, @offset(@base)",
+            Opcode::StoreWordRight => "@rt, @offset(@base)",
+
+            // Branches
+            Opcode::BranchEqual => "@rs, @rt, @branch_offset",
+            Opcode::BranchNotEqual => "@rs, @rt, @branch_offset",
+            Opcode::BranchGreaterThanZero => "@rs, @branch_offset",
+            Opcode::BranchLessEqualZero => "@rs, @branch_offset",
+            Opcode::BranchGreaterEqualZero => "@rs, @branch_offset",
+            Opcode::BranchLessThanZero => "@rs, @branch_offset",
+            Opcode::BranchLessThanZeroAndLink => "@rs, @branch_offset",
+            Opcode::BranchGreaterEqualZeroAndLink => "@rs, @branch_offset",
+
+            // Jumps
+            Opcode::Jump => "@target",
+            Opcode::JumpAndLink => "@target",
+            Opcode::JumpRegister => "@rs",
+            Opcode::JumpAndLinkRegister => "@rd, @rs",
+
+            // HI/LO
+            Opcode::MoveFromHi => "@rd",
+            Opcode::MoveToHi => "@rs",
+            Opcode::MoveFromLo => "@rd",
+            Opcode::MoveToLo => "@rs",
+
+            // System
+            Opcode::SystemCall => "",
+            Opcode::Break => "",
+
+            // Coprocessor
+            Opcode::MoveFromCoprocessor(_) => "@rt, @ft",
+            Opcode::MoveToCoprocessor(_) => "@rt, @ft",
+            Opcode::MoveControlFromCoprocessor(_) => "@rt, @ft",
+            Opcode::MoveControlToCoprocessor(_) => "@rt, @ft",
+            Opcode::LoadWordToCoprocessor(_) => "@ft, @offset(@base)",
+            Opcode::StoreWordFromCoprocessor(_) => "@ft, @offset(@base)",
+            Opcode::ReturnFromException => "",
+
+            // Other
+            Opcode::Invalid => "",
         }
     }
 }
@@ -674,30 +601,6 @@ impl std::fmt::Display for Opcode {
             Opcode::StoreWordFromCoprocessor(cop) => return write!(f, "swc{}", cop),
             Opcode::ReturnFromException => "rfe",
 
-            // GTE
-            Opcode::GteRtps => "rtps",
-            Opcode::GteNclip => "nclip",
-            Opcode::GteOp => "op",
-            Opcode::GteDpcs => "dpcs",
-            Opcode::GteIntpl => "intpl",
-            Opcode::GteMvmva => "mvmva",
-            Opcode::GteNcds => "ncds",
-            Opcode::GteCdp => "cdp",
-            Opcode::GteNcdt => "ncdt",
-            Opcode::GteNccs => "nccs",
-            Opcode::GteCc => "cc",
-            Opcode::GteNcs => "ncs",
-            Opcode::GteNct => "nct",
-            Opcode::GteSqr => "sqr",
-            Opcode::GteDcpl => "dcpl",
-            Opcode::GteDpct => "dpct",
-            Opcode::GteAvsz3 => "avsz3",
-            Opcode::GteAvsz4 => "avsz4",
-            Opcode::GteRtpt => "rtpt",
-            Opcode::GteGpf => "gpf",
-            Opcode::GteGpl => "gpl",
-            Opcode::GteNcct => "ncct",
-
             // Other
             Opcode::Invalid => "???",
         };
@@ -707,24 +610,28 @@ impl std::fmt::Display for Opcode {
 
 impl std::fmt::Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut parts = vec![format!("{}", self.opcode)];
+        let opcode_str = format!("{}", self.opcode);
+        let fmt_str = self.format_string();
 
-        if let Some(op1) = self.operand1() {
-            parts.push(format!("{}", op1));
+        if fmt_str.is_empty() {
+            // Instructions with no operands
+            return write!(f, "{}", opcode_str);
         }
 
-        if let Some(op2) = self.operand2() {
-            parts.push(format!("{}", op2));
-        }
+        // Perform replacements for all tagged entities
+        let formatted = fmt_str
+            .replace("@rd", &self.fmt_rd())
+            .replace("@rs", &self.fmt_rs())
+            .replace("@rt", &self.fmt_rt())
+            .replace("@ft", &self.fmt_ft())
+            .replace("@shamt", &self.fmt_shamt())
+            .replace("@offset", &self.fmt_offset())
+            .replace("@base", &self.fmt_base())
+            .replace("@imm", &self.fmt_imm())
+            .replace("@simm", &self.fmt_simm())
+            .replace("@target", &self.fmt_target())
+            .replace("@branch_offset", &self.fmt_branch_offset());
 
-        if let Some(op3) = self.operand3() {
-            parts.push(format!("{}", op3));
-        }
-
-        if parts.len() == 1 {
-            write!(f, "{}", parts[0])
-        } else {
-            write!(f, "{} {}", parts[0], parts[1..].join(", "))
-        }
+        write!(f, "{} {}", opcode_str, formatted)
     }
 }

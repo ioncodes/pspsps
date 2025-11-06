@@ -384,7 +384,7 @@ impl bus::Bus8 for Mmu {
             I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.read_u8(address),
             DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.read_u8(address),
             CDROM_ADDR_START..=CDROM_ADDR_END => self.cdrom.read_u8(address),
-            0x1F80_1D80..=0x1F80_1DBB => self.spu.read(address), // TODO: not complete
+            0x1F80_1C00..=0x1F80_1FFF => self.spu.read_u8(address),
             0x1F80_1000..=0x1F80_1FFF => {
                 tracing::error!(target: "psx_core::mmu", address = %format!("{:08X}", address), "Reading from unimplemented I/O port");
                 0xFF
@@ -403,7 +403,7 @@ impl bus::Bus8 for Mmu {
             I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.write_u8(address, value),
             DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.write_u8(address, value),
             CDROM_ADDR_START..=CDROM_ADDR_END => self.cdrom.write_u8(address, value),
-            0x1F80_1D80..=0x1F80_1DBB => self.spu.write(address, value),
+            0x1F80_1C00..=0x1F80_1FFF => self.spu.write_u8(address, value),
             0x1F80_1000..=0x1F80_1FFF => {
                 tracing::error!(target: "psx_core::mmu", address = %format!("{:08X}", address), value = %format!("{:02X}", value), "Writing to unimplemented I/O port");
             }

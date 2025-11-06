@@ -1,5 +1,5 @@
 use crate::cpu::decoder::Instruction;
-use crate::cpu::handlers;
+use crate::cpu::interpreter;
 
 macro_rules! instruction {
     ($name:ident, $opcode_type:ident, $handler:expr) => {
@@ -28,122 +28,102 @@ pub static MIPS_RTYPE_LUT: [Instruction; 64] = [
     instruction!(
         ShiftLeftLogical,
         RType,
-        handlers::shift::<
-            { handlers::ShiftDirection::Left },
-            { handlers::ShiftType::Logical },
-            false,
-        >
+        interpreter::cpu::shift::<{ interpreter::ShiftDirection::Left }, { interpreter::ShiftType::Logical }, false>
     ),
     /* 0x01 */ Instruction::invalid(),
     /* 0x02 */
     instruction!(
         ShiftRightLogical,
         RType,
-        handlers::shift::<
-            { handlers::ShiftDirection::Right },
-            { handlers::ShiftType::Logical },
-            false,
-        >
+        interpreter::cpu::shift::<{ interpreter::ShiftDirection::Right }, { interpreter::ShiftType::Logical }, false>
     ),
     /* 0x03 */
     instruction!(
         ShiftRightArithmetic,
         RType,
-        handlers::shift::<
-            { handlers::ShiftDirection::Right },
-            { handlers::ShiftType::Arithmetic },
-            false,
-        >
+        interpreter::cpu::shift::<{ interpreter::ShiftDirection::Right }, { interpreter::ShiftType::Arithmetic }, false>
     ),
     /* 0x04 */
     instruction!(
         ShiftLeftLogicalVariable,
         RType,
-        handlers::shift::<{ handlers::ShiftDirection::Left }, { handlers::ShiftType::Logical }, true>
+        interpreter::cpu::shift::<{ interpreter::ShiftDirection::Left }, { interpreter::ShiftType::Logical }, true>
     ),
     /* 0x05 */ Instruction::invalid(),
     /* 0x06 */
     instruction!(
         ShiftRightLogicalVariable,
         RType,
-        handlers::shift::<
-            { handlers::ShiftDirection::Right },
-            { handlers::ShiftType::Logical },
-            true,
-        >
+        interpreter::cpu::shift::<{ interpreter::ShiftDirection::Right }, { interpreter::ShiftType::Logical }, true>
     ),
     /* 0x07 */
     instruction!(
         ShiftRightArithmeticVariable,
         RType,
-        handlers::shift::<
-            { handlers::ShiftDirection::Right },
-            { handlers::ShiftType::Arithmetic },
-            true,
-        >
+        interpreter::cpu::shift::<{ interpreter::ShiftDirection::Right }, { interpreter::ShiftType::Arithmetic }, true>
     ),
     /* 0x08 */
     instruction!(
         JumpRegister,
         RType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::Unconditional },
-            { handlers::BranchAddressing::AbsoluteRegister },
+            { interpreter::BranchType::Unconditional },
+            { interpreter::BranchAddressing::AbsoluteRegister },
         >
     ),
     /* 0x09 */
     instruction!(
         JumpAndLinkRegister,
         RType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             true,
             true,
-            { handlers::BranchType::Unconditional },
-            { handlers::BranchAddressing::AbsoluteRegister },
+            { interpreter::BranchType::Unconditional },
+            { interpreter::BranchAddressing::AbsoluteRegister },
         >
     ),
     /* 0x0A */ Instruction::invalid(),
     /* 0x0B */ Instruction::invalid(),
-    /* 0x0C */ instruction!(SystemCall, RType, handlers::system_call),
-    /* 0x0D */ instruction!(Break, RType, handlers::debug_break),
+    /* 0x0C */ instruction!(SystemCall, RType, interpreter::cpu::system_call),
+    /* 0x0D */ instruction!(Break, RType, interpreter::cpu::debug_break),
     /* 0x0E */ Instruction::invalid(),
     /* 0x0F */ Instruction::invalid(),
     /* 0x10 */
     instruction!(
         MoveFromHi,
         RType,
-        handlers::move_multiply::<
-            { handlers::MultiplyMoveDirection::FromRegister },
-            { handlers::MultiplyMoveRegister::Hi },
+        interpreter::cpu::move_multiply::<
+            { interpreter::MultiplyMoveDirection::FromRegister },
+            { interpreter::MultiplyMoveRegister::Hi },
         >
     ),
     /* 0x11 */
     instruction!(
         MoveToHi,
         RType,
-        handlers::move_multiply::<
-            { handlers::MultiplyMoveDirection::ToRegister },
-            { handlers::MultiplyMoveRegister::Hi },
+        interpreter::cpu::move_multiply::<
+            { interpreter::MultiplyMoveDirection::ToRegister },
+            { interpreter::MultiplyMoveRegister::Hi },
         >
     ),
     /* 0x12 */
     instruction!(
         MoveFromLo,
         RType,
-        handlers::move_multiply::<
-            { handlers::MultiplyMoveDirection::FromRegister },
-            { handlers::MultiplyMoveRegister::Lo },
+        interpreter::cpu::move_multiply::<
+            { interpreter::MultiplyMoveDirection::FromRegister },
+            { interpreter::MultiplyMoveRegister::Lo },
         >
     ),
     /* 0x13 */
     instruction!(
         MoveToLo,
         RType,
-        handlers::move_multiply::<
-            { handlers::MultiplyMoveDirection::ToRegister },
-            { handlers::MultiplyMoveRegister::Lo },
+        interpreter::cpu::move_multiply::<
+            { interpreter::MultiplyMoveDirection::ToRegister },
+            { interpreter::MultiplyMoveRegister::Lo },
         >
     ),
     /* 0x14 */ Instruction::invalid(),
@@ -154,25 +134,25 @@ pub static MIPS_RTYPE_LUT: [Instruction; 64] = [
     instruction!(
         Multiply,
         RType,
-        handlers::alu::<{ handlers::AluOperation::Multiply }, false, false>
+        interpreter::cpu::alu::<{ interpreter::AluOperation::Multiply }, false, false>
     ),
     /* 0x19 */
     instruction!(
         MultiplyUnsigned,
         RType,
-        handlers::alu::<{ handlers::AluOperation::Multiply }, true, false>
+        interpreter::cpu::alu::<{ interpreter::AluOperation::Multiply }, true, false>
     ),
     /* 0x1A */
     instruction!(
         Divide,
         RType,
-        handlers::alu::<{ handlers::AluOperation::Divide }, false, false>
+        interpreter::cpu::alu::<{ interpreter::AluOperation::Divide }, false, false>
     ),
     /* 0x1B */
     instruction!(
         DivideUnsigned,
         RType,
-        handlers::alu::<{ handlers::AluOperation::Divide }, true, false>
+        interpreter::cpu::alu::<{ interpreter::AluOperation::Divide }, true, false>
     ),
     /* 0x1C */ Instruction::invalid(),
     /* 0x1D */ Instruction::invalid(),
@@ -182,49 +162,49 @@ pub static MIPS_RTYPE_LUT: [Instruction; 64] = [
     instruction!(
         Add,
         RType,
-        handlers::alu::<{ handlers::AluOperation::Add }, false, false>
+        interpreter::cpu::alu::<{ interpreter::AluOperation::Add }, false, false>
     ),
     /* 0x21 */
     instruction!(
         AddUnsigned,
         RType,
-        handlers::alu::<{ handlers::AluOperation::Add }, true, false>
+        interpreter::cpu::alu::<{ interpreter::AluOperation::Add }, true, false>
     ),
     /* 0x22 */
     instruction!(
         Sub,
         RType,
-        handlers::alu::<{ handlers::AluOperation::Sub }, false, false>
+        interpreter::cpu::alu::<{ interpreter::AluOperation::Sub }, false, false>
     ),
     /* 0x23 */
     instruction!(
         SubUnsigned,
         RType,
-        handlers::alu::<{ handlers::AluOperation::Sub }, true, false>
+        interpreter::cpu::alu::<{ interpreter::AluOperation::Sub }, true, false>
     ),
     /* 0x24 */
     instruction!(
         And,
         RType,
-        handlers::alu::<{ handlers::AluOperation::And }, false, false>
+        interpreter::cpu::alu::<{ interpreter::AluOperation::And }, false, false>
     ),
     /* 0x25 */
     instruction!(
         Or,
         RType,
-        handlers::alu::<{ handlers::AluOperation::Or }, false, false>
+        interpreter::cpu::alu::<{ interpreter::AluOperation::Or }, false, false>
     ),
     /* 0x26 */
     instruction!(
         Xor,
         RType,
-        handlers::alu::<{ handlers::AluOperation::Xor }, false, false>
+        interpreter::cpu::alu::<{ interpreter::AluOperation::Xor }, false, false>
     ),
     /* 0x27 */
     instruction!(
         Nor,
         RType,
-        handlers::alu::<{ handlers::AluOperation::Nor }, false, false>
+        interpreter::cpu::alu::<{ interpreter::AluOperation::Nor }, false, false>
     ),
     /* 0x28 */ Instruction::invalid(),
     /* 0x29 */ Instruction::invalid(),
@@ -232,13 +212,13 @@ pub static MIPS_RTYPE_LUT: [Instruction; 64] = [
     instruction!(
         SetLessThan,
         RType,
-        handlers::alu::<{ handlers::AluOperation::SetLessThan }, false, false>
+        interpreter::cpu::alu::<{ interpreter::AluOperation::SetLessThan }, false, false>
     ),
     /* 0x2B */
     instruction!(
         SetLessThanUnsigned,
         RType,
-        handlers::alu::<{ handlers::AluOperation::SetLessThan }, true, false>
+        interpreter::cpu::alu::<{ interpreter::AluOperation::SetLessThan }, true, false>
     ),
     /* 0x2C */ Instruction::invalid(),
     /* 0x2D */ Instruction::invalid(),
@@ -268,352 +248,352 @@ pub static MIPS_REGIMM_LUT: [Instruction; 32] = [
     instruction!(
         BranchLessThanZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::LessThanZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::LessThanZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x01 */
     instruction!(
         BranchGreaterEqualZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::GreaterEqualZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::GreaterEqualZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x02 */
     instruction!(
         BranchLessThanZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::LessThanZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::LessThanZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x03 */
     instruction!(
         BranchGreaterEqualZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::GreaterEqualZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::GreaterEqualZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x04 */
     instruction!(
         BranchLessThanZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::LessThanZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::LessThanZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x05 */
     instruction!(
         BranchGreaterEqualZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::GreaterEqualZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::GreaterEqualZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x06 */
     instruction!(
         BranchLessThanZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::LessThanZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::LessThanZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x07 */
     instruction!(
         BranchGreaterEqualZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::GreaterEqualZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::GreaterEqualZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x08 */
     instruction!(
         BranchLessThanZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::LessThanZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::LessThanZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x09 */
     instruction!(
         BranchGreaterEqualZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::GreaterEqualZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::GreaterEqualZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x0A */
     instruction!(
         BranchLessThanZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::LessThanZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::LessThanZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x0B */
     instruction!(
         BranchGreaterEqualZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::GreaterEqualZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::GreaterEqualZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x0C */
     instruction!(
         BranchLessThanZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::LessThanZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::LessThanZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x0D */
     instruction!(
         BranchGreaterEqualZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::GreaterEqualZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::GreaterEqualZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x0E */
     instruction!(
         BranchLessThanZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::LessThanZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::LessThanZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x0F */
     instruction!(
         BranchGreaterEqualZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::GreaterEqualZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::GreaterEqualZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x10 */
     instruction!(
         BranchLessThanZeroAndLink,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             true,
             false,
-            { handlers::BranchType::LessThanZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::LessThanZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x11 */
     instruction!(
         BranchGreaterEqualZeroAndLink,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             true,
             false,
-            { handlers::BranchType::GreaterEqualZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::GreaterEqualZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x12 */
     instruction!(
         BranchLessThanZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::LessThanZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::LessThanZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x13 */
     instruction!(
         BranchGreaterEqualZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::GreaterEqualZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::GreaterEqualZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x14 */
     instruction!(
         BranchLessThanZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::LessThanZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::LessThanZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x15 */
     instruction!(
         BranchGreaterEqualZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::GreaterEqualZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::GreaterEqualZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x16 */
     instruction!(
         BranchLessThanZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::LessThanZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::LessThanZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x17 */
     instruction!(
         BranchGreaterEqualZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::GreaterEqualZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::GreaterEqualZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x18 */
     instruction!(
         BranchLessThanZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::LessThanZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::LessThanZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x19 */
     instruction!(
         BranchGreaterEqualZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::GreaterEqualZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::GreaterEqualZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x1A */
     instruction!(
         BranchLessThanZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::LessThanZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::LessThanZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x1B */
     instruction!(
         BranchGreaterEqualZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::GreaterEqualZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::GreaterEqualZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x1C */
     instruction!(
         BranchLessThanZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::LessThanZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::LessThanZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x1D */
     instruction!(
         BranchGreaterEqualZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::GreaterEqualZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::GreaterEqualZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x1E */
     instruction!(
         BranchLessThanZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::LessThanZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::LessThanZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x1F */
     instruction!(
         BranchGreaterEqualZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::GreaterEqualZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::GreaterEqualZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
 ];
@@ -626,119 +606,119 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
     instruction!(
         Jump,
         JType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::Unconditional },
-            { handlers::BranchAddressing::AbsoluteImmediate },
+            { interpreter::BranchType::Unconditional },
+            { interpreter::BranchAddressing::AbsoluteImmediate },
         >
     ),
     /* 0x03 */
     instruction!(
         JumpAndLink,
         JType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             true,
             false,
-            { handlers::BranchType::Unconditional },
-            { handlers::BranchAddressing::AbsoluteImmediate },
+            { interpreter::BranchType::Unconditional },
+            { interpreter::BranchAddressing::AbsoluteImmediate },
         >
     ),
     /* 0x04 */
     instruction!(
         BranchEqual,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::Equal },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::Equal },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x05 */
     instruction!(
         BranchNotEqual,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::NotEqual },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::NotEqual },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x06 */
     instruction!(
         BranchLessEqualZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::LessEqualZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::LessEqualZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x07 */
     instruction!(
         BranchGreaterThanZero,
         IType,
-        handlers::branch::<
+        interpreter::cpu::branch::<
             false,
             false,
-            { handlers::BranchType::GreaterThanZero },
-            { handlers::BranchAddressing::RelativeOffset },
+            { interpreter::BranchType::GreaterThanZero },
+            { interpreter::BranchAddressing::RelativeOffset },
         >
     ),
     /* 0x08 */
     instruction!(
         AddImmediate,
         IType,
-        handlers::alu::<{ handlers::AluOperation::Add }, false, true>
+        interpreter::cpu::alu::<{ interpreter::AluOperation::Add }, false, true>
     ),
     /* 0x09 */
     instruction!(
         AddImmediateUnsigned,
         IType,
-        handlers::alu::<{ handlers::AluOperation::Add }, true, true>
+        interpreter::cpu::alu::<{ interpreter::AluOperation::Add }, true, true>
     ),
     /* 0x0A */
     instruction!(
         SetLessThanImmediate,
         IType,
-        handlers::alu::<{ handlers::AluOperation::SetLessThan }, false, true>
+        interpreter::cpu::alu::<{ interpreter::AluOperation::SetLessThan }, false, true>
     ),
     /* 0x0B */
     instruction!(
         SetLessThanImmediateUnsigned,
         IType,
-        handlers::alu::<{ handlers::AluOperation::SetLessThan }, true, true>
+        interpreter::cpu::alu::<{ interpreter::AluOperation::SetLessThan }, true, true>
     ),
     /* 0x0C */
     instruction!(
         AndImmediate,
         IType,
-        handlers::alu::<{ handlers::AluOperation::And }, false, true>
+        interpreter::cpu::alu::<{ interpreter::AluOperation::And }, false, true>
     ),
     /* 0x0D */
     instruction!(
         OrImmediate,
         IType,
-        handlers::alu::<{ handlers::AluOperation::Or }, false, true>
+        interpreter::cpu::alu::<{ interpreter::AluOperation::Or }, false, true>
     ),
     /* 0x0E */
     instruction!(
         XorImmediate,
         IType,
-        handlers::alu::<{ handlers::AluOperation::Xor }, false, true>
+        interpreter::cpu::alu::<{ interpreter::AluOperation::Xor }, false, true>
     ),
     /* 0x0F */
     instruction!(
         LoadUpperImmediate,
         IType,
-        handlers::load_store::<
+        interpreter::cpu::load_store::<
             true,
-            { handlers::MemoryAccessType::Load },
-            { handlers::MemoryTransferSize::Word },
-            { handlers::MemoryAccessPortion::Full },
+            { interpreter::MemoryAccessType::Load },
+            { interpreter::MemoryTransferSize::Word },
+            { interpreter::MemoryAccessPortion::Full },
             false,
         >
     ),
@@ -762,11 +742,11 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
     instruction!(
         LoadByte,
         IType,
-        handlers::load_store::<
+        interpreter::cpu::load_store::<
             false,
-            { handlers::MemoryAccessType::Load },
-            { handlers::MemoryTransferSize::Byte },
-            { handlers::MemoryAccessPortion::Full },
+            { interpreter::MemoryAccessType::Load },
+            { interpreter::MemoryTransferSize::Byte },
+            { interpreter::MemoryAccessPortion::Full },
             true,
         >
     ),
@@ -774,11 +754,11 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
     instruction!(
         LoadHalfword,
         IType,
-        handlers::load_store::<
+        interpreter::cpu::load_store::<
             false,
-            { handlers::MemoryAccessType::Load },
-            { handlers::MemoryTransferSize::HalfWord },
-            { handlers::MemoryAccessPortion::Full },
+            { interpreter::MemoryAccessType::Load },
+            { interpreter::MemoryTransferSize::HalfWord },
+            { interpreter::MemoryAccessPortion::Full },
             true,
         >
     ),
@@ -786,11 +766,11 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
     instruction!(
         LoadWordLeft,
         IType,
-        handlers::load_store::<
+        interpreter::cpu::load_store::<
             false,
-            { handlers::MemoryAccessType::Load },
-            { handlers::MemoryTransferSize::Word },
-            { handlers::MemoryAccessPortion::Left },
+            { interpreter::MemoryAccessType::Load },
+            { interpreter::MemoryTransferSize::Word },
+            { interpreter::MemoryAccessPortion::Left },
             false,
         >
     ),
@@ -798,11 +778,11 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
     instruction!(
         LoadWord,
         IType,
-        handlers::load_store::<
+        interpreter::cpu::load_store::<
             false,
-            { handlers::MemoryAccessType::Load },
-            { handlers::MemoryTransferSize::Word },
-            { handlers::MemoryAccessPortion::Full },
+            { interpreter::MemoryAccessType::Load },
+            { interpreter::MemoryTransferSize::Word },
+            { interpreter::MemoryAccessPortion::Full },
             false,
         >
     ),
@@ -810,11 +790,11 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
     instruction!(
         LoadByteUnsigned,
         IType,
-        handlers::load_store::<
+        interpreter::cpu::load_store::<
             false,
-            { handlers::MemoryAccessType::Load },
-            { handlers::MemoryTransferSize::Byte },
-            { handlers::MemoryAccessPortion::Full },
+            { interpreter::MemoryAccessType::Load },
+            { interpreter::MemoryTransferSize::Byte },
+            { interpreter::MemoryAccessPortion::Full },
             false,
         >
     ),
@@ -822,11 +802,11 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
     instruction!(
         LoadHalfwordUnsigned,
         IType,
-        handlers::load_store::<
+        interpreter::cpu::load_store::<
             false,
-            { handlers::MemoryAccessType::Load },
-            { handlers::MemoryTransferSize::HalfWord },
-            { handlers::MemoryAccessPortion::Full },
+            { interpreter::MemoryAccessType::Load },
+            { interpreter::MemoryTransferSize::HalfWord },
+            { interpreter::MemoryAccessPortion::Full },
             false,
         >
     ),
@@ -834,11 +814,11 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
     instruction!(
         LoadWordRight,
         IType,
-        handlers::load_store::<
+        interpreter::cpu::load_store::<
             false,
-            { handlers::MemoryAccessType::Load },
-            { handlers::MemoryTransferSize::Word },
-            { handlers::MemoryAccessPortion::Right },
+            { interpreter::MemoryAccessType::Load },
+            { interpreter::MemoryTransferSize::Word },
+            { interpreter::MemoryAccessPortion::Right },
             false,
         >
     ),
@@ -847,11 +827,11 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
     instruction!(
         StoreByte,
         IType,
-        handlers::load_store::<
+        interpreter::cpu::load_store::<
             false,
-            { handlers::MemoryAccessType::Store },
-            { handlers::MemoryTransferSize::Byte },
-            { handlers::MemoryAccessPortion::Full },
+            { interpreter::MemoryAccessType::Store },
+            { interpreter::MemoryTransferSize::Byte },
+            { interpreter::MemoryAccessPortion::Full },
             false,
         >
     ),
@@ -859,11 +839,11 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
     instruction!(
         StoreHalfword,
         IType,
-        handlers::load_store::<
+        interpreter::cpu::load_store::<
             false,
-            { handlers::MemoryAccessType::Store },
-            { handlers::MemoryTransferSize::HalfWord },
-            { handlers::MemoryAccessPortion::Full },
+            { interpreter::MemoryAccessType::Store },
+            { interpreter::MemoryTransferSize::HalfWord },
+            { interpreter::MemoryAccessPortion::Full },
             false,
         >
     ),
@@ -871,11 +851,11 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
     instruction!(
         StoreWordLeft,
         IType,
-        handlers::load_store::<
+        interpreter::cpu::load_store::<
             false,
-            { handlers::MemoryAccessType::Store },
-            { handlers::MemoryTransferSize::Word },
-            { handlers::MemoryAccessPortion::Left },
+            { interpreter::MemoryAccessType::Store },
+            { interpreter::MemoryTransferSize::Word },
+            { interpreter::MemoryAccessPortion::Left },
             false,
         >
     ),
@@ -883,11 +863,11 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
     instruction!(
         StoreWord,
         IType,
-        handlers::load_store::<
+        interpreter::cpu::load_store::<
             false,
-            { handlers::MemoryAccessType::Store },
-            { handlers::MemoryTransferSize::Word },
-            { handlers::MemoryAccessPortion::Full },
+            { interpreter::MemoryAccessType::Store },
+            { interpreter::MemoryTransferSize::Word },
+            { interpreter::MemoryAccessPortion::Full },
             false,
         >
     ),
@@ -897,11 +877,11 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
     instruction!(
         StoreWordRight,
         IType,
-        handlers::load_store::<
+        interpreter::cpu::load_store::<
             false,
-            { handlers::MemoryAccessType::Store },
-            { handlers::MemoryTransferSize::Word },
-            { handlers::MemoryAccessPortion::Right },
+            { interpreter::MemoryAccessType::Store },
+            { interpreter::MemoryTransferSize::Word },
+            { interpreter::MemoryAccessPortion::Right },
             false,
         >
     ),
@@ -923,30 +903,93 @@ pub static MIPS_OTHER_LUT: [Instruction; 64] = [
     /* 0x3E */ Instruction::invalid(),
     /* 0x3F */ Instruction::invalid(),
 ];
+pub static GTE_LUT: [Instruction; 0x40] = [
+    /* 0x00 */ Instruction::invalid(),
+    /* 0x01 */ instruction!(GteRtps, Cop, interpreter::gte::unimplemented_gte),
+    /* 0x02 */ Instruction::invalid(),
+    /* 0x03 */ Instruction::invalid(),
+    /* 0x04 */ Instruction::invalid(),
+    /* 0x05 */ Instruction::invalid(),
+    /* 0x06 */ instruction!(GteNclip, Cop, interpreter::gte::unimplemented_gte),
+    /* 0x07 */ Instruction::invalid(),
+    /* 0x08 */ Instruction::invalid(),
+    /* 0x09 */ Instruction::invalid(),
+    /* 0x0A */ Instruction::invalid(),
+    /* 0x0B */ Instruction::invalid(),
+    /* 0x0C */ instruction!(GteOp,  Cop, interpreter::gte::unimplemented_gte),
+    /* 0x0D */ Instruction::invalid(),
+    /* 0x0E */ Instruction::invalid(),
+    /* 0x0F */ Instruction::invalid(),
+    /* 0x10 */ instruction!(GteDpcs,  Cop, interpreter::gte::unimplemented_gte),
+    /* 0x11 */ instruction!(GteIntpl, Cop, interpreter::gte::unimplemented_gte),
+    /* 0x12 */ instruction!(GteMvmva, Cop, interpreter::gte::unimplemented_gte),
+    /* 0x13 */ instruction!(GteNcds,  Cop, interpreter::gte::unimplemented_gte),
+    /* 0x14 */ instruction!(GteCdp,  Cop, interpreter::gte::unimplemented_gte),
+    /* 0x15 */ Instruction::invalid(),
+    /* 0x16 */ instruction!(GteNcdt,  Cop, interpreter::gte::unimplemented_gte),
+    /* 0x17 */ Instruction::invalid(),
+    /* 0x18 */ Instruction::invalid(),
+    /* 0x19 */ Instruction::invalid(),
+    /* 0x1A */ Instruction::invalid(),
+    /* 0x1B */ instruction!(GteNccs,  Cop, interpreter::gte::unimplemented_gte),
+    /* 0x1C */ instruction!(GteCc,  Cop, interpreter::gte::unimplemented_gte),
+    /* 0x1D */ Instruction::invalid(),
+    /* 0x1E */ instruction!(GteNcs,  Cop, interpreter::gte::unimplemented_gte),
+    /* 0x1F */ Instruction::invalid(),
+    /* 0x20 */ instruction!(GteNct,  Cop, interpreter::gte::unimplemented_gte),
+    /* 0x21 */ Instruction::invalid(),
+    /* 0x22 */ Instruction::invalid(),
+    /* 0x23 */ Instruction::invalid(),
+    /* 0x24 */ Instruction::invalid(),
+    /* 0x25 */ Instruction::invalid(),
+    /* 0x26 */ Instruction::invalid(),
+    /* 0x27 */ Instruction::invalid(),
+    /* 0x28 */ instruction!(GteSqr,  Cop, interpreter::gte::unimplemented_gte),
+    /* 0x29 */ instruction!(GteDcpl,  Cop, interpreter::gte::unimplemented_gte),
+    /* 0x2A */ instruction!(GteDpct,  Cop, interpreter::gte::unimplemented_gte),
+    /* 0x2B */ Instruction::invalid(),
+    /* 0x2C */ Instruction::invalid(),
+    /* 0x2D */ instruction!(GteAvsz3, Cop, interpreter::gte::unimplemented_gte),
+    /* 0x2E */ instruction!(GteAvsz4, Cop, interpreter::gte::unimplemented_gte),
+    /* 0x2F */ Instruction::invalid(),
+    /* 0x30 */ instruction!(GteRtpt,  Cop, interpreter::gte::unimplemented_gte),
+    /* 0x31 */ Instruction::invalid(),
+    /* 0x32 */ Instruction::invalid(),
+    /* 0x33 */ Instruction::invalid(),
+    /* 0x34 */ Instruction::invalid(),
+    /* 0x35 */ Instruction::invalid(),
+    /* 0x36 */ Instruction::invalid(),
+    /* 0x37 */ Instruction::invalid(),
+    /* 0x38 */ Instruction::invalid(),
+    /* 0x39 */ Instruction::invalid(),
+    /* 0x3A */ Instruction::invalid(),
+    /* 0x3B */ Instruction::invalid(),
+    /* 0x3C */ Instruction::invalid(),
+    /* 0x3D */ instruction!(GteGpf,  Cop, interpreter::gte::unimplemented_gte),
+    /* 0x3E */ instruction!(GteGpl,  Cop, interpreter::gte::unimplemented_gte),
+    /* 0x3F */ instruction!(GteNcct,  Cop, interpreter::gte::unimplemented_gte),
+];
 
 pub static REGISTER_NAME_LUT: [&str; 32] = [
-    "$zero", "$at", "$v0", "$v1", "$a0", "$a1", "$a2", "$a3", "$t0", "$t1", "$t2", "$t3", "$t4",
-    "$t5", "$t6", "$t7", "$s0", "$s1", "$s2", "$s3", "$s4", "$s5", "$s6", "$s7", "$t8", "$t9",
-    "$k0", "$k1", "$gp", "$sp", "$fp", "$ra",
+    "$zero", "$at", "$v0", "$v1", "$a0", "$a1", "$a2", "$a3", "$t0", "$t1", "$t2", "$t3", "$t4", "$t5", "$t6", "$t7",
+    "$s0", "$s1", "$s2", "$s3", "$s4", "$s5", "$s6", "$s7", "$t8", "$t9", "$k0", "$k1", "$gp", "$sp", "$fp", "$ra",
 ];
 
 pub static COP_REGISTER_NAME_LUT: [&str; 16] = [
-    "???", "???", "???", "BPC", "???", "BDA", "TAR", "DCIC", "BadA", "BDAM", "???", "BPCM", "SR",
-    "CAUSE", "EPC", "PRID",
+    "???", "???", "???", "BPC", "???", "BDA", "TAR", "DCIC", "BadA", "BDAM", "???", "BPCM", "SR", "CAUSE", "EPC",
+    "PRID",
 ];
 
 // GTE Data Registers (cop2r0-31)
 pub static GTE_DATA_REGISTER_NAME_LUT: [&str; 32] = [
-    "vxy0", "vz0", "vxy1", "vz1", "vxy2", "vz2", "rgbc", "otz",
-    "ir0", "ir1", "ir2", "ir3", "sxy0", "sxy1", "sxy2", "sxyp",
-    "sz0", "sz1", "sz2", "sz3", "rgb0", "rgb1", "rgb2", "res1",
-    "mac0", "mac1", "mac2", "mac3", "irgb", "orgb", "lzcs", "lzcr",
+    "vxy0", "vz0", "vxy1", "vz1", "vxy2", "vz2", "rgbc", "otz", "ir0", "ir1", "ir2", "ir3", "sxy0", "sxy1", "sxy2",
+    "sxyp", "sz0", "sz1", "sz2", "sz3", "rgb0", "rgb1", "rgb2", "res1", "mac0", "mac1", "mac2", "mac3", "irgb", "orgb",
+    "lzcs", "lzcr",
 ];
 
 // GTE Control Registers (cop2r32-63)
 pub static GTE_CONTROL_REGISTER_NAME_LUT: [&str; 32] = [
-    "r11r12", "r13r21", "r22r23", "r31r32", "r33", "trx", "try", "trz",
-    "l11l12", "l13l21", "l22l23", "l31l32", "l33", "rbk", "gbk", "bbk",
-    "lr1lr2", "lr3lg1", "lg2lg3", "lb1lb2", "lb3", "rfc", "gfc", "bfc",
-    "ofx", "ofy", "h", "dqa", "dqb", "zsf3", "zsf4", "flag",
+    "r11r12", "r13r21", "r22r23", "r31r32", "r33", "trx", "try", "trz", "l11l12", "l13l21", "l22l23", "l31l32", "l33",
+    "rbk", "gbk", "bbk", "lr1lr2", "lr3lg1", "lg2lg3", "lb1lb2", "lb3", "rfc", "gfc", "bfc", "ofx", "ofy", "h", "dqa",
+    "dqb", "zsf3", "zsf4", "flag",
 ];

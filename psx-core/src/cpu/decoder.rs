@@ -1,5 +1,5 @@
-use crate::cpu::lut::{self, MIPS_OTHER_LUT, MIPS_REGIMM_LUT, MIPS_RTYPE_LUT};
-use crate::cpu::{Cpu, handlers};
+use crate::cpu::lut::{self, GTE_LUT, MIPS_OTHER_LUT, MIPS_REGIMM_LUT, MIPS_RTYPE_LUT};
+use crate::cpu::{Cpu, interpreter};
 type InstructionHandler = fn(&Instruction, &mut Cpu);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -207,7 +207,9 @@ impl std::fmt::Display for Register {
             RegisterType::Cpu => lut::REGISTER_NAME_LUT.get(self.0 as usize).unwrap_or(&"???"),
             RegisterType::Cop0Control => lut::COP_REGISTER_NAME_LUT.get(self.0 as usize).unwrap_or(&"???"),
             RegisterType::GteData => lut::GTE_DATA_REGISTER_NAME_LUT.get(self.0 as usize).unwrap_or(&"???"),
-            RegisterType::GteControl => lut::GTE_CONTROL_REGISTER_NAME_LUT.get(self.0 as usize).unwrap_or(&"???"),
+            RegisterType::GteControl => lut::GTE_CONTROL_REGISTER_NAME_LUT
+                .get(self.0 as usize)
+                .unwrap_or(&"???"),
         };
         write!(f, "{}", register_name)
     }
@@ -268,9 +270,9 @@ impl Instruction {
                     raw: opcode,
                     opcode_type: InstructionType::Cop,
                     handler: if matches!(op, 0x30..=0x33) {
-                        handlers::cop::<{ handlers::CopOperation::LoadWordTo }>
+                        interpreter::cpu::cop::<{ interpreter::CopOperation::LoadWordTo }>
                     } else {
-                        handlers::cop::<{ handlers::CopOperation::StoreWordFrom }>
+                        interpreter::cpu::cop::<{ interpreter::CopOperation::StoreWordFrom }>
                     },
                     is_delay_slot: false,
                 }
@@ -363,35 +365,35 @@ impl Instruction {
                 opcode: Opcode::MoveFromCoprocessor(cop_num),
                 raw: opcode,
                 opcode_type: InstructionType::Cop,
-                handler: handlers::cop::<{ handlers::CopOperation::MoveFrom }>,
+                handler: interpreter::cpu::cop::<{ interpreter::CopOperation::MoveFrom }>,
                 is_delay_slot: false,
             },
             0b00010 => Instruction {
                 opcode: Opcode::MoveControlFromCoprocessor(cop_num),
                 raw: opcode,
                 opcode_type: InstructionType::Cop,
-                handler: handlers::cop::<{ handlers::CopOperation::MoveControlFrom }>,
+                handler: interpreter::cpu::cop::<{ interpreter::CopOperation::MoveControlFrom }>,
                 is_delay_slot: false,
             },
             0b00100 => Instruction {
                 opcode: Opcode::MoveToCoprocessor(cop_num),
                 raw: opcode,
                 opcode_type: InstructionType::Cop,
-                handler: handlers::cop::<{ handlers::CopOperation::MoveTo }>,
+                handler: interpreter::cpu::cop::<{ interpreter::CopOperation::MoveTo }>,
                 is_delay_slot: false,
             },
             0b00110 => Instruction {
                 opcode: Opcode::MoveControlToCoprocessor(cop_num),
                 raw: opcode,
                 opcode_type: InstructionType::Cop,
-                handler: handlers::cop::<{ handlers::CopOperation::MoveControlTo }>,
+                handler: interpreter::cpu::cop::<{ interpreter::CopOperation::MoveControlTo }>,
                 is_delay_slot: false,
             },
             16 if cop_num == 0 => Instruction {
                 opcode: Opcode::ReturnFromException,
                 raw: opcode,
                 opcode_type: InstructionType::Cop,
-                handler: handlers::cop::<{ handlers::CopOperation::ReturnFromException }>,
+                handler: interpreter::cpu::cop::<{ interpreter::CopOperation::ReturnFromException }>,
                 is_delay_slot: false,
             },
             _ => Instruction::invalid(),
@@ -400,40 +402,7 @@ impl Instruction {
 
     fn decode_gte(opcode: u32) -> Self {
         let cmd = (opcode & 0x3F) as u8;
-
-        let gte_opcode = match cmd {
-            0x01 => Opcode::GteRtps,
-            0x06 => Opcode::GteNclip,
-            0x0C => Opcode::GteOp,
-            0x10 => Opcode::GteDpcs,
-            0x11 => Opcode::GteIntpl,
-            0x12 => Opcode::GteMvmva,
-            0x13 => Opcode::GteNcds,
-            0x14 => Opcode::GteCdp,
-            0x16 => Opcode::GteNcdt,
-            0x1B => Opcode::GteNccs,
-            0x1C => Opcode::GteCc,
-            0x1E => Opcode::GteNcs,
-            0x20 => Opcode::GteNct,
-            0x28 => Opcode::GteSqr,
-            0x29 => Opcode::GteDcpl,
-            0x2A => Opcode::GteDpct,
-            0x2D => Opcode::GteAvsz3,
-            0x2E => Opcode::GteAvsz4,
-            0x30 => Opcode::GteRtpt,
-            0x3D => Opcode::GteGpf,
-            0x3E => Opcode::GteGpl,
-            0x3F => Opcode::GteNcct,
-            _ => return Instruction::invalid(),
-        };
-
-        Instruction {
-            opcode: gte_opcode,
-            raw: opcode,
-            opcode_type: InstructionType::Cop,
-            handler: handlers::gte_dispatch,
-            is_delay_slot: false,
-        }
+        GTE_LUT[cmd as usize]
     }
 
     // Helper methods to format instruction fields for display
@@ -461,12 +430,10 @@ impl Instruction {
     fn fmt_ft(&self) -> String {
         match self.opcode {
             // For COP2 data moves (MFC2/MTC2), use rd field with GTE data registers
-            Opcode::MoveFromCoprocessor(2) | Opcode::MoveToCoprocessor(2) => {
-                lut::GTE_DATA_REGISTER_NAME_LUT
-                    .get(self.rd() as usize)
-                    .unwrap_or(&"???")
-                    .to_string()
-            }
+            Opcode::MoveFromCoprocessor(2) | Opcode::MoveToCoprocessor(2) => lut::GTE_DATA_REGISTER_NAME_LUT
+                .get(self.rd() as usize)
+                .unwrap_or(&"???")
+                .to_string(),
             // For COP2 control moves (CFC2/CTC2), use rd field with GTE control registers
             Opcode::MoveControlFromCoprocessor(2) | Opcode::MoveControlToCoprocessor(2) => {
                 lut::GTE_CONTROL_REGISTER_NAME_LUT
@@ -475,19 +442,15 @@ impl Instruction {
                     .to_string()
             }
             // For LWC2/SWC2, use ft field with GTE data registers
-            Opcode::LoadWordToCoprocessor(2) | Opcode::StoreWordFromCoprocessor(2) => {
-                lut::GTE_DATA_REGISTER_NAME_LUT
-                    .get(self.ft() as usize)
-                    .unwrap_or(&"???")
-                    .to_string()
-            }
+            Opcode::LoadWordToCoprocessor(2) | Opcode::StoreWordFromCoprocessor(2) => lut::GTE_DATA_REGISTER_NAME_LUT
+                .get(self.ft() as usize)
+                .unwrap_or(&"???")
+                .to_string(),
             // Default: use COP0 register names
-            _ => {
-                lut::COP_REGISTER_NAME_LUT
-                    .get(self.ft() as usize)
-                    .unwrap_or(&"???")
-                    .to_string()
-            }
+            _ => lut::COP_REGISTER_NAME_LUT
+                .get(self.ft() as usize)
+                .unwrap_or(&"???")
+                .to_string(),
         }
     }
 
@@ -549,19 +512,11 @@ impl Instruction {
     }
 
     fn fmt_gte_sf(&self) -> &'static str {
-        if self.gte_sf() != 0 {
-            "sf"
-        } else {
-            ""
-        }
+        if self.gte_sf() != 0 { "sf" } else { "" }
     }
 
     fn fmt_gte_lm(&self) -> &'static str {
-        if self.gte_lm() != 0 {
-            "lm"
-        } else {
-            ""
-        }
+        if self.gte_lm() != 0 { "lm" } else { "" }
     }
 
     fn fmt_gte_mx(&self) -> &'static str {

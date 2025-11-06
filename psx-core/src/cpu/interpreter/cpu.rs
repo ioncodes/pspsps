@@ -3,93 +3,7 @@ use crate::cpu::cop::Cop;
 use crate::cpu::cop::cop0::Exception;
 use crate::cpu::decoder::Instruction;
 use crate::mmu::Mmu;
-use std::marker::ConstParamTy;
-
-#[derive(Debug, ConstParamTy, PartialEq, Eq)]
-pub enum ShiftType {
-    Logical,
-    Arithmetic,
-}
-
-#[derive(Debug, ConstParamTy, PartialEq, Eq)]
-pub enum ShiftDirection {
-    Left,
-    Right,
-}
-
-#[derive(Debug, ConstParamTy, PartialEq, Eq)]
-pub enum BranchType {
-    Unconditional,
-    Equal,
-    NotEqual,
-    LessEqualZero,
-    LessThanZero,
-    GreaterEqualZero,
-    GreaterThanZero,
-}
-
-#[derive(Debug, ConstParamTy, PartialEq, Eq)]
-pub enum BranchAddressing {
-    AbsoluteImmediate,
-    RelativeOffset,
-    AbsoluteRegister,
-}
-
-#[derive(Debug, ConstParamTy, PartialEq, Eq)]
-pub enum AluOperation {
-    Add,
-    Sub,
-    And,
-    Or,
-    Xor,
-    Nor,
-    Multiply,
-    Divide,
-    SetLessThan,
-}
-
-#[derive(Debug, ConstParamTy, PartialEq, Eq)]
-pub enum MemoryAccessType {
-    Load,
-    Store,
-}
-
-#[derive(Debug, ConstParamTy, PartialEq, Eq)]
-pub enum MemoryTransferSize {
-    Byte,
-    HalfWord,
-    Word,
-}
-
-#[derive(Debug, ConstParamTy, PartialEq, Eq)]
-pub enum MemoryAccessPortion {
-    Full,
-    Left,
-    Right,
-}
-
-#[derive(Debug, ConstParamTy, PartialEq, Eq)]
-pub enum MultiplyMoveDirection {
-    ToRegister,
-    FromRegister,
-}
-
-#[derive(Debug, ConstParamTy, PartialEq, Eq)]
-pub enum MultiplyMoveRegister {
-    Hi,
-    Lo,
-}
-
-#[derive(Debug, ConstParamTy, PartialEq, Eq)]
-pub enum CopOperation {
-    MoveTo,
-    MoveFrom,
-    MoveControlTo,
-    MoveControlFrom,
-    ReturnFromException,
-    LoadWordTo,
-    StoreWordFrom,
-}
+use super::*;
 
 pub fn shift<const DIRECTION: ShiftDirection, const TYPE: ShiftType, const VARIABLE: bool>(
     instr: &Instruction, cpu: &mut Cpu,
@@ -522,8 +436,4 @@ pub fn system_call(instr: &Instruction, cpu: &mut Cpu) {
 pub fn debug_break(instr: &Instruction, cpu: &mut Cpu) {
     cpu.cause_exception(Exception::Breakpoint, instr.is_delay_slot);
     cpu.add_cycles(1);
-}
-
-pub fn gte_dispatch(instr: &Instruction, cpu: &mut Cpu) {
-    println!("GTE instruction dispatched: {}", instr);
 }

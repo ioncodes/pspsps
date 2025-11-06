@@ -1,6 +1,6 @@
 pub mod cop;
 pub mod decoder;
-pub mod handlers;
+pub mod interpreter;
 pub mod internal;
 pub mod lut;
 

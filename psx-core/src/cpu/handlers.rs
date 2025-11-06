@@ -300,8 +300,9 @@ pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu) {
     }
 }
 
-pub fn system_call(instr: &Instruction, cpu: &mut Cpu) {
-    tracing::debug!(target: "psx_core::cpu", "syscall({:04X})", (instr.raw >> 6) & 0xFFFFF); // print syscall code/comment
+pub fn system_call(_instr: &Instruction, cpu: &mut Cpu) {
+    let function_number = cpu.registers[4]; // BIOS function number is in $a0 (reg 4)
+    tracing::debug!(target: "psx_core::cpu", "syscall({:08X})", function_number);
     cpu.cause_exception(COP0_EXCEPTION_CODE_SYSCALL);
 }
 

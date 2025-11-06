@@ -186,6 +186,7 @@ fn main() -> eframe::Result {
     targets = targets.with_target("psx_core::cpu", tracing_level);
     targets = targets.with_target("psx_core::mmu", tracing_level);
     targets = targets.with_target("psx_core::tty", tracing_level);
+    targets = targets.with_target("psx_core::bios", tracing_level);
 
     let fmt_layer = tracing_subscriber::fmt::layer()
         .without_time()

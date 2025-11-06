@@ -272,7 +272,7 @@ impl Widget for CpuWidget {
                 CollapsingHeader::new("Status Register")
                     .default_open(true)
                     .show(ui, |ui| {
-                        ui.monospace(format!("SR: {:08X}", context.state.cpu.cop0.read_register(COP0_SR)));
+                        ui.monospace(format!("SR: {:08X}", context.state.cpu.cop0.read_register(COP0_SR as u8)));
                         ui.monospace(format!(
                             "Isolate Cache: {}",
                             if context.state.cpu.cop0.sr.isolate_cache() {

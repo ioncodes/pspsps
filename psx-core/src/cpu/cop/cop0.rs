@@ -49,10 +49,7 @@ impl From<u32> for Exception {
             COP0_EXCEPTION_CODE_BREAK => Exception::Breakpoint,
             COP0_EXCEPTION_CODE_RI => Exception::ReservedInstruction,
             COP0_EXCEPTION_CODE_OV => Exception::ArithmeticOverflow,
-            _ => {
-                tracing::error!(target: "psx_core::cpu", "Unknown exception code: {}", value);
-                Exception::Unknown
-            },
+            _ => Exception::Unknown,
         }
     }
 }
@@ -110,7 +107,7 @@ impl Cop0 {
 
 impl Cop for Cop0 {
     #[inline(always)]
-    fn read_register(&self, register: u32) -> u32 {
+    fn read_register(&self, register: u8) -> u32 {
         match register {
             3 => self.bpc,
             5 => self.bda,
@@ -123,15 +120,12 @@ impl Cop for Cop0 {
             13 => self.cause.0,
             14 => self.epc,
             15 => self.prid,
-            _ => {
-                tracing::warn!(target: "psx_core::cpu", "Attempted to read unimplemented COP0 register: {}", register);
-                0
-            }
+            _ => 0xFF
         }
     }
 
     #[inline(always)]
-    fn write_register(&mut self, register: u32, value: u32) {
+    fn write_register(&mut self, register: u8, value: u32) {
         match register {
             3 => self.bpc = value,
             5 => self.bda = value,
@@ -144,9 +138,7 @@ impl Cop for Cop0 {
             13 => self.cause.0 = value,
             14 => self.epc = value,
             15 => self.prid = value,
-            _ => {
-                tracing::warn!(target: "psx_core::cpu", "Attempted to write to unimplemented COP0 register: {}", register);
-            }
+            _ => {}
         }
     }
 }

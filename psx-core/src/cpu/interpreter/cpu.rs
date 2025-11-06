@@ -398,11 +398,11 @@ pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu) {
     match OPERATION {
         CopOperation::MoveTo | CopOperation::MoveControlTo => {
             cpu.cop0
-                .write_register(instr.rd() as u32, cpu.read_register(instr.rt()));
+                .write_register(instr.rd(), cpu.read_register(instr.rt()));
             cpu.add_cycles(1);
         }
         CopOperation::MoveFrom | CopOperation::MoveControlFrom => {
-            cpu.schedule_load(instr.rt(), cpu.cop0.read_register(instr.rd() as u32));
+            cpu.schedule_load(instr.rt(), cpu.cop0.read_register(instr.rd()));
             cpu.add_cycles(2);
         }
         CopOperation::ReturnFromException => {
@@ -414,13 +414,13 @@ pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu) {
             let base = cpu.read_register(instr.base());
             let vaddr = base.wrapping_add_signed(offset as i32);
             let value = cpu.read_u32(vaddr);
-            cpu.cop2.write_register(instr.ft() as u32, value);
+            cpu.cop2.write_register(instr.ft(), value);
         }
         CopOperation::StoreWordFrom => {
             let offset = instr.offset();
             let base = cpu.read_register(instr.base());
             let vaddr = base.wrapping_add_signed(offset as i32);
-            let value = cpu.cop2.read_register(instr.ft() as u32);
+            let value = cpu.cop2.read_register(instr.ft());
             cpu.write_u32(vaddr, value);
         }
     }

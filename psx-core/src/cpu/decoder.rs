@@ -359,6 +359,31 @@ impl Instruction {
         (pc_plus_4 & 0xF0000000) | (addr_field << 2)
     }
 
+    #[inline(always)]
+    pub fn gte_sf(&self) -> bool {
+        ((self.raw >> 19) & 0x1) == 1
+    }
+
+    #[inline(always)]
+    pub fn gte_lm(&self) -> bool {
+        ((self.raw >> 10) & 0x1) == 1
+    }
+
+    #[inline(always)]
+    pub fn gte_mx(&self) -> u8 {
+        ((self.raw >> 17) & 0x3) as u8
+    }
+
+    #[inline(always)]
+    pub fn gte_v(&self) -> u8 {
+        ((self.raw >> 15) & 0x3) as u8
+    }
+
+    #[inline(always)]
+    pub fn gte_cv(&self) -> u8 {
+        ((self.raw >> 13) & 0x3) as u8
+    }
+
     fn decode_cop(opcode: u32, cop_num: u8, fmt: u32) -> Self {
         match fmt {
             0b00000 => Instruction {
@@ -490,33 +515,12 @@ impl Instruction {
         }
     }
 
-    // GTE-specific helper methods
-    fn gte_sf(&self) -> u8 {
-        ((self.raw >> 19) & 0x1) as u8
-    }
-
-    fn gte_lm(&self) -> u8 {
-        ((self.raw >> 10) & 0x1) as u8
-    }
-
-    fn gte_mx(&self) -> u8 {
-        ((self.raw >> 17) & 0x3) as u8
-    }
-
-    fn gte_v(&self) -> u8 {
-        ((self.raw >> 15) & 0x3) as u8
-    }
-
-    fn gte_cv(&self) -> u8 {
-        ((self.raw >> 13) & 0x3) as u8
-    }
-
     fn fmt_gte_sf(&self) -> &'static str {
-        if self.gte_sf() != 0 { "sf" } else { "" }
+        if self.gte_sf() { "sf" } else { "" }
     }
 
     fn fmt_gte_lm(&self) -> &'static str {
-        if self.gte_lm() != 0 { "lm" } else { "" }
+        if self.gte_lm() { "lm" } else { "" }
     }
 
     fn fmt_gte_mx(&self) -> &'static str {
@@ -556,7 +560,7 @@ impl Instruction {
     }
 
     fn fmt_gte_control(&self) -> String {
-        let idx = (self.rd() as usize).saturating_sub(32);
+        let idx = self.rd() as usize;
         lut::GTE_CONTROL_REGISTER_NAME_LUT
             .get(idx)
             .unwrap_or(&"???")

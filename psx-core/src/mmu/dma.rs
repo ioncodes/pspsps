@@ -314,7 +314,11 @@ impl Bus8 for Dma {
     #[inline(always)]
     fn write_u8(&mut self, address: u32, value: u8) {
         // https://psx-spx.consoledev.net/unpredictablethings/
-        self.write_u32(address, value as u32);
+        // Word-align address and left-shift value
+        let offset = address & 0b11;
+        let aligned_address = address & !0b11;
+        let shifted_value = (value as u32) << (offset * 8);
+        self.write_u32(aligned_address, shifted_value);
     }
 }
 
@@ -351,7 +355,11 @@ impl Bus16 for Dma {
     #[inline(always)]
     fn write_u16(&mut self, address: u32, value: u16) {
         // https://psx-spx.consoledev.net/unpredictablethings/
-        self.write_u32(address, value as u32);
+        // Word-align address and left-shift value
+        let offset = address & 0b11;
+        let aligned_address = address & !0b11;
+        let shifted_value = (value as u32) << (offset * 8);
+        self.write_u32(aligned_address, shifted_value);
     }
 }
 
@@ -415,7 +423,7 @@ impl Bus32 for Dma {
                     "DMA interrupt register (DICR) write"
                 );
             }
-            _ => unreachable!(),
+            _ => unreachable!()
         }
     }
 }

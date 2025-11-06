@@ -110,7 +110,11 @@ impl Bus8 for Sio {
     }
 
     fn write_u8(&mut self, address: u32, value: u8) {
-        self.write_u16(address, value as u16);
+        // (w16) write full 16bits (left-shifted if address isn't halfword-aligned)
+        let offset = address & 0b1;
+        let aligned_address = address & !0b1;
+        let shifted_value = (value as u16) << (offset * 8);
+        self.write_u16(aligned_address, shifted_value);
     }
 }
 

@@ -58,7 +58,11 @@ impl Bus8 for Irq {
     #[inline(always)]
     fn write_u8(&mut self, address: u32, value: u8) {
         // https://psx-spx.consoledev.net/unpredictablethings/
-        self.write_u32(address, value as u32);
+        // (w32) write full 32bits (left-shifted if address isn't word-aligned)
+        let offset = address & 0b11;
+        let aligned_address = address & !0b11;
+        let shifted_value = (value as u32) << (offset * 8);
+        self.write_u32(aligned_address, shifted_value);
     }
 }
 
@@ -88,7 +92,11 @@ impl Bus16 for Irq {
     #[inline(always)]
     fn write_u16(&mut self, address: u32, value: u16) {
         // https://psx-spx.consoledev.net/unpredictablethings/
-        self.write_u32(address, value as u32);
+        // (w32) write full 32bits (left-shifted if address isn't word-aligned)
+        let offset = address & 0b11;
+        let aligned_address = address & !0b11;
+        let shifted_value = (value as u32) << (offset * 8);
+        self.write_u32(aligned_address, shifted_value);
     }
 }
 

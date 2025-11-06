@@ -48,6 +48,7 @@ bitfield! {
         pub ready_to_send_vram_to_cpu: bool @ 27,
         pub ready_to_receive_dma_block: bool @ 28,
         pub dma_direction: u8 @ 29..=30,
+        pub drawing_even_odd_lines_in_interlace_mode: bool @ 31,
     }
 }
 

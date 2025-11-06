@@ -2,8 +2,16 @@ use crate::cpu::Cpu;
 use crate::cpu::decoder::Instruction;
 use crate::exe::Exe;
 
-const PSX_RESET_ADDRESS: u32 = 0xBFC0_0000;
-const PSX_SIDELOAD_EXE_ADDRESS: u32 = 0x8003_0000;
+pub const PSX_RESET_ADDRESS: u32 = 0xBFC0_0000;
+pub const PSX_SIDELOAD_EXE_ADDRESS: u32 = 0x8003_0000;
+
+pub const CPU_CLOCK: usize = 33_868_800;
+pub const NTSC_VBLANK_CYCLES: usize = 33_868_800 / 60;
+pub const PAL_VBLANK_CYCLES: usize = 33_868_800 / 50;
+
+// TODO: very very likely wrong
+pub const NTSC_VBLANK_DURATION: usize = 49_954;
+pub const PAL_VBLANK_DURATION: usize = 125_802;
 
 pub struct Psx {
     pub cpu: Cpu,
@@ -52,9 +60,33 @@ impl Psx {
 
         let instr = self.cpu.tick();
 
-        for _ in 0..self.cpu.drain_cycles() {
+        let cycles = self.cpu.drain_cycles();
+        self.cycles += cycles;
+
+        for _ in 0..cycles {
             self.cpu.mmu.gpu.tick();
-            self.cpu.mmu.perform_dma_transfers();
+        }
+        self.cpu.mmu.perform_dma_transfers();
+
+        if self.cycles >= NTSC_VBLANK_DURATION && self.cpu.mmu.irq.status.vblank() {
+            self.cpu.mmu.irq.status.set_vblank(false);
+            self.cpu
+                .mmu
+                .gpu
+                .gp
+                .gp1_status
+                .set_drawing_even_odd_lines_in_interlace_mode(false);
+        }
+
+        if self.cycles >= NTSC_VBLANK_CYCLES {
+            self.cycles -= NTSC_VBLANK_CYCLES;
+            self.cpu.mmu.irq.status.set_vblank(true);
+            self.cpu
+                .mmu
+                .gpu
+                .gp
+                .gp1_status
+                .set_drawing_even_odd_lines_in_interlace_mode(true);
         }
 
         instr

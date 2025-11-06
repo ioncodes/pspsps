@@ -16,7 +16,10 @@ fn main() {
     tracing_subscriber::registry().with(fmt_layer).init();
 
     let mut psx = Psx::new(BIOS);
-    psx.sideload_exe(include_bytes!("../../tests/amidog/psxtest_cpu.exe").to_vec());
+    if let Some(path) = std::env::args().nth(1) {
+        let buffer = std::fs::read(path).unwrap();
+        psx.sideload_exe(buffer);
+    }
 
     let mut instruction_count = 0u64;
     let start_time = Instant::now();

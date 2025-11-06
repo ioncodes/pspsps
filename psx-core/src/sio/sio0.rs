@@ -100,8 +100,6 @@ impl Sio0 {
         if self.active_device == ActiveDevice::None && self.control.dtr_output_level() {
             match tx_byte {
                 0x01 => {
-                    self.active_device = ActiveDevice::Controller;
-
                     if self.control.port_number() == 2 {
                         // If Port 2 is selected, no controller is present
                         tracing::trace!(
@@ -111,6 +109,8 @@ impl Sio0 {
                         );
                         return 0xFF;
                     }
+
+                    self.active_device = ActiveDevice::Controller;
                 }
                 0x81 => {
                     self.active_device = ActiveDevice::MemoryCard;

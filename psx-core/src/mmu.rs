@@ -2,6 +2,7 @@ pub mod bus;
 pub mod dma;
 
 use crate::cdrom::{CDROM_ADDR_END, CDROM_ADDR_START, Cdrom};
+use crate::cdrom::reg::REG_RDDATA_ADDR;
 use crate::gpu::status::DmaDirection;
 use crate::gpu::{GP0_ADDRESS_END, GP0_ADDRESS_START, GP1_ADDRESS_END, GP1_ADDRESS_START, Gpu};
 use crate::irq::{I_MASK_ADDR_END, I_MASK_ADDR_START, I_STAT_ADDR_END, I_STAT_ADDR_START, Irq};
@@ -262,7 +263,12 @@ impl Mmu {
                 let total_words = channel.bcr_word_count();
 
                 for _ in 0..total_words {
-                    let word = self.read_u32(CDROM_ADDR_START);
+                    // CDROM data port is 8-bit; pack 4 bytes into a word (little-endian)
+                    let b0 = self.read_u8(REG_RDDATA_ADDR) as u32;
+                    let b1 = self.read_u8(REG_RDDATA_ADDR) as u32;
+                    let b2 = self.read_u8(REG_RDDATA_ADDR) as u32;
+                    let b3 = self.read_u8(REG_RDDATA_ADDR) as u32;
+                    let word = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
                     self.write_u32(dest_addr, word);
 
                     tracing::trace!(
@@ -279,7 +285,12 @@ impl Mmu {
                 let total_words = channel.bcr_block_total();
 
                 for _ in 0..total_words {
-                    let word = self.read_u32(CDROM_ADDR_START);
+                    // CDROM data port is 8-bit; pack 4 bytes into a word (little-endian)
+                    let b0 = self.read_u8(REG_RDDATA_ADDR) as u32;
+                    let b1 = self.read_u8(REG_RDDATA_ADDR) as u32;
+                    let b2 = self.read_u8(REG_RDDATA_ADDR) as u32;
+                    let b3 = self.read_u8(REG_RDDATA_ADDR) as u32;
+                    let word = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
                     self.write_u32(dest_addr, word);
 
                     tracing::trace!(
@@ -398,7 +409,7 @@ impl bus::Bus32 for Mmu {
         let address = Self::canonicalize_virtual_address(address);
         match address {
             0x1F801100..=0x1F80112F => 0xFF, // TODO: always return 0xFF for these (timers?). helps with getting to shell
-            SIO_ADDR_START..=SIO_ADDR_END => self.irq.read_u32(address),
+            SIO_ADDR_START..=SIO_ADDR_END => self.sio.read_u32(address),
             I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.read_u32(address),
             I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.read_u32(address),
             DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.read_u32(address),

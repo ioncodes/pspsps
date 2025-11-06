@@ -4,11 +4,15 @@ use psx_core::gpu::{VRAM_HEIGHT, VRAM_WIDTH};
 
 pub struct GpuWidget {
     vram_texture: Option<egui::TextureHandle>,
+    magnified_texture: Option<egui::TextureHandle>,
 }
 
 impl GpuWidget {
     pub fn new() -> Self {
-        Self { vram_texture: None }
+        Self {
+            vram_texture: None,
+            magnified_texture: None,
+        }
     }
 }
 
@@ -91,13 +95,88 @@ impl Widget for GpuWidget {
             });
             vram_texture.set(vram_color_image.clone(), egui::TextureOptions::NEAREST);
 
-            // Display VRAM image
-            ui.add(egui::Image::new(egui::ImageSource::Texture(
-                egui::load::SizedTexture::new(
+            // Display VRAM image with hover detection
+            let vram_image =
+                egui::Image::new(egui::ImageSource::Texture(egui::load::SizedTexture::new(
                     vram_texture.id(),
                     egui::vec2(gpu_state.vram_width as f32, gpu_state.vram_height as f32),
-                ),
-            )));
+                )));
+
+            let response = ui.add(vram_image);
+
+            // Show magnified view on hover
+            if let Some(hover_pos) = response.hover_pos() {
+                let rect = response.rect;
+                // Calculate the pixel position in the VRAM texture
+                let relative_pos = hover_pos - rect.min;
+                let vram_x = (relative_pos.x / rect.width() * gpu_state.vram_width as f32) as usize;
+                let vram_y =
+                    (relative_pos.y / rect.height() * gpu_state.vram_height as f32) as usize;
+
+                // Define magnification area (100x100 pixels centered on hover position)
+                let mag_size = 100;
+                let half_mag = mag_size / 2;
+
+                // Calculate bounds with clamping
+                let start_x = vram_x
+                    .saturating_sub(half_mag)
+                    .min(gpu_state.vram_width.saturating_sub(mag_size));
+                let start_y = vram_y
+                    .saturating_sub(half_mag)
+                    .min(gpu_state.vram_height.saturating_sub(mag_size));
+                let end_x = (start_x + mag_size).min(gpu_state.vram_width);
+                let end_y = (start_y + mag_size).min(gpu_state.vram_height);
+
+                // Extract magnified region
+                let mut mag_pixels = Vec::new();
+                for y in start_y..end_y {
+                    for x in start_x..end_x {
+                        let idx = y * VRAM_WIDTH + x;
+                        if idx < gpu_state.vram_frame.len() {
+                            let (r, g, b) = gpu_state.vram_frame[idx];
+                            mag_pixels.push(egui::Color32::from_rgb(r, g, b));
+                        }
+                    }
+                }
+
+                let mag_width = end_x - start_x;
+                let mag_height = end_y - start_y;
+
+                if mag_width > 0 && mag_height > 0 && mag_pixels.len() == mag_width * mag_height {
+                    let mag_color_image = egui::ColorImage {
+                        size: [mag_width, mag_height],
+                        pixels: mag_pixels,
+                        source_size: egui::Vec2::new(mag_width as f32, mag_height as f32),
+                    };
+
+                    // Update or create magnified texture
+                    let mag_texture = self.magnified_texture.get_or_insert_with(|| {
+                        ui.ctx().load_texture(
+                            "gpu_magnified_vram",
+                            mag_color_image.clone(),
+                            egui::TextureOptions::NEAREST,
+                        )
+                    });
+                    mag_texture.set(mag_color_image.clone(), egui::TextureOptions::NEAREST);
+
+                    // Show magnified view in a popup window near cursor
+                    let popup_size = 200.0;
+                    egui::Area::new(egui::Id::new("vram_magnifier"))
+                        .fixed_pos(hover_pos + egui::vec2(15.0, 15.0))
+                        .order(egui::Order::Foreground)
+                        .show(ui.ctx(), |ui| {
+                            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                                ui.label(format!("Position: ({}, {})", vram_x, vram_y));
+                                ui.add(egui::Image::new(egui::ImageSource::Texture(
+                                    egui::load::SizedTexture::new(
+                                        mag_texture.id(),
+                                        egui::vec2(popup_size, popup_size),
+                                    ),
+                                )));
+                            });
+                        });
+                }
+            }
         } else {
             ui.label("Waiting for frame...");
         }

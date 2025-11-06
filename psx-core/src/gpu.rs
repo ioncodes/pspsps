@@ -240,11 +240,13 @@ impl Gpu {
             &vertices,
             &colors,
             &uvs,
+            cmd.raw_texture(),
             self.texture_window_setting,
             self.drawing_area_x1,
             self.drawing_area_y1,
             self.drawing_area_x2,
             self.drawing_area_y2,
+            self.gp.gp1_status.dither(),
             &mut self.gp.vram,
         );
     }

@@ -1,9 +1,21 @@
 use crate::gpu::cmd::tex::TextureWindowSettingCommand;
 use crate::gpu::{VRAM_HEIGHT, VRAM_WIDTH};
 
+// -4  +0  -3  +1   ;\dither offsets for first two scanlines
+// +2  -2  +3  -1   ;/
+// -3  +1  -4  +0   ;\dither offsets for next two scanlines
+// +3  -1  +2  -2   ;/(same as above, but shifted two pixels horizontally)
+const DITHER_TABLE: [[i32; 4]; 4] = [
+    [-4, 0, -3, 1], // y=0
+    [2, -2, 3, -1], // y=1
+    [-3, 1, -4, 0], // y=2
+    [3, -1, 2, -2], // y=3
+];
+
 pub fn rasterize_polygon(
-    vertices: &[(i16, i16)], colors: &[u32], uvs: &[u32], texture_window: TextureWindowSettingCommand,
-    drawing_area_x1: u32, drawing_area_y1: u32, drawing_area_x2: u32, drawing_area_y2: u32, vram: &mut [u8],
+    vertices: &[(i16, i16)], colors: &[u32], uvs: &[u32], raw_texture: bool,
+    texture_window: TextureWindowSettingCommand, drawing_area_x1: u32, drawing_area_y1: u32, drawing_area_x2: u32,
+    drawing_area_y2: u32, dither_enabled: bool, vram: &mut [u8],
 ) {
     // Quads must be split into two triangles
     // Vertices received: V0, V1, V2, V3
@@ -28,6 +40,7 @@ pub fn rasterize_polygon(
             [colors[0], colors[1], colors[2]],
             if textured { [uvs[0], uvs[1], uvs[2]] } else { [0, 0, 0] },
             textured,
+            raw_texture,
             clut,
             texpage,
             texture_window,
@@ -35,6 +48,7 @@ pub fn rasterize_polygon(
             drawing_area_y1,
             drawing_area_x2,
             drawing_area_y2,
+            dither_enabled,
             vram,
         );
         rasterize_triangle(
@@ -42,6 +56,7 @@ pub fn rasterize_polygon(
             [colors[1], colors[2], colors[3]],
             if textured { [uvs[1], uvs[2], uvs[3]] } else { [0, 0, 0] },
             textured,
+            raw_texture,
             clut,
             texpage,
             texture_window,
@@ -49,6 +64,7 @@ pub fn rasterize_polygon(
             drawing_area_y1,
             drawing_area_x2,
             drawing_area_y2,
+            dither_enabled,
             vram,
         );
     } else {
@@ -57,6 +73,7 @@ pub fn rasterize_polygon(
             [colors[0], colors[1], colors[2]],
             if textured { [uvs[0], uvs[1], uvs[2]] } else { [0, 0, 0] },
             textured,
+            raw_texture,
             clut,
             texpage,
             texture_window,
@@ -64,6 +81,7 @@ pub fn rasterize_polygon(
             drawing_area_y1,
             drawing_area_x2,
             drawing_area_y2,
+            dither_enabled,
             vram,
         );
     }
@@ -149,9 +167,9 @@ pub fn rasterize_rectangle(
 }
 
 fn rasterize_triangle(
-    vertices: [(i16, i16); 3], colors: [u32; 3], uvs: [u32; 3], textured: bool, clut: u16, texpage: u16,
-    texture_window: TextureWindowSettingCommand, drawing_area_x1: u32, drawing_area_y1: u32, drawing_area_x2: u32,
-    drawing_area_y2: u32, vram: &mut [u8],
+    vertices: [(i16, i16); 3], colors: [u32; 3], uvs: [u32; 3], textured: bool, raw_texture: bool, clut: u16,
+    texpage: u16, texture_window: TextureWindowSettingCommand, drawing_area_x1: u32, drawing_area_y1: u32,
+    drawing_area_x2: u32, drawing_area_y2: u32, dither_enabled: bool, vram: &mut [u8],
 ) {
     // Vertex coordinates
     let (x0, y0) = (vertices[0].0 as i32, vertices[0].1 as i32);
@@ -196,9 +214,24 @@ fn rasterize_triangle(
             if inside {
                 // Gouraud shading or textured
                 let pixel = if !textured {
-                    gouraud_shading(colors, w0, w1, w2, area)
+                    gouraud_shading(colors, w0, w1, w2, area, dither_enabled, x, y)
                 } else {
-                    textured_render(uvs, w0, w1, w2, area, clut, texpage, texture_window, vram)
+                    textured_render(
+                        uvs,
+                        colors,
+                        w0,
+                        w1,
+                        w2,
+                        area,
+                        clut,
+                        texpage,
+                        raw_texture,
+                        texture_window,
+                        dither_enabled,
+                        x,
+                        y,
+                        vram,
+                    )
                 };
 
                 // Transparent pixel
@@ -294,7 +327,9 @@ fn sample_texture(
     }
 }
 
-fn gouraud_shading(colors: [u32; 3], w0: i32, w1: i32, w2: i32, area: i32) -> u16 {
+fn gouraud_shading(
+    colors: [u32; 3], w0: i32, w1: i32, w2: i32, area: i32, dither_enabled: bool, x: i32, y: i32,
+) -> u16 {
     let r0 = (colors[0] & 0xFF) as i32;
     let g0 = ((colors[0] >> 8) & 0xFF) as i32;
     let b0 = ((colors[0] >> 16) & 0xFF) as i32;
@@ -314,16 +349,21 @@ fn gouraud_shading(colors: [u32; 3], w0: i32, w1: i32, w2: i32, area: i32) -> u1
     let g = ((g0 * w0) + (g1 * w1) + (g2 * w2)) / area;
     let b = ((b0 * w0) + (b1 * w1) + (b2 * w2)) / area;
 
-    let r5 = ((r >> 3) & 0x1F) as u16;
-    let g5 = ((g >> 3) & 0x1F) as u16;
-    let b5 = ((b >> 3) & 0x1F) as u16;
+    let is_gouraud = colors[0] != colors[1] || colors[1] != colors[2];
 
-    (b5 << 10) | (g5 << 5) | r5
+    if dither_enabled && is_gouraud {
+        apply_dither(r, g, b, x, y)
+    } else {
+        let r5 = ((r >> 3) & 0x1F) as u16;
+        let g5 = ((g >> 3) & 0x1F) as u16;
+        let b5 = ((b >> 3) & 0x1F) as u16;
+        (b5 << 10) | (g5 << 5) | r5
+    }
 }
 
 fn textured_render(
-    uvs: [u32; 3], w0: i32, w1: i32, w2: i32, area: i32, clut: u16, texpage: u16,
-    texture_window: TextureWindowSettingCommand, vram: &mut [u8],
+    uvs: [u32; 3], colors: [u32; 3], w0: i32, w1: i32, w2: i32, area: i32, clut: u16, texpage: u16, raw_texture: bool,
+    texture_window: TextureWindowSettingCommand, dither_enabled: bool, x: i32, y: i32, vram: &mut [u8],
 ) -> u16 {
     // Clut Attribute (Color Lookup Table, aka Palette)
     // This attribute is used in all Textured Polygon/Rectangle commands. Of course, it's relevant only for 4bit/8bit textures (don't care for 15bit textures).
@@ -352,9 +392,6 @@ fn textured_render(
     //   14-23 Not used (should be 0)
     //   24-31 Command  (E1h)
 
-    // CLUT and texpage are now passed as parameters from polygon level
-    // (previously extracted incorrectly from uvs array per-triangle)
-
     let texture_x_base = (texpage & 0b1111) as i32 * 64;
     let texture_y_base = (((texpage >> 4) & 0x1) as i32 * 256) + (((texpage >> 11) & 0x1) as i32 * 512);
 
@@ -381,7 +418,7 @@ fn textured_render(
     let tex_x_in_page = (u as usize) % 256;
     let tex_y_in_page = (v as usize) % 256;
 
-    sample_texture(
+    let texel = sample_texture(
         tex_x_in_page,
         tex_y_in_page,
         texture_x_base,
@@ -390,5 +427,83 @@ fn textured_render(
         (clut_x as usize) * 16,
         clut_y as usize,
         vram,
-    )
+    );
+
+    // If raw_texture mode, return texel directly without modulation
+    if raw_texture {
+        return texel;
+    }
+
+    // Blend texture color with vertex color
+    // "finalChannel.rgb = (texel.rgb * vertexColour.rgb) / vec3(128.0)"
+
+    // Extract RGB555 from texel
+    let tex_r5 = (texel & 0x1F) as i32;
+    let tex_g5 = ((texel >> 5) & 0x1F) as i32;
+    let tex_b5 = ((texel >> 10) & 0x1F) as i32;
+
+    // Convert to RGB888 for modulation
+    let tex_r8 = (tex_r5 << 3) | (tex_r5 >> 2);
+    let tex_g8 = (tex_g5 << 3) | (tex_g5 >> 2);
+    let tex_b8 = (tex_b5 << 3) | (tex_b5 >> 2);
+
+    // Interpolate vertex colors
+    let r0 = (colors[0] & 0xFF) as i32;
+    let g0 = ((colors[0] >> 8) & 0xFF) as i32;
+    let b0 = ((colors[0] >> 16) & 0xFF) as i32;
+
+    let r1 = (colors[1] & 0xFF) as i32;
+    let g1 = ((colors[1] >> 8) & 0xFF) as i32;
+    let b1 = ((colors[1] >> 16) & 0xFF) as i32;
+
+    let r2 = (colors[2] & 0xFF) as i32;
+    let g2 = ((colors[2] >> 8) & 0xFF) as i32;
+    let b2 = ((colors[2] >> 16) & 0xFF) as i32;
+
+    let vert_r = ((r0 * w0) + (r1 * w1) + (r2 * w2)) / area;
+    let vert_g = ((g0 * w0) + (g1 * w1) + (g2 * w2)) / area;
+    let vert_b = ((b0 * w0) + (b1 * w1) + (b2 * w2)) / area;
+
+    // modulation = (texture * vertex_color) / 128
+    let mod_r = (tex_r8 * vert_r) / 128;
+    let mod_g = (tex_g8 * vert_g) / 128;
+    let mod_b = (tex_b8 * vert_b) / 128;
+
+    let is_modulated = vert_r != 128 || vert_g != 128 || vert_b != 128;
+
+    if dither_enabled && is_modulated {
+        apply_dither(mod_r, mod_g, mod_b, x, y)
+    } else {
+        let r5 = ((mod_r >> 3).clamp(0, 31)) as u16;
+        let g5 = ((mod_g >> 3).clamp(0, 31)) as u16;
+        let b5 = ((mod_b >> 3).clamp(0, 31)) as u16;
+        (b5 << 10) | (g5 << 5) | r5
+    }
+}
+
+/// Apply dithering to an RGB888 color based on screen coordinates
+/// Returns RGB555 value with dithering applied
+///
+/// "For dithering, VRAM is broken to 4x4 pixel blocks, depending on the location
+/// in that 4x4 pixel region, the corresponding dither offset is added to the
+/// 8bit R/G/B values, the result is saturated to +00h..+FFh,
+/// and then divided by 8, resulting in the final 5bit R/G/B values.""
+#[inline]
+fn apply_dither(r8: i32, g8: i32, b8: i32, x: i32, y: i32) -> u16 {
+    // Determine position within 4x4 dither table
+    let dither_x = (x & 3) as usize;
+    let dither_y = (y & 3) as usize;
+    let dither_offset = DITHER_TABLE[dither_y][dither_x];
+
+    // Add dither offset and clamp
+    let r_dithered = (r8 + dither_offset).clamp(0, 255);
+    let g_dithered = (g8 + dither_offset).clamp(0, 255);
+    let b_dithered = (b8 + dither_offset).clamp(0, 255);
+
+    // Convert to RGB555
+    let r5 = ((r_dithered >> 3) & 0x1F) as u16;
+    let g5 = ((g_dithered >> 3) & 0x1F) as u16;
+    let b5 = ((b_dithered >> 3) & 0x1F) as u16;
+
+    (b5 << 10) | (g5 << 5) | r5
 }

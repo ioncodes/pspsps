@@ -222,32 +222,37 @@ fn textured_render(
             & texture_window.texture_window_y_mask() as i32)
             * 8);
 
+    let tex_x_in_page = (u as usize) % 256;
+    let tex_y_in_page = (v as usize) % 256;
+
     match color_depth {
         0 => {
             // 4-bit CLUT mode
-            // Each byte contains 2 texels (4 bits each)
-            let tex_x_in_page = (u as usize) % 256;
-            let tex_y_in_page = (v as usize) % 256;
+            // PSX-SPX: 16-bit word contains 4 texels:
+            //   bits 0-3: 1st pixel (left)
+            //   bits 4-7: 2nd pixel
+            //   bits 8-11: 3rd pixel
+            //   bits 12-15: 4th pixel (right)
 
-            // In 4-bit mode, texture page X base is in 64-halfword steps, but we pack 4 texels per halfword
-            let texel_x = texture_x_base as usize * 4 + tex_x_in_page; // 4 texels per 16-bit word
-            let texel_y = texture_y_base as usize + tex_y_in_page;
+            // texture_x_base is in halfwords (N*64), where each halfword contains 4 texels
+            // Convert to texel coordinates: texture_x_base is already in halfwords,
+            // so we just need to add the in-page texel offset
+            let vram_x = texture_x_base as usize + (tex_x_in_page / 4);
+            let vram_y = texture_y_base as usize + tex_y_in_page;
 
-            if texel_x / 4 >= VRAM_WIDTH || texel_y >= VRAM_HEIGHT {
+            if vram_x >= VRAM_WIDTH || vram_y >= VRAM_HEIGHT {
                 return 0x0000; // Transparent black
             }
 
-            // Read the byte containing the 4-bit texel
-            let byte_x = texel_x / 4; // 4 texels per 16-bit word = 2 per byte
-            let vram_idx = (texel_y * VRAM_WIDTH + byte_x) * 2 + (texel_x / 2) % 2;
-            let byte = vram[vram_idx];
+            // Read the 16-bit halfword containing our texel
+            // Each halfword at vram[y][x] contains 4 texels
+            let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
+            let halfword = u16::from_le_bytes([vram[vram_idx], vram[vram_idx + 1]]);
 
-            // Extract 4-bit index
-            let texel_index = if texel_x % 2 == 0 {
-                byte & 0x0F
-            } else {
-                (byte >> 4) & 0x0F
-            };
+            // Extract the correct 4-bit index based on position within the halfword
+            // texel 0 (leftmost) is in bits 0-3, texel 3 (rightmost) is in bits 12-15
+            let texel_in_word = tex_x_in_page % 4;
+            let texel_index = ((halfword >> (texel_in_word * 4)) & 0xF) as u8;
 
             // Transparent color
             if texel_index == 0 {
@@ -260,29 +265,41 @@ fn textured_render(
             let clut_idx = (clut_y * VRAM_WIDTH + clut_x + texel_index as usize) * 2;
 
             if clut_idx + 1 < vram.len() {
+                // In BIOS, the SONY logos will have this color
                 u16::from_le_bytes([vram[clut_idx], vram[clut_idx + 1]])
             } else {
+                // In BIOS, the surrounding area of the texture of the SONY logos will be this color
+                // -> transparent, handle in caller
                 0x0000
             }
         }
         1 => {
             // 8-bit CLUT mode
-            // Each byte is one texel
-            let tex_x_in_page = (u as usize) % 256;
-            let tex_y_in_page = (v as usize) % 256;
+            // PSX-SPX: 16-bit word contains 2 texels:
+            //   bits 0-7: 1st pixel (left)
+            //   bits 8-15: 2nd pixel (right)
 
-            // In 8-bit mode, texture page X base is in 64-halfword steps, but we pack 2 texels per halfword
-            let texel_x = texture_x_base as usize * 2 + tex_x_in_page; // 2 texels per 16-bit word
-            let texel_y = texture_y_base as usize + tex_y_in_page;
+            // texture_x_base is in halfwords (N*64), where each halfword contains 2 texels
+            // Convert to VRAM coordinates
+            let vram_x = texture_x_base as usize + (tex_x_in_page / 2);
+            let vram_y = texture_y_base as usize + tex_y_in_page;
 
-            if texel_x / 2 >= VRAM_WIDTH || texel_y >= VRAM_HEIGHT {
+            if vram_x >= VRAM_WIDTH || vram_y >= VRAM_HEIGHT {
                 return 0x0000;
             }
 
-            // Read the byte containing the 8-bit texel
-            let word_x = texel_x / 2;
-            let vram_idx = (texel_y * VRAM_WIDTH + word_x) * 2 + (texel_x % 2);
-            let texel_index = vram[vram_idx];
+            // Read the 16-bit halfword containing our texel
+            let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
+            let halfword = u16::from_le_bytes([vram[vram_idx], vram[vram_idx + 1]]);
+
+            // Extract the correct 8-bit index
+            // texel 0 (left) is in bits 0-7, texel 1 (right) is in bits 8-15
+            let texel_in_word = tex_x_in_page % 2;
+            let texel_index = if texel_in_word == 0 {
+                (halfword & 0xFF) as u8
+            } else {
+                ((halfword >> 8) & 0xFF) as u8
+            };
 
             // Transparent color
             if texel_index == 0 {
@@ -302,8 +319,6 @@ fn textured_render(
         }
         _ => {
             // 15-bit direct color mode (texture_depth == 2 or 3)
-            let tex_x_in_page = (u as usize) % 256;
-            let tex_y_in_page = (v as usize) % 256;
 
             let texel_x = texture_x_base as usize + tex_x_in_page;
             let texel_y = texture_y_base as usize + tex_y_in_page;

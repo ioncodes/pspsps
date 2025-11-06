@@ -17,23 +17,27 @@ pub struct Debugger {
     is_running: bool,
     trace: VecDeque<(u32, Instruction)>,
     breakpoints: HashSet<u32>,
+    sideload_exe: Option<Vec<u8>>,
 }
 
 static BIOS: &[u8] = include_bytes!("../../bios/SCPH1000.BIN");
 
 impl Debugger {
     pub fn new(channel_send: Sender<DebuggerEvent>, channel_recv: Receiver<DebuggerEvent>) -> Self {
-        let mut psx = Psx::new(BIOS);
-        psx.sideload_exe(include_bytes!("../../external/amidog/psxtest_cpu.exe").to_vec());
-
         Self {
-            psx,
+            psx: Psx::new(BIOS),
             channel_send,
             channel_recv,
             is_running: false,
             trace: VecDeque::with_capacity(1000),
             breakpoints: HashSet::new(),
+            sideload_exe: None,
         }
+    }
+
+    pub fn sideload_exe(&mut self, exe_buffer: Vec<u8>) {
+        self.sideload_exe = Some(exe_buffer); // Store the sideloaded executable, used for reset
+        self.psx.sideload_exe(self.sideload_exe.clone().unwrap());
     }
 
     pub fn run(&mut self) {
@@ -153,7 +157,9 @@ impl Debugger {
                 DebuggerEvent::Reset => {
                     self.psx = Psx::new(BIOS);
                     self.psx.sideload_exe(
-                        include_bytes!("../../external/amidog/psxtest_cpu.exe").to_vec(),
+                        self.sideload_exe
+                            .take()
+                            .unwrap_or_else(|| panic!("No sideloaded executable found")),
                     );
 
                     self.is_running = false;

@@ -4,3 +4,4 @@
 bios/
 target/
 *.bin
+*.dump

@@ -48,12 +48,14 @@ impl Gp0Command {
     pub fn base_extra_data_count(&self) -> usize {
         match self {
             Gp0Command::RectanglePrimitive(cmd) => {
-                let mut base = 3;
+                let mut base = 1;
 
+                // requires UV
                 if cmd.textured() {
                     base += 1;
                 }
-
+                
+                // variable sized rectangles
                 if cmd.size() == 0 {
                     base += 1;
                 }
@@ -77,5 +79,22 @@ bitfield! {
         pub textured: bool @ 26,
         pub size: u32 @ 27..=28,
         pub command: u32 @ 29..=31,
+    }
+}
+
+impl DrawRectangleCommand {
+    #[inline(always)]
+    pub fn vertex_idx(&self) -> usize {
+        0
+    }
+
+    #[inline(always)]
+    pub fn uv_idx(&self) -> usize {
+        1
+    }
+
+    #[inline(always)]
+    pub fn size_idx(&self) -> usize {
+        if self.textured() { 2 } else { 1 }
     }
 }

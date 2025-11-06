@@ -21,6 +21,7 @@ pub enum DebuggerEvent {
     UpdateTrace,
     UpdateTty,
     UpdateController(ControllerState),
+    SetIgnoreErrors(bool),
     BreakpointHit(u32),
     BreakpointsUpdated(BreakpointsState),
     TraceUpdated(TraceState),

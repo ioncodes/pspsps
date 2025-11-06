@@ -19,6 +19,7 @@ pub struct Debugger {
     channel_send: Sender<DebuggerEvent>,
     channel_recv: Receiver<DebuggerEvent>,
     is_running: bool,
+    ignore_errors: bool,
     trace: VecDeque<(u32, Instruction)>,
     breakpoints: HashSet<u32>,
     sideload_exe: Option<Vec<u8>>,
@@ -38,6 +39,7 @@ impl Debugger {
             channel_send,
             channel_recv,
             is_running: false,
+            ignore_errors: true,
             trace: VecDeque::with_capacity(1000),
             breakpoints: HashSet::new(),
             sideload_exe: None,
@@ -94,38 +96,44 @@ impl Debugger {
 
                 let old_pc = self.psx.cpu.pc;
 
-                if let Ok(instr) = self.psx.step() {
-                    // Push to trace
-                    self.trace.push_back((old_pc, instr));
-                    if self.trace.len() > 1000 {
-                        self.trace.pop_front();
+                match self.psx.step() {
+                    Ok(instr) => {
+                        // Push to trace
+                        self.trace.push_back((old_pc, instr));
+                        if self.trace.len() > 1000 {
+                            self.trace.pop_front();
+                        }
+
+                        self.cycle_counter += 1;
+                        if self.cycle_counter >= GPU_UPDATE_INTERVAL {
+                            self.cycle_counter = 0;
+
+                            let (display_width, display_height) = self.psx.cpu.mmu.gpu.gp.resolution();
+                            let gp1_status = self.psx.cpu.mmu.gpu.gp.status();
+
+                            self.channel_send
+                                .send(DebuggerEvent::GpuUpdated(GpuState {
+                                    vram_frame: self.psx.cpu.mmu.gpu.internal_frame(),
+                                    vram_width: VRAM_WIDTH,
+                                    vram_height: VRAM_HEIGHT,
+                                    display_frame: self.psx.cpu.mmu.gpu.display_frame(),
+                                    display_width,
+                                    display_height,
+                                    gp1_status,
+                                }))
+                                .expect("Failed to send GPU update event");
+                        }
                     }
-
-                    self.cycle_counter += 1;
-                    if self.cycle_counter >= GPU_UPDATE_INTERVAL {
-                        self.cycle_counter = 0;
-
-                        let (display_width, display_height) = self.psx.cpu.mmu.gpu.gp.resolution();
-                        let gp1_status = self.psx.cpu.mmu.gpu.gp.status();
-
-                        self.channel_send
-                            .send(DebuggerEvent::GpuUpdated(GpuState {
-                                vram_frame: self.psx.cpu.mmu.gpu.internal_frame(),
-                                vram_width: VRAM_WIDTH,
-                                vram_height: VRAM_HEIGHT,
-                                display_frame: self.psx.cpu.mmu.gpu.display_frame(),
-                                display_width,
-                                display_height,
-                                gp1_status,
-                            }))
-                            .expect("Failed to send GPU update event");
+                    Err(_) => {
+                        // If step fails and we're not ignoring errors, stop running
+                        if !self.ignore_errors {
+                            self.is_running = false;
+                            self.channel_send
+                                .send(DebuggerEvent::Pause)
+                                .expect("Failed to send pause event");
+                        }
+                        // Otherwise, just continue to the next iteration
                     }
-                } else {
-                    // If step fails, we stop running
-                    self.is_running = false;
-                    self.channel_send
-                        .send(DebuggerEvent::Pause)
-                        .expect("Failed to send pause event");
                 }
             }
         }
@@ -259,6 +267,9 @@ impl Debugger {
                 }
                 DebuggerEvent::UpdateController(controller_state) => {
                     self.psx.set_controller_state(controller_state);
+                }
+                DebuggerEvent::SetIgnoreErrors(ignore) => {
+                    self.ignore_errors = ignore;
                 }
                 _ => {}
             }

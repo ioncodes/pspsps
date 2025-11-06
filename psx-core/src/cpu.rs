@@ -47,10 +47,13 @@ impl Cpu {
             handler(self);
         }
 
+        let mut failed = false;
+
         if let Some((mut delay_slot, branch_target)) = self.delay_slot.take() {
             if delay_slot.is_invalid() {
                 tracing::error!(target: "psx_core::cpu", pc = %format!("{:08X}", self.pc), "Invalid instruction in delay slot");
-                return Err(());
+                delay_slot = Instruction::nop();
+                failed = true;
             }
 
             tracing::trace!(
@@ -68,13 +71,18 @@ impl Cpu {
 
             self.pc = branch_target; // Set PC to the scheduled branch address
 
-            return Ok(delay_slot);
+            return if failed {
+                Err(())
+            } else {
+                Ok(delay_slot)
+            };
         }
 
-        let instr = Instruction::decode(self.mmu.read_u32(self.pc));
+        let mut instr = Instruction::decode(self.mmu.read_u32(self.pc));
         if instr.is_invalid() {
             tracing::error!(target: "psx_core::cpu", pc = %format!("{:08X}", self.pc), "Invalid instruction");
-            return Err(());
+            instr = Instruction::nop();
+            failed = true;
         }
 
         tracing::trace!(target: "psx_core::cpu", "{:08X}: [{:08X}] {: <30}", self.pc, instr.raw, format!("{}", instr));
@@ -91,7 +99,11 @@ impl Cpu {
             self.pc = self.pc.wrapping_add(4);
         }
 
-        Ok(instr)
+        if failed {
+            Err(())
+        } else {
+            Ok(instr)
+        }
     }
 
     pub fn cause_exception(&mut self, exception: Exception, is_delay_slot: bool) {

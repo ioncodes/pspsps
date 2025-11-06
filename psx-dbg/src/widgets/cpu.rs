@@ -141,6 +141,13 @@ impl Widget for CpuWidget {
                     }
                 }
             }
+
+            if ui.checkbox(&mut context.state.ignore_errors, "Ignore Errors").changed() {
+                context
+                    .channel_send
+                    .send(DebuggerEvent::SetIgnoreErrors(context.state.ignore_errors))
+                    .expect("Failed to send set ignore errors event");
+            }
         });
 
         ui.separator();

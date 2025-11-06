@@ -115,6 +115,21 @@ impl Instruction {
         }
     }
 
+    pub const fn nop() -> Self {
+        static NOP_HANDLER: InstructionHandler =
+            |_: &Instruction, _: &mut Cpu| {
+                // No operation
+            };
+
+        Instruction {
+            opcode: Opcode::ShiftLeftLogical, // Using ShiftLeftLogical opcode to represent NOP
+            raw: 0,
+            opcode_type: InstructionType::RType,
+            handler: NOP_HANDLER,
+            is_delay_slot: false,
+        }
+    }
+
     #[inline(always)]
     pub fn is_branch(&self) -> bool {
         matches!(

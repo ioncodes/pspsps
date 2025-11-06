@@ -3,12 +3,12 @@ pub mod gp;
 pub mod rasterizer;
 pub mod status;
 
-use crate::gpu::cmd::Gp0Command;
 use crate::gpu::cmd::poly::DrawPolygonCommand;
 use crate::gpu::cmd::rect::DrawRectangleCommand;
 use crate::gpu::cmd::tex::{
     DrawModeSettingCommand, DrawingAreaBottomRightCommand, DrawingAreaTopLeftCommand, TextureWindowSettingCommand,
 };
+use crate::gpu::cmd::Gp0Command;
 use crate::gpu::gp::{Gp, ParsedCommand};
 use crate::mmu::bus::Bus32;
 
@@ -122,46 +122,53 @@ impl Gpu {
 
         tracing::debug!(
             target: "psx_core::gpu",
-            x, y, width, height, color = format!("{:08X}", cmd.color()), textured = cmd.textured(), size = %format!("{:02b}", cmd.size() & 0b11), expected_extra_data = outer_cmd.cmd.base_extra_data_count(),
+            x, y, width, height,
+            color = format!("{:08X}", cmd.color()), textured = cmd.textured(),
+            size = %format!("{:02b}", cmd.size() & 0b11), expected_extra_data = outer_cmd.cmd.base_extra_data_count(),
             "Draw rectangle primitive"
         );
 
         // coordinates can be negative, this is relative for primitives that go off-screen
-        // but in case of 1x1 we can ignore them
         if x < 0 || y < 0 {
+            tracing::error!(target: "psx_core::gpu", "Negative coordinates found. Ignoring rectangle.");
             return;
         }
 
-        // extract RGB565 color components
-        let r = (cmd.color() & 0xFF) as u8;
-        let g = ((cmd.color() >> 8) & 0xFF) as u8;
-        let b = ((cmd.color() >> 16) & 0xFF) as u8;
+        if cmd.textured() {
+            let uv = outer_cmd.data[cmd.uv_idx()];
+            rasterizer::rasterize_rectangle();
+        } else {
+            // extract RGB565 color components
+            let r = (cmd.color() & 0xFF) as u8;
+            let g = ((cmd.color() >> 8) & 0xFF) as u8;
+            let b = ((cmd.color() >> 16) & 0xFF) as u8;
 
-        // Convert RGB888 to RGB555
-        let r5 = (r >> 3) & 0x1F;
-        let g5 = (g >> 3) & 0x1F;
-        let b5 = (b >> 3) & 0x1F;
-        let pixel_value = (b5 as u16) << 10 | (g5 as u16) << 5 | (r5 as u16);
+            // Convert RGB888 to RGB555
+            let r5 = (r >> 3) & 0x1F;
+            let g5 = (g >> 3) & 0x1F;
+            let b5 = (b >> 3) & 0x1F;
+            let pixel_value = (b5 as u16) << 10 | (g5 as u16) << 5 | (r5 as u16);
 
-        for row in 0..height {
-            for col in 0..width {
-                let vram_x = x as usize + col as usize;
-                let vram_y = y as usize + row as usize;
+            for row in 0..height {
+                for col in 0..width {
+                    let vram_x = x as usize + col as usize;
+                    let vram_y = y as usize + row as usize;
 
-                // within drawing area?
-                if vram_x < self.drawing_area_x1 as usize
-                    || vram_x >= self.drawing_area_x2 as usize
-                    || vram_y < self.drawing_area_y1 as usize
-                    || vram_y >= self.drawing_area_y2 as usize
-                {
-                    continue;
-                }
+                    // within drawing area?
+                    if vram_x < self.drawing_area_x1 as usize
+                        || vram_x >= self.drawing_area_x2 as usize
+                        || vram_y < self.drawing_area_y1 as usize
+                        || vram_y >= self.drawing_area_y2 as usize
+                    {
+                        continue;
+                    }
 
-                if vram_x < VRAM_WIDTH && vram_y < VRAM_HEIGHT {
-                    let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
-                    let bytes = pixel_value.to_le_bytes();
-                    self.gp.vram[vram_idx] = bytes[0];
-                    self.gp.vram[vram_idx + 1] = bytes[1];
+                    if vram_x < VRAM_WIDTH && vram_y < VRAM_HEIGHT {
+                        let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
+                        let bytes = pixel_value.to_le_bytes();
+                        self.gp.vram[vram_idx] = bytes[0];
+                        self.gp.vram[vram_idx + 1] = bytes[1];
+                    }
                 }
             }
         }

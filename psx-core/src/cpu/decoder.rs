@@ -147,6 +147,7 @@ pub struct Register(u8, bool);
 pub enum Operand {
     Register(Register),
     Immediate(u32),
+    SignedImmediate(i16),
     Address(u32),
     Offset(i32),
     MemoryAddress { offset: i16, base: Register },
@@ -168,7 +169,9 @@ impl std::fmt::Display for Operand {
         match self {
             Operand::Register(reg) => write!(f, "{}", reg),
             Operand::Immediate(imm) => write!(f, "0x{:X}", imm),
+            Operand::SignedImmediate(imm) => write!(f, "{}", imm),
             Operand::Address(addr) => write!(f, "0x{:08X}", addr),
+            Operand::Offset(offset) if *offset >= 0 => write!(f, "+{}", offset),
             Operand::Offset(offset) => write!(f, "{}", offset),
             Operand::MemoryAddress { offset, base } => {
                 write!(f, "0x{:X}({})", offset, base)
@@ -339,9 +342,9 @@ impl Instruction {
                 | Opcode::BranchGreaterEqualZero
                 | Opcode::BranchLessThanZero
                 | Opcode::BranchLessThanZeroAndLink
-                | Opcode::BranchGreaterEqualZeroAndLink => {
-                    Some(Operand::Register(Register(self.rs(), false)))
-                }
+                | Opcode::BranchGreaterEqualZeroAndLink
+                | Opcode::BranchEqual
+                | Opcode::BranchNotEqual => Some(Operand::Register(Register(self.rs(), false))),
                 _ => Some(Operand::Register(Register(self.rt(), false))),
             },
             InstructionType::JType => Some(Operand::Address(self.address() << 2)),
@@ -447,7 +450,7 @@ impl Instruction {
                 | Opcode::BranchLessThanZeroAndLink
                 | Opcode::BranchGreaterEqualZeroAndLink => None,
                 Opcode::BranchEqual | Opcode::BranchNotEqual => {
-                    Some(Operand::Offset((self.immediate() as i16) as i32))
+                    Some(Operand::Offset(((self.offset() as i32) << 2) + 4))
                 }
                 Opcode::LoadByte
                 | Opcode::LoadByteUnsigned
@@ -461,6 +464,11 @@ impl Instruction {
                 | Opcode::StoreWord
                 | Opcode::StoreWordLeft
                 | Opcode::StoreWordRight => None,
+                Opcode::AddImmediateUnsigned
+                | Opcode::AddImmediate
+                | Opcode::SetLessThanImmediate => {
+                    Some(Operand::SignedImmediate(self.immediate() as i16))
+                }
                 _ => Some(Operand::Immediate((self.immediate() as i16) as u32)),
             },
             InstructionType::JType => None,

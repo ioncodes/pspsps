@@ -167,6 +167,8 @@ pub fn branch<
 pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE: bool>(
     instr: &Instruction, cpu: &mut Cpu, _mmu: &mut Mmu,
 ) {
+    // TODO: UNSIGNED = no exception
+
     let x = cpu.registers[instr.rs() as usize];
     let y = if IMMEDIATE {
         instr.immediate() as u32
@@ -180,8 +182,14 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
         AluOperation::And => cpu.registers[dst] = x & y,
         AluOperation::Xor => cpu.registers[dst] = x ^ y,
         AluOperation::Nor => cpu.registers[dst] = !(x | y),
-        AluOperation::Add => cpu.registers[dst] = x.wrapping_add(y),
-        AluOperation::Sub => cpu.registers[dst] = x.wrapping_sub(y),
+        AluOperation::Add if IMMEDIATE => {
+            cpu.registers[dst] = x.wrapping_add_signed(y as i16 as i32)
+        }
+        AluOperation::Add if !IMMEDIATE => cpu.registers[dst] = x.wrapping_add(y),
+        AluOperation::Sub if IMMEDIATE => {
+            cpu.registers[dst] = x.wrapping_sub_signed(y as i16 as i32)
+        }
+        AluOperation::Sub if !IMMEDIATE => cpu.registers[dst] = x.wrapping_sub(y),
         AluOperation::SetLessThan => cpu.registers[dst] = if x < y { 1 } else { 0 },
         _ => todo!(
             "Implement ALU operation: {:?}, unsigned: {}, immediate: {}",

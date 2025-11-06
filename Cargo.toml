@@ -1,3 +1,6 @@
 [workspace]
 resolver = "3"
 members = ["psx-core", "psx-dbg"]
+
+[profile.release]
+lto = "fat"

@@ -1,6 +1,7 @@
 pub mod cop;
 pub mod decoder;
 pub mod handlers;
+mod hooks;
 pub mod lut;
 
 use colored::Colorize;
@@ -36,8 +37,14 @@ impl Cpu {
 
     #[inline(always)]
     pub fn tick(&mut self, mmu: &mut Mmu) {
+        if hooks::HOOKS.contains_key(&self.pc) {
+            tracing::trace!(target: "psx_core::cpu", "Executing hook at PC: {:08X}", self.pc);
+            let handler = hooks::HOOKS.get(&self.pc).unwrap();
+            handler(self, mmu);
+        }
+
         if let Some((delay_slot, branch_target)) = self.delay_slot.take() {
-            tracing::debug!(
+            tracing::trace!(
                 target: "psx_core::cpu", 
                 "{}", 
                 format!("Executing delay slot instruction: {}, with branch target: {:08X}", delay_slot, branch_target).yellow());

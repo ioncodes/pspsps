@@ -57,7 +57,6 @@ const TraceLoader = ({ onTraceLoad }) => {
             type="file"
             accept=".json"
             onChange={handleFileLoad}
-            disabled={isLoading}
             className="file-input file-input-bordered w-full max-w-xs"
           />
         </div>

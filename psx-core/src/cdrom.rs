@@ -1,17 +1,30 @@
 pub mod irq;
 pub mod reg;
 
-use proc_bitfield::with_bits;
 use crate::cdrom::irq::DiskIrq;
 use crate::cdrom::reg::{
-    AddressRegister, AdpCtlRegister, HClrCtl, HIntMaskRegister, HIntSts, StatusCode, REG_ADDRESS_ADDR, REG_ADPCTL_ADDR, REG_COMMAND_ADDR, REG_HCLRCTL_ADDR, REG_HINTMSK_ADDR_R, REG_HINTMSK_ADDR_W, REG_HINTSTS_ADDR, REG_HSTS_ADDR, REG_PARAMETER_ADDR, REG_RESULT_ADDR
+    AddressRegister, AdpCtlRegister, HClrCtl, HIntMaskRegister, HIntSts, REG_ADDRESS_ADDR, REG_ADPCTL_ADDR,
+    REG_COMMAND_ADDR, REG_HCLRCTL_ADDR, REG_HINTMSK_ADDR_R, REG_HINTMSK_ADDR_W, REG_HINTSTS_ADDR, REG_HSTS_ADDR,
+    REG_PARAMETER_ADDR, REG_RESULT_ADDR, StatusCode,
 };
 use crate::mmu::bus::Bus8;
+use proc_bitfield::with_bits;
 use std::collections::VecDeque;
 
 crate::define_addr!(CDROM_ADDR, 0x1F80_1800, 0, 0x04, 0x04);
 
-pub const CYCLE_DELAY: usize = 1000; // TODO: just a random stub
+// CDROM timing constants from PSX-SPX "CDROM - Response Timings"
+pub const FIRST_RESP_GENERIC_DELAY: usize = 0x000c4e1;
+pub const FIRST_RESP_INIT_DELAY: usize = 0x0013cce;
+pub const SECOND_RESP_GETID_DELAY: usize = 0x0004a00;
+pub const SECOND_RESP_PAUSE_DELAY: usize = 0x021181c;
+pub const SECOND_RESP_STOP_DELAY: usize = 0x0d38aca;
+
+struct PendingInterrupt {
+    irq: DiskIrq,
+    response: Vec<u8>,
+    cycles_until_fire: usize,
+}
 
 pub struct Cdrom {
     cdrom_cue: Vec<u8>,
@@ -23,8 +36,7 @@ pub struct Cdrom {
     hintsts: HIntSts,
     parameter_fifo: VecDeque<u8>,
     result_fifo: VecDeque<u8>,
-    pending_command: Option<u8>,
-    cycles: usize,
+    interrupt_queue: VecDeque<PendingInterrupt>,
 }
 
 impl Cdrom {
@@ -39,40 +51,49 @@ impl Cdrom {
             hintsts: HIntSts(0),
             parameter_fifo: VecDeque::new(),
             result_fifo: VecDeque::new(),
-            pending_command: None,
-            cycles: 0,
+            interrupt_queue: VecDeque::new(),
         }
     }
 
     pub fn tick(&mut self, cycles: usize) {
         self.address.set_parameter_empty(self.parameter_fifo.is_empty());
         self.address.set_parameter_write_ready(self.parameter_fifo.len() < 16);
-        self.cycles += cycles;
 
-        if self.cycles >= CYCLE_DELAY {
-            self.cycles -= CYCLE_DELAY;
+        // Process pending interrupts
+        // Only process the first interrupt if no interrupt is currently active
+        if self.hintsts.irq_flags() == DiskIrq::NoIrq {
+            if let Some(pending) = self.interrupt_queue.front_mut() {
+                if pending.cycles_until_fire <= cycles {
+                    // Time to fire this interrupt
+                    let pending = self.interrupt_queue.pop_front().unwrap();
 
-            if let Some(command) = self.pending_command.take() {
-                tracing::debug!(
-                    target: "psx_core::cdrom",
-                    command = format!("{:02X}", command),
-                    "CDROM command completed",
-                );
+                    tracing::debug!(
+                        target: "psx_core::cdrom",
+                        irq = %pending.irq,
+                        response = ?pending.response,
+                        "Triggering CDROM interrupt",
+                    );
 
-                self.parameter_fifo.clear();
-                self.address.set_busy_status(false);
-                self.address.set_data_request(true);
-                self.address.set_result_read_ready(true);
+                    // Populate result FIFO with response data
+                    for byte in pending.response {
+                        self.result_fifo.push_back(byte);
+                    }
 
-                self.trigger_irq(DiskIrq::CommandCompleted);
+                    // Clear BUSY and set result ready flags
+                    self.address.set_busy_status(false);
+                    self.address.set_data_request(true);
+                    self.address.set_result_read_ready(true);
+
+                    // Trigger the interrupt
+                    self.trigger_irq(pending.irq);
+                } else {
+                    // Decrement the cycle counter
+                    pending.cycles_until_fire -= cycles;
+                }
             }
         }
     }
 
-    // TODO: interrupts can be queued??
-    // "The response interrupts are queued, for example, if the 1st response is INT3, and the second INT5,
-    // then INT3 is delivered first, and INT5 is not delivered until INT3 is acknowledged
-    // (ie. the response interrupts are NOT ORed together to produce INT7 or so)."
     pub fn check_and_clear_irq(&mut self) -> bool {
         let irq = self.hintsts.irq_flags();
         if irq != DiskIrq::NoIrq && self.hintmsk.enable_irq_on_intsts() & irq as u8 != 0 {
@@ -80,6 +101,14 @@ impl Cdrom {
         }
 
         false
+    }
+
+    fn queue_interrupt(&mut self, irq: DiskIrq, response: Vec<u8>, delay_cycles: usize) {
+        self.interrupt_queue.push_back(PendingInterrupt {
+            irq,
+            response,
+            cycles_until_fire: delay_cycles,
+        });
     }
 
     pub fn insert_disk(&mut self, cue: Vec<u8>, bin: Vec<u8>) {
@@ -94,12 +123,14 @@ impl Cdrom {
     }
 
     fn execute_command(&mut self, command: u8) {
+        // Set BUSY flag immediately when command is received
+        self.address.set_busy_status(true);
+
         match command {
-            // 0x01 	Nop 		INT3: status
+            // 0x01 	GetStat 	INT3: status
             0x01 => {
-                self.pending_command = Some(command);
-                self.send_status(&[]);
-                self.trigger_irq(DiskIrq::CommandAcknowledged);
+                let status = self.status();
+                self.queue_interrupt(DiskIrq::CommandAcknowledged, vec![status.0], FIRST_RESP_GENERIC_DELAY);
             }
             // 0x19 	Test * 	sub, ... 	INT3: ...
             0x19 => {
@@ -115,18 +146,35 @@ impl Cdrom {
             }
         }
 
-        self.address.set_busy_status(true);
+        // Clear parameter FIFO after processing command
+        self.parameter_fifo.clear();
     }
 
     fn execute_subcommand(&mut self, subcommand: u8) {
         match subcommand {
             // 20h      -   INT3(yy,mm,dd,ver) ;Get cdrom BIOS date/version (yy,mm,dd,ver)
             0x20 => {
-                self.result_fifo.push_back(0x69); // year
-                self.result_fifo.push_back(0x69); // month
-                self.result_fifo.push_back(0x69); // day
-                self.result_fifo.push_back(0x69); // version
-                self.trigger_irq(DiskIrq::CommandAcknowledged);
+                // (unknown)        ;DTL-H2000 (with SPC700 instead HC05)
+                // 94h,09h,19h,C0h  ;PSX (PU-7)               19 Sep 1994, version vC0 (a)
+                // 94h,11h,18h,C0h  ;PSX (PU-7)               18 Nov 1994, version vC0 (b)
+                // 94h,11h,28h,01h  ;PSX (DTL-H2000)          28 Nov 1994, version v01 (debug)
+                // 95h,05h,16h,C1h  ;PSX (LATE-PU-8)          16 May 1995, version vC1 (a)
+                // 95h,07h,24h,C1h  ;PSX (LATE-PU-8)          24 Jul 1995, version vC1 (b)
+                // 95h,07h,24h,D1h  ;PSX (LATE-PU-8,debug ver)24 Jul 1995, version vD1 (debug)
+                // 96h,08h,15h,C2h  ;PSX (PU-16, Video CD)    15 Aug 1996, version vC2 (VCD)
+                // 96h,08h,18h,C1h  ;PSX (LATE-PU-8,yaroze)   18 Aug 1996, version vC1 (yaroze)
+                // 96h,09h,12h,C2h  ;PSX (PU-18) (japan)      12 Sep 1996, version vC2 (a.jap)
+                // 97h,01h,10h,C2h  ;PSX (PU-18) (us/eur)     10 Jan 1997, version vC2 (a)
+                // 97h,08h,14h,C2h  ;PSX (PU-20)              14 Aug 1997, version vC2 (b)
+                // 98h,06h,10h,C3h  ;PSX (PU-22)              10 Jun 1998, version vC3 (a)
+                // 99h,02h,01h,C3h  ;PSX/PSone (PU-23, PM-41) 01 Feb 1999, version vC3 (b)
+                // A1h,03h,06h,C3h  ;PSone/late (PM-41(2))    06 Jun 2001, version vC3 (c)
+                // (unknown)        ;PS2,   xx xxx xxxx, late PS2 models...?
+                self.queue_interrupt(
+                    DiskIrq::CommandAcknowledged,
+                    vec![0x94, 0x09, 0x19, 0xC0], // Sept 19, 1994, version vC0 (a)
+                    FIRST_RESP_GENERIC_DELAY,
+                );
             }
             _ => {
                 tracing::error!(
@@ -145,16 +193,10 @@ impl Cdrom {
 
     fn status(&mut self) -> StatusCode {
         let mut status = StatusCode(0);
-        status.set_shell_open(self.cdrom_cue.is_empty());
+        let has_disc = !self.cdrom_cue.is_empty();
+        status.set_shell_open(!has_disc);
+        status.set_spindle_motor(has_disc); // Motor on when disc is present
         status
-    }
-
-    fn send_status(&mut self, additional_codes: &[u8]) {
-        let status = self.status();
-        self.result_fifo.push_back(status.0);
-        for &param in additional_codes {
-            self.result_fifo.push_back(param);
-        }
     }
 }
 
@@ -243,7 +285,7 @@ impl Bus8 for Cdrom {
                 self.execute_command(value);
             }
             REG_HCLRCTL_ADDR if self.address.current_bank() == 1 => {
-                // clear specified IRQ flags
+                // Clear specified IRQ flags
                 let old_flags: u8 = self.hintsts.irq_flags().into();
                 self.hintsts.set_irq_flags((old_flags & !value).into());
 

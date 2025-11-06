@@ -20,6 +20,10 @@ impl Gpu {
         Self { gp: Gp::new(), internal_frame: vec![(0, 0, 0); 256 * 240] }
     }
 
+    pub fn internal_frame(&self) -> &Vec<(u8, u8, u8)> {
+        &self.internal_frame
+    }
+
     pub fn tick(&mut self) {
         if let Some(parsed_cmd) = self.gp.pop_command() {
             match parsed_cmd.cmd {

@@ -21,6 +21,7 @@ export default function TraceViewer({ traces, total, isCountLoading, page, limit
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedTrace, setSelectedTrace] = useState<Trace | null>(null)
+  const [jumpToPage, setJumpToPage] = useState('')
 
   const totalPages = Math.ceil(total / pageSize)
   const startIndex = (page - 1) * pageSize
@@ -46,6 +47,14 @@ export default function TraceViewer({ traces, total, isCountLoading, page, limit
   const handleTraceClick = (trace: Trace) => {
     setSelectedTrace(trace)
     setIsModalOpen(true)
+  }
+
+  const handleJumpToPage = () => {
+    const pageNum = parseInt(jumpToPage)
+    if (!isNaN(pageNum) && pageNum >= 1 && pageNum <= totalPages) {
+      handlePageChange(pageNum)
+      setJumpToPage('')
+    }
   }
 
   return (
@@ -102,50 +111,68 @@ export default function TraceViewer({ traces, total, isCountLoading, page, limit
             </div>
 
             {(totalPages > 1 || isLoadingMore) && (
-              <div className="flex justify-center mt-6">
+              <div className="flex justify-center items-center gap-2 mt-6">
                 {isLoadingMore ? (
                   <span className="loading loading-spinner loading-md"></span>
                 ) : (
-                  <div className="join">
+                  <>
                     <button
-                      className="join-item btn"
+                      className="btn btn-sm"
                       disabled={page === 1}
-                      onClick={() => handlePageChange(page - 1)}
+                      onClick={() => handlePageChange(1)}
+                      title="First page"
                     >
-                      «
+                      ««
                     </button>
+                    <div className="join">
+                      <button
+                        className="join-item btn"
+                        disabled={page === 1}
+                        onClick={() => handlePageChange(page - 1)}
+                      >
+                        «
+                      </button>
 
-                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                      let pageNum
-                      if (totalPages <= 5) {
-                        pageNum = i + 1
-                      } else if (page <= 3) {
-                        pageNum = i + 1
-                      } else if (page >= totalPages - 2) {
-                        pageNum = totalPages - 4 + i
-                      } else {
-                        pageNum = page - 2 + i
-                      }
+                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        let pageNum
+                        if (totalPages <= 5) {
+                          pageNum = i + 1
+                        } else if (page <= 3) {
+                          pageNum = i + 1
+                        } else if (page >= totalPages - 2) {
+                          pageNum = totalPages - 4 + i
+                        } else {
+                          pageNum = page - 2 + i
+                        }
 
-                      return (
-                        <button
-                          key={pageNum}
-                          className={`join-item btn ${page === pageNum ? 'btn-active' : ''}`}
-                          onClick={() => handlePageChange(pageNum)}
-                        >
-                          {pageNum}
-                        </button>
-                      )
-                    })}
+                        return (
+                          <button
+                            key={pageNum}
+                            className={`join-item btn ${page === pageNum ? 'btn-active' : ''}`}
+                            onClick={() => handlePageChange(pageNum)}
+                          >
+                            {pageNum}
+                          </button>
+                        )
+                      })}
 
+                      <button
+                        className="join-item btn"
+                        disabled={page === totalPages}
+                        onClick={() => handlePageChange(page + 1)}
+                      >
+                        »
+                      </button>
+                    </div>
                     <button
-                      className="join-item btn"
+                      className="btn btn-sm"
                       disabled={page === totalPages}
-                      onClick={() => handlePageChange(page + 1)}
+                      onClick={() => handlePageChange(totalPages)}
+                      title="Last page"
                     >
-                      »
+                      »»
                     </button>
-                  </div>
+                  </>
                 )}
               </div>
             )}
@@ -153,6 +180,33 @@ export default function TraceViewer({ traces, total, isCountLoading, page, limit
             <div className="text-center text-sm text-base-content/70 mt-4">
               Showing {startIndex + 1}-{endIndex} of {total} entries
             </div>
+
+            {totalPages > 1 && (
+              <div className="flex justify-center items-center gap-2 mt-4">
+                <span className="text-sm">Jump to page:</span>
+                <input
+                  type="number"
+                  min="1"
+                  max={totalPages}
+                  placeholder="Page #"
+                  className="input input-bordered input-sm w-24"
+                  value={jumpToPage}
+                  onChange={(e) => setJumpToPage(e.target.value)}
+                  onKeyUp={(e) => {
+                    if (e.key === 'Enter') {
+                      handleJumpToPage()
+                    }
+                  }}
+                />
+                <button
+                  className="btn btn-sm btn-primary"
+                  onClick={handleJumpToPage}
+                  disabled={!jumpToPage || isLoadingMore}
+                >
+                  Go
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>

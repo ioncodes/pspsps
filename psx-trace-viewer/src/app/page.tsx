@@ -24,12 +24,22 @@ export default function Home() {
       })
 
       if (filters.level) params.append('level', filters.level)
+      if (filters.levelMode) params.append('levelMode', filters.levelMode)
       if (filters.target) params.append('target', filters.target)
+      if (filters.targetMode) params.append('targetMode', filters.targetMode)
       if (filters.search) params.append('search', filters.search)
+      if (filters.searchMode) params.append('searchMode', filters.searchMode)
 
       Object.entries(filters).forEach(([key, value]) => {
-        if (value && !['level', 'target', 'search'].includes(key)) {
-          params.append(`field_${key}`, value)
+        if (value && !['level', 'target', 'search', 'levelMode', 'targetMode', 'searchMode'].includes(key)) {
+          if (key.endsWith('Mode')) {
+            // This is a field mode parameter
+            const fieldName = key.substring(0, key.length - 4)
+            params.append(`field_${fieldName}Mode`, value)
+          } else {
+            // This is a field filter value
+            params.append(`field_${key}`, value)
+          }
         }
       })
 

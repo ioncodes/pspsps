@@ -99,6 +99,11 @@ impl Cpu {
 
         self.exception_raised = true;
 
+        // Clear the delay slot if the exception occurred in one
+        if is_delay_slot {
+            self.delay_slot = None;
+        }
+
         // Set the EPC to the current PC or PC - 4 if in a branch delay slot
         self.cop0.cause.set_branch_delay(is_delay_slot);
         self.cop0.cause.set_branch_taken(false); // TODO: do we have to emulate this? it's easy we can just set a flag in handlers
@@ -156,7 +161,8 @@ impl Cpu {
         let pending = i_stat & i_mask;
 
         if pending != 0 {
-            self.cause_exception(Exception::External, false);
+            let in_delay_slot = self.delay_slot.is_some();
+            self.cause_exception(Exception::External, in_delay_slot);
         }
     }
 

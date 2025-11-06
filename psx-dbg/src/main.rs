@@ -1,12 +1,13 @@
+mod debugger;
+mod io;
+mod states;
 mod widgets;
 
 use clap::Parser;
 use eframe::egui;
 use egui_dock::{DockArea, DockState};
 use egui_toast::{Toast, ToastKind, Toasts};
-use psx_core::cpu::decoder::Instruction;
-use psx_core::psx::Psx;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::HashMap;
 use std::time::Duration;
 use tracing_subscriber::Layer as _;
 use tracing_subscriber::layer::SubscriberExt as _;
@@ -15,7 +16,8 @@ use widgets::{
     BreakpointsWidget, CpuWidget, MmuWidget, SharedContext, TraceWidget, TtyWidget, Widget,
 };
 
-static BIOS: &[u8] = include_bytes!("../../bios/SCPH1000.BIN");
+use crate::debugger::Debugger;
+use crate::io::DebuggerEvent;
 
 #[derive(Parser, Debug)]
 #[command(about = "pspsps - a cute psx debugger", long_about = None)]
@@ -55,15 +57,13 @@ impl std::fmt::Display for TabKind {
 }
 
 pub struct PsxDebugger {
-    psx: Psx,
-    is_running: bool,
+    psx_thread: std::thread::JoinHandle<()>,
+    channel_send: crossbeam_channel::Sender<DebuggerEvent>,
+    channel_recv: crossbeam_channel::Receiver<DebuggerEvent>,
+    state: states::State,
     dock_state: DockState<TabKind>,
-    breakpoints: HashSet<u32>,
-    breakpoint_hit: bool,
     widgets: HashMap<TabKind, Box<dyn Widget>>,
-    show_in_disassembly: Option<u32>,
     toasts: Toasts,
-    trace_buffer: VecDeque<(u32, Instruction)>,
 }
 
 impl Default for PsxDebugger {
@@ -93,92 +93,129 @@ impl PsxDebugger {
         widgets.insert(TabKind::Breakpoints, Box::new(BreakpointsWidget::new()));
         widgets.insert(TabKind::Tty, Box::new(TtyWidget::new()));
 
-        let mut psx = Psx::new(BIOS);
+        let (request_channel_send, request_channel_recv) = crossbeam_channel::unbounded();
+        let (response_channel_send, response_channel_recv) = crossbeam_channel::unbounded();
 
-        // Sideload EXE if provided
-        if let Some(file_path) = sideload_file {
-            match std::fs::read(&file_path) {
-                Ok(exe_data) => psx.sideload_exe(exe_data),
-                Err(e) => panic!("Failed to read EXE file {}: {}", file_path, e),
+        let thread = std::thread::spawn(move || {
+            let mut debugger = Debugger::new(response_channel_send, request_channel_recv);
+
+            // Sideload EXE if provided
+            if let Some(file_path) = sideload_file {
+                match std::fs::read(&file_path) {
+                    Ok(exe_data) => debugger.psx.sideload_exe(exe_data),
+                    Err(e) => panic!("Failed to read EXE file {}: {}", file_path, e),
+                }
             }
-        }
+
+            debugger.run();
+        });
+
+        request_channel_send
+            .send(DebuggerEvent::UpdateMmu)
+            .expect("Failed to send initial MMU update request");
 
         Self {
-            psx,
-            is_running: false,
+            psx_thread: thread,
+            channel_send: request_channel_send,
+            channel_recv: response_channel_recv,
             dock_state,
-            breakpoints: HashSet::new(),
-            breakpoint_hit: false,
             widgets,
-            show_in_disassembly: None,
+            state: states::State::new(),
             toasts: Toasts::new()
                 .anchor(egui::Align2::RIGHT_BOTTOM, (-10.0, -10.0))
                 .direction(egui::Direction::BottomUp),
-            trace_buffer: VecDeque::new(),
         }
     }
 }
 
 impl eframe::App for PsxDebugger {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if self.is_running && !self.breakpoint_hit {
-            for _ in 0..1000 {
-                if self.breakpoints.contains(&self.psx.cpu.pc) {
-                    self.breakpoint_hit = true;
-                    self.is_running = false;
+        while let Ok(event) = self.channel_recv.try_recv() {
+            match event {
+                DebuggerEvent::BreakpointHit(addr) => {
+                    self.state.is_running = false;
 
                     self.toasts.add(Toast {
-                        text: format!("Breakpoint hit at {:08X}", self.psx.cpu.pc).into(),
+                        text: format!("Breakpoint hit at {:08X}", addr).into(),
                         kind: ToastKind::Info,
                         options: egui_toast::ToastOptions::default()
                             .duration(Some(Duration::from_secs(3))),
                         style: Default::default(),
                     });
-
-                    break;
                 }
-
-                let pc_before = self.psx.cpu.pc;
-                if let Ok(instruction) = self.psx.step() {
-                    // Add to trace buffer with limit of 1000
-                    if self.trace_buffer.len() >= 1000 {
-                        self.trace_buffer.pop_front();
-                    }
-                    self.trace_buffer.push_back((pc_before, instruction));
-                } else {
-                    self.is_running = false;
-                    break;
+                DebuggerEvent::TraceUpdated(state) => {
+                    self.state.trace = state;
                 }
+                DebuggerEvent::CpuUpdated(state) => {
+                    self.state.cpu = state;
+                }
+                DebuggerEvent::MmuUpdated(state) => {
+                    self.state.mmu = state;
+                }
+                DebuggerEvent::BreakpointsUpdated(state) => {
+                    self.state.breakpoints = state;
+                }
+                DebuggerEvent::TtyUpdated(state) => {
+                    self.state.tty = state;
+                }
+                DebuggerEvent::Paused => {
+                    self.state.is_running = false;
+                    self.toasts.add(Toast {
+                        text: "Debugger paused".into(),
+                        kind: ToastKind::Info,
+                        options: egui_toast::ToastOptions::default()
+                            .duration(Some(Duration::from_secs(3))),
+                        style: Default::default(),
+                    });
+                }
+                DebuggerEvent::Unpaused => {
+                    self.state.is_running = true;
+                    self.toasts.add(Toast {
+                        text: "Debugger running".into(),
+                        kind: ToastKind::Info,
+                        options: egui_toast::ToastOptions::default()
+                            .duration(Some(Duration::from_secs(3))),
+                        style: Default::default(),
+                    });
+                }
+                _ => {}
             }
-
-            ctx.request_repaint();
         }
 
+        self.channel_send
+            .send(DebuggerEvent::UpdateCpu)
+            .expect("Failed to send update CPU event");
+        self.channel_send
+            .send(DebuggerEvent::UpdateTty)
+            .expect("Failed to send update TTY event");
+        self.channel_send
+            .send(DebuggerEvent::UpdateTrace)
+            .expect("Failed to send update Trace event");
+
         let mut tab_viewer = TabViewer {
-            psx: &mut self.psx,
-            is_running: &mut self.is_running,
-            breakpoints: &mut self.breakpoints,
-            breakpoint_hit: &mut self.breakpoint_hit,
+            psx_thread: &mut self.psx_thread,
+            channel_send: &self.channel_send,
+            channel_recv: &self.channel_recv,
             widgets: &mut self.widgets,
-            show_in_disassembly: &mut self.show_in_disassembly,
-            trace_buffer: &mut self.trace_buffer,
             toasts: &mut self.toasts,
+            state: &mut self.state,
         };
 
         DockArea::new(&mut self.dock_state).show(ctx, &mut tab_viewer);
+
         self.toasts.show(ctx);
+
+        ctx.request_repaint_after(Duration::from_millis(16));
     }
 }
 
 struct TabViewer<'a> {
-    psx: &'a mut Psx,
-    is_running: &'a mut bool,
-    breakpoints: &'a mut HashSet<u32>,
-    breakpoint_hit: &'a mut bool,
+    psx_thread: &'a mut std::thread::JoinHandle<()>,
+    channel_send: &'a crossbeam_channel::Sender<DebuggerEvent>,
+    channel_recv: &'a crossbeam_channel::Receiver<DebuggerEvent>,
     widgets: &'a mut HashMap<TabKind, Box<dyn Widget>>,
-    show_in_disassembly: &'a mut Option<u32>,
-    trace_buffer: &'a mut VecDeque<(u32, Instruction)>,
     toasts: &'a mut Toasts,
+    state: &'a mut states::State,
 }
 
 impl<'a> egui_dock::TabViewer for TabViewer<'a> {
@@ -195,12 +232,8 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
     fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
         if let Some(widget) = self.widgets.get_mut(tab) {
             let mut context = SharedContext {
-                psx: self.psx,
-                is_running: self.is_running,
-                breakpoints: self.breakpoints,
-                breakpoint_hit: self.breakpoint_hit,
-                show_in_disassembly: self.show_in_disassembly,
-                trace_buffer: self.trace_buffer,
+                channel_send: self.channel_send,
+                state: self.state,
                 toasts: self.toasts,
             };
             widget.ui(ui, &mut context);

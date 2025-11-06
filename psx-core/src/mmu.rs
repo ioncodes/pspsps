@@ -18,10 +18,12 @@ impl Mmu {
             self.write_u8(address + i as u32, byte);
         }
     }
+}
 
+impl Addressable for Mmu {
     #[inline(always)]
-    pub fn read_u8(&self, address: u32) -> u8 {
-        let address = Self::canonicalize_address(address);
+    fn read_u8(&self, address: u32) -> u8 {
+        let address = Self::canonicalize_virtual_address(address);
 
         match address {
             0x1F80_1D80..=0x1F80_1DBB => self.spu.read(address), // TODO: not complete
@@ -34,14 +36,31 @@ impl Mmu {
     }
 
     #[inline(always)]
-    pub fn read_u16(&self, address: u32) -> u16 {
-        let address = Self::canonicalize_address(address);
+    fn write_u8(&mut self, address: u32, value: u8) {
+        tracing::trace!(target: "psx_core::mmu", "write_u8({:08X}, {:02X})", address, value);
+
+        let address = Self::canonicalize_virtual_address(address);
+        match address {
+            0x1F80_1D80..=0x1F80_1DBB => self.spu.write(address, value),
+            0x1F80_1000..=0x1F80_1FFF => {
+                tracing::error!(target: "psx_core::mmu", "Writing {:02X} to unimplemented I/O port: {:08X}", value, address);
+            }
+            _ => self.memory[address as usize] = value,
+        }
+    }
+}
+
+pub trait Addressable {
+    fn read_u8(&self, address: u32) -> u8;
+    fn write_u8(&mut self, address: u32, value: u8);
+
+    #[inline(always)]
+    fn read_u16(&self, address: u32) -> u16 {
         u16::from_le_bytes([self.read_u8(address), self.read_u8(address + 1)])
     }
 
     #[inline(always)]
-    pub fn read_u32(&self, address: u32) -> u32 {
-        let address = Self::canonicalize_address(address);
+    fn read_u32(&self, address: u32) -> u32 {
         u32::from_le_bytes([
             self.read_u8(address),
             self.read_u8(address + 1),
@@ -51,33 +70,13 @@ impl Mmu {
     }
 
     #[inline(always)]
-    pub fn write_u8(&mut self, address: u32, value: u8) {
-        tracing::trace!(target: "psx_core::mmu", "write_u8({:08X}, {:02X})", address, value);
-
-        let address = Self::canonicalize_address(address);
-        match address {
-            0x1F80_1D80..=0x1F80_1DBB => self.spu.write(address, value),
-            0x1F80_1000..=0x1F80_1FFF => {
-                tracing::error!(target: "psx_core::mmu", "Writing {:02X} to unimplemented I/O port: {:08X}", value, address);
-            }
-            _ => self.memory[address as usize] = value,
-        }
-    }
-
-    #[inline(always)]
-    pub fn write_u16(&mut self, address: u32, value: u16) {
-        tracing::trace!(target: "psx_core::mmu", "write_u16({:08X}, {:04X})", address, value);
-
-        let address = Self::canonicalize_address(address);
+    fn write_u16(&mut self, address: u32, value: u16) {
         self.write_u8(address, (value & 0xFF) as u8);
         self.write_u8(address + 1, ((value >> 8) & 0xFF) as u8);
     }
 
     #[inline(always)]
-    pub fn write_u32(&mut self, address: u32, value: u32) {
-        tracing::trace!(target: "psx_core::mmu", "write_u32({:08X}, {:08X})", address, value);
-
-        let address = Self::canonicalize_address(address);
+    fn write_u32(&mut self, address: u32, value: u32) {
         self.write_u8(address, (value & 0xFF) as u8);
         self.write_u8(address + 1, ((value >> 8) & 0xFF) as u8);
         self.write_u8(address + 2, ((value >> 16) & 0xFF) as u8);
@@ -85,7 +84,7 @@ impl Mmu {
     }
 
     #[inline(always)]
-    pub(crate) const fn canonicalize_address(address: u32) -> u32 {
+    fn canonicalize_virtual_address(address: u32) -> u32 {
         // A0000000h -> 80000000h -> 00000000h
         // BF000000h -> 9F000000h -> 1F000000h
         address & 0x5FFF_FFFF

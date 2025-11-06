@@ -23,6 +23,7 @@ pub const COP0_EXCEPTION_CODE_BREAK: u32 = 9; // Breakpoint
 pub const COP0_EXCEPTION_CODE_RI: u32 = 10; // Reserved Instruction
 pub const COP0_EXCEPTION_CODE_OV: u32 = 12; // Arithmetic Overflow
 
+#[derive(Clone, Copy)]
 pub struct Cop0 {
     pub bpc: u32,             // Breakpoint Program Counter
     pub bda: u32,             // Breakpoint Data Address

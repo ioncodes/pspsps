@@ -7,7 +7,6 @@ pub mod lut;
 use crate::cpu::cop::cop0::{Cop0, Exception};
 use crate::cpu::decoder::Instruction;
 use crate::mmu::{Addressable, Mmu};
-use colored::Colorize;
 
 type RegisterValue = u32;
 type RegisterIndex = usize;
@@ -46,14 +45,16 @@ impl Cpu {
 
         if let Some((mut delay_slot, branch_target)) = self.delay_slot.take() {
             if delay_slot.is_invalid() {
-                tracing::error!(target: "psx_core::cpu", "Invalid instruction in delay slot at {:08X}", self.pc);
+                tracing::error!(target: "psx_core::cpu", pc = %format!("{:08X}", self.pc), "Invalid instruction in delay slot");
                 return Err(());
             }
 
             tracing::trace!(
-                target: "psx_core::cpu", 
-                "{}", 
-                format!("Executing delay slot instruction: {}, with branch target: {:08X}", delay_slot, branch_target).yellow());
+                target: "psx_core::cpu",
+                instruction = %format!("{}", delay_slot),
+                brach_target = %format!("{:08X}", branch_target),
+                "Executing delay slot instruction"
+            );
 
             delay_slot.is_delay_slot = true; // Mark as a delay slot instruction
             (delay_slot.handler)(&delay_slot, self);
@@ -65,7 +66,7 @@ impl Cpu {
 
         let instr = Instruction::decode(self.mmu.read_u32(self.pc));
         if instr.is_invalid() {
-            tracing::error!(target: "psx_core::cpu", "Invalid instruction at {:08X}", self.pc);
+            tracing::error!(target: "psx_core::cpu", pc = %format!("{:08X}", self.pc), "Invalid instruction");
             return Err(());
         }
 

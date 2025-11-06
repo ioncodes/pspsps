@@ -1,12 +1,12 @@
 use crate::cpu::{Cpu, lut};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock};
 
 type HookHandler = fn(&mut Cpu);
 
 static HOOKS: OnceLock<HashMap<u32, HookHandler>> = OnceLock::new();
-static TTY_BUFFER: OnceLock<Arc<Mutex<String>>> = OnceLock::new();
-static TTY_LINE_BUFFER: OnceLock<Arc<Mutex<String>>> = OnceLock::new();
+static TTY_BUFFER: OnceLock<Mutex<String>> = OnceLock::new();
+static TTY_LINE_BUFFER: OnceLock<Mutex<String>> = OnceLock::new();
 
 pub fn cpu_hooks() -> &'static HashMap<u32, HookHandler> {
     HOOKS.get_or_init(|| {
@@ -22,16 +22,12 @@ pub fn cpu_hooks() -> &'static HashMap<u32, HookHandler> {
     })
 }
 
-pub fn tty_buffer() -> Arc<Mutex<String>> {
-    TTY_BUFFER
-        .get_or_init(|| Arc::new(Mutex::new(String::new())))
-        .clone()
+pub fn tty_buffer() -> &'static Mutex<String> {
+    TTY_BUFFER.get_or_init(|| Mutex::new(String::new()))
 }
 
-pub fn tty_line_buffer() -> Arc<Mutex<String>> {
-    TTY_LINE_BUFFER
-        .get_or_init(|| Arc::new(Mutex::new(String::new())))
-        .clone()
+pub fn tty_line_buffer() -> &'static Mutex<String> {
+    TTY_LINE_BUFFER.get_or_init(|| Mutex::new(String::new()))
 }
 
 fn bios_putchar(cpu: &mut Cpu) {
@@ -40,9 +36,9 @@ fn bios_putchar(cpu: &mut Cpu) {
     tty_buffer().lock().unwrap().push(value);
 
     if value == '\n' {
-        let line = tty_line_buffer().lock().unwrap().clone();
-        tracing::info!(target: "psx_core::tty", "{}", line);
-        tty_line_buffer().lock().unwrap().clear();
+        let mut line_buffer = tty_line_buffer().lock().unwrap();
+        tracing::info!(target: "psx_core::tty", "{}", line_buffer);
+        line_buffer.clear();
     } else {
         tty_line_buffer().lock().unwrap().push(value);
     }

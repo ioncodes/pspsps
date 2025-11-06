@@ -163,6 +163,12 @@ pub fn branch<
         }
 
         cpu.set_delay_slot(branch_target);
+    } else {
+        // If the branch is not taken, we still need to set the delay slot
+        // to the next instruction, which is PC + 4
+        // with the branch target being PC + 8 (the instruction after the delay slot)
+        // TODO: Verify if this is correct and does not cause weird side effects with the debugger or something
+        cpu.set_delay_slot(cpu.pc + 8);
     }
 }
 

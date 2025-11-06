@@ -378,6 +378,10 @@ impl Cdrom {
             0x02 => {
                 self.execute_setloc();
             }
+            // Stop - Command 08h --> INT3(stat) --> INT2(stat)
+            0x08 => {
+                self.execute_stop();
+            }
             // Init - Command 0Ah --> INT3(stat late) --> INT2(stat)
             0x0A => {
                 self.execute_init();
@@ -665,6 +669,35 @@ impl Cdrom {
             DiskIrq::CommandCompleted,
             vec![status_after.0],
             SECOND_RESP_PAUSE_DELAY,
+            false,
+        );
+    }
+
+    fn execute_stop(&mut self) {
+        tracing::debug!(
+            target: "psx_core::cdrom",
+            "Stop",
+        );
+
+        self.state = DriveState::Idle;
+        self.read_in_progress = false;
+        self.sector_offset = 0;
+        self.data_ready = false;
+        self.address.set_data_request(false);
+        self.interrupt_queue.retain(|p| !p.is_read);
+
+        let status = self.status();
+        self.queue_interrupt(
+            DiskIrq::CommandAcknowledged,
+            vec![status.0],
+            FIRST_RESP_GENERIC_DELAY,
+            false,
+        );
+        
+        self.queue_interrupt(
+            DiskIrq::CommandCompleted,
+            vec![status.0],
+            SECOND_RESP_STOP_DELAY,
             false,
         );
     }

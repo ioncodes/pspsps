@@ -33,7 +33,7 @@ pub struct Sio0 {
     baud: u16,
     rx_fifo: VecDeque<u8>,
     cycles: usize,
-    target_cycles: usize, // IRQ delay in cycles (baud * 8)
+    target_cycles: usize,       // IRQ delay in cycles (baud * 8)
     irq_trigger_counter: usize, // Number of pending IRQs (0 = idle)
 
     // Devices
@@ -51,7 +51,7 @@ impl Default for Sio0 {
             baud: 0,
             rx_fifo: VecDeque::new(),
             cycles: 0,
-            target_cycles: 0, // Will be set to baud*8 when TX is written
+            target_cycles: 0,       // Will be set to baud*8 when TX is written
             irq_trigger_counter: 0, // 0 = idle
             controller: ControllerDevice::new(),
             memory_card: MemoryCardDevice::new(),
@@ -87,9 +87,7 @@ impl Sio0 {
 
         // Check if devices were deselected (DTR went low)
         if !self.control.dtr_output_level() {
-            self.controller.deselect();
-            self.memory_card.deselect();
-            self.active_device = ActiveDevice::None;
+            self.reset_devices();
         }
     }
 
@@ -103,6 +101,16 @@ impl Sio0 {
             match tx_byte {
                 0x01 => {
                     self.active_device = ActiveDevice::Controller;
+
+                    if self.control.port_number() == 2 {
+                        // If Port 2 is selected, no controller is present
+                        tracing::trace!(
+                            target: "psx_core::sio",
+                            tx = format!("{:02X}", tx_byte),
+                            "Port 2 selected - no device"
+                        );
+                        return 0xFF;
+                    }
                 }
                 0x81 => {
                     self.active_device = ActiveDevice::MemoryCard;
@@ -132,7 +140,10 @@ impl Sio0 {
             self.status.set_ack_input_level(true);
 
             // Trigger interrupt if enabled
-            if self.control.rx_interrupt_enable() || self.control.tx_interrupt_enable() || self.control.dsr_interrupt_enable() {
+            if self.control.rx_interrupt_enable()
+                || self.control.tx_interrupt_enable()
+                || self.control.dsr_interrupt_enable()
+            {
                 self.status.set_interrupt_request(true);
             }
 
@@ -141,6 +152,12 @@ impl Sio0 {
                 "IRQ triggered"
             );
         }
+    }
+
+    fn reset_devices(&mut self) {
+        self.controller.reset();
+        self.memory_card.reset();
+        self.active_device = ActiveDevice::None;
     }
 }
 
@@ -200,7 +217,7 @@ impl Bus16 for Sio0 {
         match address {
             SIO0_TX_DATA_ADDR_START => {
                 // TODO: check DTR here too and do not send if not asserted?
-                
+
                 let tx_byte = value as u8;
 
                 // Immediately process TX and get RX response
@@ -253,8 +270,15 @@ impl Bus16 for Sio0 {
 
                 self.control.0 = value & !0x40; // Reset bit is write-only
 
-                let dtr = self.control.dtr_output_level();
-                tracing::trace!(target: "psx_core::sio", dtr, "CTRL");
+                // If port select changed to port 2, deselect any active device, but only if current device
+                // is *NOT* memory card
+                if matches!(self.active_device, ActiveDevice::None | ActiveDevice::Controller)
+                    && self.control.port_number() == 2
+                {
+                    self.reset_devices();
+                }
+
+                tracing::trace!(target: "psx_core::sio", dtr = self.control.dtr_output_level(), port = self.control.port_number(), "CTRL");
             }
             SIO0_BAUD_ADDR_START => {
                 self.baud = value;

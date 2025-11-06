@@ -31,6 +31,16 @@ bitfield! {
     }
 }
 
+impl SerialControl {
+    pub fn port_number(&self) -> u8 {
+        if self.sio0_port_select() {
+            2
+        } else {
+            1
+        }
+    }
+}
+
 bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
     pub struct SerialStatus(pub u32): Debug, FromStorage, IntoStorage, DerefStorage {

@@ -5,6 +5,9 @@ use crate::gpu::cmd::Gp0Command;
 use crate::gpu::gp::Gp;
 use crate::mmu::Addressable;
 
+pub const SCREEN_WIDTH: usize = 256;
+pub const SCREEN_HEIGHT: usize = 240;
+
 pub const GP0_ADDRESS_START: u32 = 0x1F80_1810;
 pub const GP0_ADDRESS_END: u32 = 0x1F80_1813;
 pub const GP1_ADDRESS_START: u32 = 0x1F80_1814;
@@ -17,7 +20,7 @@ pub struct Gpu {
 
 impl Gpu {
     pub fn new() -> Self {
-        Self { gp: Gp::new(), internal_frame: vec![(0, 0, 0); 256 * 240] }
+        Self { gp: Gp::new(), internal_frame: vec![(0, 0, 0); SCREEN_WIDTH * SCREEN_HEIGHT] }
     }
 
     pub fn internal_frame(&self) -> &Vec<(u8, u8, u8)> {

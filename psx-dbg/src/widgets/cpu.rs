@@ -167,16 +167,13 @@ impl Widget for CpuWidget {
 
         let start =
             u32::from_str_radix(&self.current_address, 16).unwrap_or(context.psx.cpu.pc) as usize;
-        let end = start + 40 * 4;
 
-        let instructions: Vec<(u32, Instruction)> = context.psx.mmu.memory[start..end]
-            .chunks(4)
-            .enumerate()
-            .map(|(i, chunk)| {
-                let addr = start + i * 4;
-                let instr_raw = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        let instructions: Vec<(u32, Instruction)> = (0..40)
+            .map(|i| {
+                let addr = (start + i * 4) as u32;
+                let instr_raw = context.psx.mmu.read_u32(addr);
                 let instr = Instruction::decode(instr_raw);
-                (addr as u32, instr)
+                (addr, instr)
             })
             .collect();
 

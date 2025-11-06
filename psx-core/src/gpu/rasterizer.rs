@@ -253,11 +253,7 @@ fn sample_texture(
             let texel_in_word = tex_x_in_page % 4;
             let texel_index = ((halfword >> (texel_in_word * 4)) & 0xF) as usize;
 
-            if texel_index == 0 {
-                0x0000
-            } else {
-                lookup_clut(clut_x, clut_y, texel_index, vram)
-            }
+            lookup_clut(clut_x, clut_y, texel_index, vram)
         }
         1 => {
             // 8-bit CLUT mode
@@ -277,11 +273,7 @@ fn sample_texture(
                 ((halfword >> 8) & 0xFF) as usize
             };
 
-            if texel_index == 0 {
-                0x0000
-            } else {
-                lookup_clut(clut_x, clut_y, texel_index, vram)
-            }
+            lookup_clut(clut_x, clut_y, texel_index, vram)
         }
         _ => {
             // 15-bit direct color mode

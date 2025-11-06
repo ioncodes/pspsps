@@ -318,7 +318,8 @@ pub fn load_store<
     const IS_LUI: bool,
     const TYPE: MemoryAccessType,
     const TRANSFER_SIZE: MemoryTransferSize,
-    const PORTION: MemoryAccessPortion, // TODO: implement this
+    const PORTION: MemoryAccessPortion,
+    const SIGNED: bool,
 >(
     instr: &Instruction, cpu: &mut Cpu,
 ) {
@@ -335,7 +336,11 @@ pub fn load_store<
 
     match TRANSFER_SIZE {
         MemoryTransferSize::Byte if TYPE == MemoryAccessType::Load => {
-            let value = cpu.read_u8(vaddr) as u32;
+            let value = if SIGNED {
+                cpu.read_u8(vaddr) as i8 as i32 as u32 // Sign-extend
+            } else {
+                cpu.read_u8(vaddr) as u32 // Zero-extend
+            };
             cpu.write_register(instr.rt(), value);
             cpu.add_cycles(2);
         }
@@ -349,7 +354,11 @@ pub fn load_store<
                 return;
             }
 
-            let value = cpu.read_u16(vaddr) as u32;
+            let value = if SIGNED {
+                cpu.read_u16(vaddr) as i16 as i32 as u32 // Sign-extend
+            } else {
+                cpu.read_u16(vaddr) as u32 // Zero-extend
+            };
             cpu.write_register(instr.rt(), value);
             cpu.add_cycles(2);
         }

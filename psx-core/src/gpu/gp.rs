@@ -1,5 +1,5 @@
 use crate::gpu::cmd::Gp0Command;
-use crate::gpu::status::StatusRegister;
+use crate::gpu::status::{DmaDirection, StatusRegister};
 use crate::gpu::{GP1_ADDRESS_END, GP1_ADDRESS_START, VRAM_HEIGHT, VRAM_WIDTH};
 use crate::mmu::bus::Bus32;
 use std::collections::VecDeque;
@@ -215,10 +215,10 @@ impl Gp {
             }
             // DMA Direction / Data Request
             0x04 => {
-                let dma_direction = (params & 0b11) as u8;
+                let dma_direction: DmaDirection = ((params & 0b11) as u8).into();
                 self.gp1_status.set_dma_direction(dma_direction);
 
-                tracing::trace!(target: "psx_core::gpu", dma_direction, "DMA Direction / Data Request via GP1 command");
+                tracing::trace!(target: "psx_core::gpu", %dma_direction, "DMA Direction / Data Request via GP1 command");
             }
             // Display Mode
             0x08 => {

@@ -33,6 +33,48 @@ impl std::fmt::Display for VideoMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DmaDirection {
+    Off,
+    Fifo,
+    CpuToGpu,
+    GpuToCpu,
+}
+
+impl From<u8> for DmaDirection {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => DmaDirection::Off,
+            1 => DmaDirection::Fifo,
+            2 => DmaDirection::CpuToGpu,
+            3 => DmaDirection::GpuToCpu,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl From<DmaDirection> for u8 {
+    fn from(mode: DmaDirection) -> u8 {
+        match mode {
+            DmaDirection::Off => 0,
+            DmaDirection::Fifo => 1,
+            DmaDirection::CpuToGpu => 2,
+            DmaDirection::GpuToCpu => 3,
+        }
+    }
+}
+
+impl std::fmt::Display for DmaDirection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DmaDirection::Off => write!(f, "Off"),
+            DmaDirection::Fifo => write!(f, "FIFO"),
+            DmaDirection::CpuToGpu => write!(f, "CPU to GP0"),
+            DmaDirection::GpuToCpu => write!(f, "GPUREAD to CPU"),
+        }
+    }
+}
+
 bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Default)]
     pub struct StatusRegister(pub u32): Debug, FromStorage, IntoStorage, DerefStorage {
@@ -47,7 +89,7 @@ bitfield! {
         pub ready_to_receive_cmd_word: bool @ 26,
         pub ready_to_send_vram_to_cpu: bool @ 27,
         pub ready_to_receive_dma_block: bool @ 28,
-        pub dma_direction: u8 @ 29..=30,
+        pub dma_direction: u8 [get DmaDirection, set DmaDirection] @ 29..=30,
         pub drawing_even_odd_lines_in_interlace_mode: bool @ 31,
     }
 }

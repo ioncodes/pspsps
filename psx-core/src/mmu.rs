@@ -163,21 +163,19 @@ impl Mmu {
             }
             TransferMode::LinkedList => loop {
                 let header = self.read_u32(src_addr);
-                let next_addr = header & 0x00FFFFFF; // next node
-                let words = header >> 24; // number of words
-
-                if next_addr == 0x00FFFFFF {
-                    break;
-                }
+                let next_addr = header & 0x00FFFFFF; // next node (24-bit address)
+                let words = header >> 24; // number of words in this node
 
                 tracing::trace!(
                     target: "psx_core::dma",
                     address = format!("{:08X}", src_addr),
                     words = words,
                     next_address = format!("{:08X}", next_addr),
+                    is_end = next_addr == 0x00FFFFFF,
                     "Transfering DMA linked list node"
                 );
 
+                // Transfer all words from this node
                 for idx in 0..words {
                     let addr = src_addr.wrapping_add_signed((idx + 1) as i32 * madr_step);
                     let word = self.read_u32(addr);
@@ -189,6 +187,11 @@ impl Mmu {
                         word = format!("{:08X}", word),
                         "Sent word from linked list node to GP0"
                     );
+                }
+
+                // AFTER processing this node's data, check if this was the last node
+                if next_addr == 0x00FFFFFF {
+                    break; // End of linked list
                 }
 
                 src_addr = next_addr;

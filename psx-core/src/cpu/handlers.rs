@@ -71,6 +71,15 @@ pub enum MultiplyMoveRegister {
     Lo,
 }
 
+#[derive(Debug, ConstParamTy, PartialEq, Eq)]
+pub enum CopOperation {
+    MoveTo,
+    MoveFrom,
+    MoveControlTo,
+    MoveControlFrom,
+    ReturnFromException,
+}
+
 pub fn shift<const DIRECTION: ShiftDirection, const TYPE: ShiftType, const VARIABLE: bool>(
     instr: &Instruction, cpu: &mut Cpu, _mmu: &mut Mmu,
 ) {
@@ -200,8 +209,16 @@ pub fn move_multiply<
     );
 }
 
-pub fn cop(_instr: &Instruction, _cpu: &mut Cpu, _mmu: &mut Mmu) {
-    todo!("Implement COP");
+pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu, _mmu: &mut Mmu) {
+    match OPERATION {
+        CopOperation::MoveTo | CopOperation::MoveControlTo => {
+            cpu.cop0[instr.rt() as usize] = cpu.registers[instr.rd() as usize];
+        }
+        CopOperation::MoveFrom | CopOperation::MoveControlFrom => {
+            cpu.registers[instr.rt() as usize] = cpu.cop0[instr.rd() as usize];
+        }
+        _ => todo!("Implement cop operation: {:?}", OPERATION),
+    }
 }
 
 pub fn system_call(_instr: &Instruction, _cpu: &mut Cpu, _mmu: &mut Mmu) {

@@ -410,6 +410,10 @@ impl Cdrom {
             0x0E => {
                 self.execute_setmode();
             }
+            // Play - Command 03h --> INT3(stat) --> INT2(stat) (CD-DA playback)
+            0x03 => {
+                self.execute_play();
+            }
             // ReadN - Command 06h --> INT3(stat) --> INT1(stat) --> datablock
             0x06 => {
                 self.execute_readn();
@@ -773,6 +777,36 @@ impl Cdrom {
             DiskIrq::CommandAcknowledged,
             vec![status.0],
             FIRST_RESP_GENERIC_DELAY,
+            false,
+        );
+    }
+
+    fn execute_play(&mut self) {
+        tracing::debug!(
+            target: "psx_core::cdrom",
+            from_lba = self.sector_lba_current,
+            to_lba = self.sector_lba,
+            "Play",
+        );
+
+        let status_before = self.status();
+        self.queue_interrupt(
+            DiskIrq::CommandAcknowledged,
+            vec![status_before.0],
+            FIRST_RESP_GENERIC_DELAY,
+            false,
+        );
+
+        self.read_in_progress = false;
+        self.address.set_data_request(false);
+        self.interrupt_queue.retain(|p| !p.is_read);
+        self.state = DriveState::Playing;
+
+        let status_after = self.status();
+        self.queue_interrupt(
+            DiskIrq::CommandCompleted,
+            vec![status_after.0],
+            SECOND_RESP_PAUSE_DELAY,
             false,
         );
     }

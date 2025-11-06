@@ -1,7 +1,7 @@
 pub mod cop;
 pub mod decoder;
 pub mod handlers;
-mod hooks;
+mod internal;
 pub mod lut;
 
 use colored::Colorize;
@@ -37,9 +37,9 @@ impl Cpu {
 
     #[inline(always)]
     pub fn tick(&mut self, mmu: &mut Mmu) {
-        if hooks::HOOKS.contains_key(&self.pc) {
+        if internal::HOOKS.contains_key(&self.pc) {
             tracing::trace!(target: "psx_core::cpu", "Executing hook at PC: {:08X}", self.pc);
-            let handler = hooks::HOOKS.get(&self.pc).unwrap();
+            let handler = internal::HOOKS.get(&self.pc).unwrap();
             handler(self, mmu);
         }
 

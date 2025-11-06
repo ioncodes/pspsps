@@ -78,7 +78,7 @@ impl Mmu {
     }
 
     #[inline(always)]
-    fn canonicalize_address(address: u32) -> u32 {
+    pub(crate) const fn canonicalize_address(address: u32) -> u32 {
         // A0000000h -> 80000000h -> 00000000h
         // BF000000h -> 9F000000h -> 1F000000h
         address & 0x5FFF_FFFF

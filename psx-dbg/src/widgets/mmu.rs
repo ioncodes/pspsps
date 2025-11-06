@@ -1,3 +1,4 @@
+use crate::colors::COLOR_DIRTY;
 use super::{SharedContext, Widget};
 use egui::{RichText, Ui};
 use psx_core::mmu::bus::Bus8 as _;
@@ -62,7 +63,6 @@ impl Widget for MmuWidget {
         ui.separator();
 
         let start_addr = self.memory_address & !0xF;
-        let color_changed = egui::Color32::from_rgb(255, 150, 150); // Light red for changed
 
         for row in 0..ROWS_TO_DISPLAY {
             let addr = start_addr + (row * 16);
@@ -84,7 +84,7 @@ impl Widget for MmuWidget {
                         .unwrap_or(false);
 
                     if changed {
-                        ui.colored_label(color_changed, RichText::new(format!("{:02X}", byte)).monospace());
+                        ui.colored_label(COLOR_DIRTY, RichText::new(format!("{:02X}", byte)).monospace());
                     } else {
                         ui.label(RichText::new(format!("{:02X}", byte)).monospace());
                     }
@@ -114,7 +114,7 @@ impl Widget for MmuWidget {
                     };
 
                     if changed {
-                        ui.colored_label(color_changed, RichText::new(ch.to_string()).monospace());
+                        ui.colored_label(COLOR_DIRTY, RichText::new(ch.to_string()).monospace());
                     } else {
                         ui.label(RichText::new(ch.to_string()).monospace());
                     }

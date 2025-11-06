@@ -2,6 +2,7 @@ mod debugger;
 mod io;
 mod states;
 mod widgets;
+mod colors;
 
 use clap::Parser;
 use eframe::egui;

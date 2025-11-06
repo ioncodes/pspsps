@@ -13,11 +13,10 @@ operands = { operand ~ ("," ~ operand)* }
 operand = {
     memory_address |
     cpu_register |
-    gte_register |
+    cop_register |
     hex_immediate |
     decimal_immediate |
-    offset |
-    identifier
+    offset
 }
 
 // Memory address: offset($register)
@@ -27,7 +26,7 @@ memory_address = { (hex_immediate | decimal_immediate | offset) ~ "(" ~ cpu_regi
 cpu_register = @{ "$" ~ (ASCII_ALPHA | ASCII_DIGIT)+ }
 
 // GTE/COP2 register: lowercase alphanumeric without $
-gte_register = @{ ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT)+ }
+cop_register = @{ ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT)+ }
 
 // Hex immediate: 0xHEX
 hex_immediate = @{ "0x" ~ ASCII_HEX_DIGIT+ }
@@ -37,6 +36,3 @@ decimal_immediate = @{ ASCII_DIGIT+ }
 
 // Offset: signed number
 offset = @{ ("+" | "-") ~ ASCII_DIGIT+ }
-
-// Generic identifier: for things like labels, flags, etc.
-identifier = @{ ASCII_ALPHA+ }

@@ -2,6 +2,9 @@ use super::{SharedContext, Widget};
 use crate::io::DebuggerEvent;
 use egui::{CollapsingHeader, RichText, Ui};
 use egui_toast::{Toast, ToastKind};
+use pest::Parser;
+use pest::iterators::Pair;
+use pest_derive::Parser;
 use psx_core::cpu::cop::Cop;
 use psx_core::cpu::cop::cop0::{COP0_SR, Exception};
 use psx_core::cpu::decoder::Instruction;
@@ -9,9 +12,7 @@ use psx_core::mmu::bus::{Bus8, Bus32 as _};
 use rayon::prelude::*;
 use std::io::Write as _;
 use std::time::Duration;
-use pest::Parser;
-use pest::iterators::Pair;
-use pest_derive::Parser;
+use crate::colors::*;
 
 #[derive(Parser)]
 #[grammar = "grammar/instruction.pest"]
@@ -19,25 +20,17 @@ struct InstructionParser;
 
 const INSTRUCTIONS_TO_DISPLAY: usize = 128;
 
-// Helper function to render a colorized instruction using PEG parser
 fn render_instruction(ui: &mut Ui, addr: u32, instr: &Instruction, is_pc: bool, has_breakpoint: bool) {
-
-    // Color scheme from the reference design
-    let color_address = egui::Color32::from_rgb(127, 165, 204);   // (0.50, 0.65, 0.80)
-    let color_opcode = egui::Color32::from_rgb(178, 216, 229);    // (0.70, 0.85, 0.90)
-    let color_register = egui::Color32::from_rgb(165, 204, 255);  // (0.65, 0.80, 1.00)
-    let color_immediate = egui::Color32::from_rgb(242, 165, 204); // (0.95, 0.65, 0.80)
-    let color_symbol = egui::Color32::from_rgb(191, 140, 242);    // (0.75, 0.55, 0.95) - used for COP/GTE registers
-    let color_shift_type = egui::Color32::from_rgb(153, 229, 255); // (0.60, 0.90, 1.00)
-
-    // Draw indicator on the left (breakpoint or PC marker)
-    let (response, painter) = ui.allocate_painter(egui::Vec2::new(16.0, ui.text_style_height(&egui::TextStyle::Monospace)), egui::Sense::hover());
+    let (response, painter) = ui.allocate_painter(
+        egui::Vec2::new(16.0, ui.text_style_height(&egui::TextStyle::Monospace)),
+        egui::Sense::hover(),
+    );
     let rect = response.rect;
     let center = rect.center();
 
     if has_breakpoint {
         // Red circle for breakpoint
-        painter.circle_filled(center, 4.0, egui::Color32::RED);
+        painter.circle_filled(center, 4.0, COLOR_BREAKPOINT);
     } else if is_pc {
         // Green triangle pointing right for PC
         let triangle = vec![
@@ -45,19 +38,22 @@ fn render_instruction(ui: &mut Ui, addr: u32, instr: &Instruction, is_pc: bool, 
             egui::pos2(center.x + 4.0, center.y),
             egui::pos2(center.x - 4.0, center.y + 4.0),
         ];
-        painter.add(egui::Shape::convex_polygon(triangle, egui::Color32::GREEN, egui::Stroke::NONE));
+        painter.add(egui::Shape::convex_polygon(
+            triangle,
+            COLOR_CURRENT_LOCATION,
+            egui::Stroke::NONE,
+        ));
     }
 
-    // Render everything with zero spacing for compact display
     ui.scope(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
 
         // Address
-        ui.colored_label(color_address, RichText::new(format!("{:08X}", addr)).monospace());
+        ui.colored_label(COLOR_ADDRESS, RichText::new(format!("{:08X}", addr)).monospace());
         ui.label(RichText::new(" ").monospace());
 
         // Raw instruction hex (use opcode color)
-        ui.colored_label(color_opcode, RichText::new(format!("{:08X}", instr.raw)).monospace());
+        ui.colored_label(COLOR_COP, RichText::new(format!("{:08X}", instr.raw)).monospace());
         ui.label(RichText::new(" ").monospace());
 
         // Parse the instruction string with PEG
@@ -73,12 +69,11 @@ fn render_instruction(ui: &mut Ui, addr: u32, instr: &Instruction, is_pc: bool, 
                     for pair in instruction_pair.into_inner() {
                         match pair.as_rule() {
                             Rule::opcode => {
-                                let opcode_color = if has_breakpoint {
-                                    egui::Color32::RED
-                                } else {
-                                    color_opcode
-                                };
-                                ui.colored_label(opcode_color, RichText::new(format!("{:<8}", pair.as_str())).monospace());
+                                let opcode_color = if has_breakpoint { COLOR_BREAKPOINT } else { COLOR_OPCODE };
+                                ui.colored_label(
+                                    opcode_color,
+                                    RichText::new(format!("{:<8}", pair.as_str())).monospace(),
+                                );
                             }
                             Rule::operands => {
                                 for operand in pair.into_inner() {
@@ -87,8 +82,7 @@ fn render_instruction(ui: &mut Ui, addr: u32, instr: &Instruction, is_pc: bool, 
                                     }
                                     first_operand = false;
 
-                                    render_operand(ui, operand, color_register, color_symbol,
-                                                 color_immediate, color_immediate, color_shift_type);
+                                    render_operand(ui, operand);
                                 }
                             }
                             _ => {}
@@ -96,67 +90,51 @@ fn render_instruction(ui: &mut Ui, addr: u32, instr: &Instruction, is_pc: bool, 
                     }
                 }
             }
-            Err(e) => {
-                // Fallback: just display as-is if parsing fails
-                // Only print first few errors to avoid spam
-                static PRINT_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-                if PRINT_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 10 {
-                    eprintln!("Parse error for '{}': {:?}", instr_str, e);
-                }
+            Err(_) => {
                 ui.label(RichText::new(&instr_str).monospace());
             }
         }
     });
 }
 
-fn render_operand(
-    ui: &mut Ui,
-    operand: Pair<Rule>,
-    color_register: egui::Color32,
-    color_cop_register: egui::Color32,
-    color_immediate: egui::Color32,
-    color_offset: egui::Color32,
-    color_shift_type: egui::Color32,
-) {
+fn render_operand(ui: &mut Ui, operand: Pair<Rule>) {
     match operand.as_rule() {
         Rule::operand => {
-            // operand is a wrapper, get the actual inner rule
             if let Some(inner) = operand.into_inner().next() {
-                render_operand(ui, inner, color_register, color_cop_register,
-                             color_immediate, color_offset, color_shift_type);
+                render_operand(ui, inner);
             }
         }
         Rule::cpu_register => {
-            ui.colored_label(color_register, RichText::new(operand.as_str()).monospace());
+            ui.colored_label(COLOR_REGISTER, RichText::new(operand.as_str()).monospace());
         }
-        Rule::gte_register => {
-            ui.colored_label(color_cop_register, RichText::new(operand.as_str()).monospace());
+        Rule::cop_register => {
+            ui.colored_label(COLOR_COP, RichText::new(operand.as_str()).monospace());
         }
         Rule::hex_immediate | Rule::decimal_immediate | Rule::offset => {
-            ui.colored_label(color_immediate, RichText::new(operand.as_str()).monospace());
+            ui.colored_label(COLOR_IMMEDIATE, RichText::new(operand.as_str()).monospace());
         }
         Rule::memory_address => {
             // Memory address: offset($register)
             for inner in operand.into_inner() {
                 match inner.as_rule() {
                     Rule::hex_immediate | Rule::decimal_immediate | Rule::offset => {
-                        ui.colored_label(color_offset, RichText::new(inner.as_str()).monospace());
+                        ui.colored_label(COLOR_IMMEDIATE, RichText::new(inner.as_str()).monospace());
                     }
                     Rule::cpu_register => {
                         ui.label(RichText::new("(").monospace());
-                        ui.colored_label(color_register, RichText::new(inner.as_str()).monospace());
+                        ui.colored_label(COLOR_REGISTER, RichText::new(inner.as_str()).monospace());
                         ui.label(RichText::new(")").monospace());
                     }
                     _ => {}
                 }
             }
         }
-        Rule::identifier => {
-            // Generic identifiers like sf, lm, etc.
-            ui.colored_label(color_shift_type, RichText::new(operand.as_str()).monospace());
-        }
         _ => {
-            eprintln!("Unknown rule in render_operand: {:?} ({})", operand.as_rule(), operand.as_str());
+            eprintln!(
+                "Unknown rule in render_operand: {:?} ({})",
+                operand.as_rule(),
+                operand.as_str()
+            );
             ui.label(RichText::new(operand.as_str()).monospace());
         }
     }
@@ -177,9 +155,7 @@ impl SendMmuPtr {
     }
 }
 
-fn dump_memory_multithreaded(
-    mmu_state: &mut crate::states::mmu::MmuState, output_path: &str,
-) -> std::io::Result<()> {
+fn dump_memory_multithreaded(mmu_state: &mut crate::states::mmu::MmuState, output_path: &str) -> std::io::Result<()> {
     // Split 4GB into chunks for parallel processing
     const CHUNK_SIZE: u32 = 16 * 1024 * 1024; // 16MB chunks
     const TOTAL_SIZE: u64 = 0x1_0000_0000; // 4GB
@@ -277,8 +253,7 @@ impl Widget for CpuWidget {
                         context.toasts.add(Toast {
                             text: "Memory dumped to memory_dump.bin (4GB)".into(),
                             kind: ToastKind::Success,
-                            options: egui_toast::ToastOptions::default()
-                                .duration(Some(Duration::from_secs(3))),
+                            options: egui_toast::ToastOptions::default().duration(Some(Duration::from_secs(3))),
                             style: Default::default(),
                         });
                     }
@@ -286,8 +261,7 @@ impl Widget for CpuWidget {
                         context.toasts.add(Toast {
                             text: format!("Failed to dump memory: {}", e).into(),
                             kind: ToastKind::Error,
-                            options: egui_toast::ToastOptions::default()
-                                .duration(Some(Duration::from_secs(5))),
+                            options: egui_toast::ToastOptions::default().duration(Some(Duration::from_secs(5))),
                             style: Default::default(),
                         });
                     }
@@ -395,8 +369,10 @@ impl Widget for CpuWidget {
             let lo_changed = context.state.cpu.lo != context.state.previous_cpu.lo;
 
             if hi_changed {
-                ui.colored_label(egui::Color32::from_rgb(255, 150, 150),
-                    RichText::new(format!("$hi: {:08X}", context.state.cpu.hi)).monospace());
+                ui.colored_label(
+                    COLOR_DIRTY,
+                    RichText::new(format!("$hi: {:08X}", context.state.cpu.hi)).monospace(),
+                );
             } else {
                 ui.label(RichText::new(format!("$hi: {:08X}", context.state.cpu.hi)).monospace());
             }
@@ -404,8 +380,10 @@ impl Widget for CpuWidget {
             ui.label("  ");
 
             if lo_changed {
-                ui.colored_label(egui::Color32::from_rgb(255, 150, 150),
-                    RichText::new(format!("$lo: {:08X}", context.state.cpu.lo)).monospace());
+                ui.colored_label(
+                    COLOR_DIRTY,
+                    RichText::new(format!("$lo: {:08X}", context.state.cpu.lo)).monospace(),
+                );
             } else {
                 ui.label(RichText::new(format!("$lo: {:08X}", context.state.cpu.lo)).monospace());
             }
@@ -419,10 +397,7 @@ impl Widget for CpuWidget {
                 CollapsingHeader::new("Status Register")
                     .default_open(true)
                     .show(ui, |ui| {
-                        ui.monospace(format!(
-                            "SR: {:08X}",
-                            context.state.cpu.cop0.read_register(COP0_SR)
-                        ));
+                        ui.monospace(format!("SR: {:08X}", context.state.cpu.cop0.read_register(COP0_SR)));
                         ui.monospace(format!(
                             "Isolate Cache: {}",
                             if context.state.cpu.cop0.sr.isolate_cache() {
@@ -436,10 +411,7 @@ impl Widget for CpuWidget {
                 CollapsingHeader::new("Cause Register")
                     .default_open(true)
                     .show(ui, |ui| {
-                        ui.monospace(format!(
-                            "Cause: {:08X}",
-                            context.state.cpu.cop0.read_register(13)
-                        ));
+                        ui.monospace(format!("Cause: {:08X}", context.state.cpu.cop0.read_register(13)));
                         ui.monospace(format!(
                             "Exception Code: {} ({:08X})",
                             Exception::from(context.state.cpu.cop0.cause.exception_code()),
@@ -484,8 +456,7 @@ impl Widget for CpuWidget {
 
         ui.separator();
 
-        let start =
-            u32::from_str_radix(&self.current_address, 16).unwrap_or(context.state.cpu.pc) as usize;
+        let start = u32::from_str_radix(&self.current_address, 16).unwrap_or(context.state.cpu.pc) as usize;
 
         let instructions: Vec<(u32, Instruction)> = (0..INSTRUCTIONS_TO_DISPLAY)
             .map(|i| {
@@ -500,14 +471,15 @@ impl Widget for CpuWidget {
             let has_breakpoint = context.state.breakpoints.breakpoints.contains(&addr);
             let is_pc = addr == context.state.cpu.pc;
 
-            let response = ui.horizontal(|ui| {
-                // Render the colorized instruction
-                render_instruction(ui, addr, &instr, is_pc, has_breakpoint);
-            })
-            .response
-            .on_hover_text(
-                RichText::new(format!(
-                    "Raw: {:08X}\n\
+            let response = ui
+                .horizontal(|ui| {
+                    // Render the colorized instruction
+                    render_instruction(ui, addr, &instr, is_pc, has_breakpoint);
+                })
+                .response
+                .on_hover_text(
+                    RichText::new(format!(
+                        "Raw: {:08X}\n\
                      Opcode: {}\n\
                      op: {:02X}\n\
                      rs: {:02X}\n\
@@ -519,20 +491,20 @@ impl Widget for CpuWidget {
                      offset: {}\n\
                      address: {:08X}\n\
                      Click to toggle breakpoint",
-                    instr.raw,
-                    instr.opcode,
-                    instr.op(),
-                    instr.rs(),
-                    instr.rt(),
-                    instr.rd(),
-                    instr.shamt(),
-                    instr.funct(),
-                    instr.immediate(),
-                    instr.offset(),
-                    instr.address()
-                ))
-                .monospace(),
-            );
+                        instr.raw,
+                        instr.opcode,
+                        instr.op(),
+                        instr.rs(),
+                        instr.rt(),
+                        instr.rd(),
+                        instr.shamt(),
+                        instr.funct(),
+                        instr.immediate(),
+                        instr.offset(),
+                        instr.address()
+                    ))
+                    .monospace(),
+                );
 
             if response.clicked() {
                 if has_breakpoint {

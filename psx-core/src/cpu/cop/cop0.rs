@@ -1,5 +1,5 @@
-use crate::cpu::cop::registers::StatusRegister;
 use crate::cpu::cop::Cop;
+use crate::cpu::cop::registers::{CauseRegister, StatusRegister};
 
 pub const COP0_BPC: u32 = 3; // Breakpoint Program Counter
 pub const COP0_BDA: u32 = 5; // Breakpoint Data Address
@@ -13,18 +13,28 @@ pub const COP0_CAUSE: u32 = 13; // Cause Register
 pub const COP0_EPC: u32 = 14; // Exception Program Counter
 pub const COP0_PRID: u32 = 15; // Processor Revision ID
 
+pub const COP0_EXCEPTION_CODE_INT: u32 = 0; // External Interrupt
+pub const COP0_EXCEPTION_CODE_AD_EL: u32 = 4; // Address Error (Load)
+pub const COP0_EXCEPTION_CODE_AD_ES: u32 = 5; // Address Error (Store)
+pub const COP0_EXCEPTION_CODE_IBE: u32 = 6; // Instruction Bus Error
+pub const COP0_EXCEPTION_CODE_DBE: u32 = 7; // Data Bus Error
+pub const COP0_EXCEPTION_CODE_SYSCALL: u32 = 8; // Syscall
+pub const COP0_EXCEPTION_CODE_BREAK: u32 = 9; // Breakpoint
+pub const COP0_EXCEPTION_CODE_RI: u32 = 10; // Reserved Instruction
+pub const COP0_EXCEPTION_CODE_OV: u32 = 12; // Arithmetic Overflow
+
 pub struct Cop0 {
-    pub bpc: u32,           // Breakpoint Program Counter
-    pub bda: u32,           // Breakpoint Data Address
-    pub tar: u32,           // Target Address
-    pub dcic: u32,          // Debug and Cache Invalidate Control
-    pub bad_a: u32,         // Bad Address
-    pub bdam: u32,          // Breakpoint Data Address Mask
-    pub bdcm: u32,          // Breakpoint Program Counter Mask
-    pub sr: StatusRegister, // Status Register
-    pub cause: u32,         // Cause Register
-    pub epc: u32,           // Exception Program Counter
-    pub prid: u32,          // Processor Revision ID
+    pub bpc: u32,             // Breakpoint Program Counter
+    pub bda: u32,             // Breakpoint Data Address
+    pub tar: u32,             // Target Address
+    pub dcic: u32,            // Debug and Cache Invalidate Control
+    pub bad_a: u32,           // Bad Address
+    pub bdam: u32,            // Breakpoint Data Address Mask
+    pub bdcm: u32,            // Breakpoint Program Counter Mask
+    pub sr: StatusRegister,   // Status Register
+    pub cause: CauseRegister, // Cause Register
+    pub epc: u32,             // Exception Program Counter
+    pub prid: u32,            // Processor Revision ID
 }
 
 impl Cop0 {
@@ -38,7 +48,7 @@ impl Cop0 {
             bdam: 0,
             bdcm: 0,
             sr: StatusRegister(0),
-            cause: 0,
+            cause: CauseRegister(0),
             epc: 0,
             prid: 0,
         }
@@ -57,7 +67,7 @@ impl Cop for Cop0 {
             9 => self.bdam,
             11 => self.bdcm,
             12 => self.sr.0,
-            13 => self.cause,
+            13 => self.cause.0,
             14 => self.epc,
             15 => self.prid,
             _ => {
@@ -78,7 +88,7 @@ impl Cop for Cop0 {
             9 => self.bdam = value,
             11 => self.bdcm = value,
             12 => self.sr.0 = value,
-            13 => self.cause = value,
+            13 => self.cause.0 = value,
             14 => self.epc = value,
             15 => self.prid = value,
             _ => {

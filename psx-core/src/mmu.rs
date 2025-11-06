@@ -18,16 +18,12 @@ impl Mmu {
 
     #[inline(always)]
     pub fn read_u8(&self, address: u32) -> u8 {
-        tracing::trace!(target: "psx_core::mmu", "Reading byte from address: {:08X}", address);
-
         let address = Self::canonicalize_address(address);
         self.memory[address as usize]
     }
 
     #[inline(always)]
     pub fn read_u16(&self, address: u32) -> u16 {
-        tracing::trace!(target: "psx_core::mmu", "Reading half-word from address: {:08X}", address);
-
         let address = Self::canonicalize_address(address);
         let address = address as usize;
         u16::from_le_bytes([self.memory[address], self.memory[address + 1]])
@@ -35,8 +31,6 @@ impl Mmu {
 
     #[inline(always)]
     pub fn read_u32(&self, address: u32) -> u32 {
-        tracing::trace!(target: "psx_core::mmu", "Reading word from address: {:08X}", address);
-
         let address = Self::canonicalize_address(address);
         let address = address as usize;
         u32::from_le_bytes([
@@ -49,16 +43,12 @@ impl Mmu {
 
     #[inline(always)]
     pub fn write_u8(&mut self, address: u32, value: u8) {
-        tracing::trace!(target: "psx_core::mmu", "Writing {:02X} to address: {:08X}", value, address);
-
         let address = Self::canonicalize_address(address);
         self.memory[address as usize] = value;
     }
 
     #[inline(always)]
     pub fn write_u16(&mut self, address: u32, value: u16) {
-        tracing::trace!(target: "psx_core::mmu", "Writing {:04X} to address: {:08X}", value, address);
-
         let address = Self::canonicalize_address(address);
         let address = address as usize;
         self.memory[address] = (value & 0xFF) as u8;
@@ -67,8 +57,6 @@ impl Mmu {
 
     #[inline(always)]
     pub fn write_u32(&mut self, address: u32, value: u32) {
-        tracing::trace!(target: "psx_core::mmu", "Writing {:08X} to address: {:08X}", value, address);
-
         let address = Self::canonicalize_address(address);
         let address = address as usize;
         self.memory[address] = (value & 0xFF) as u8;

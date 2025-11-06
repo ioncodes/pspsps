@@ -4,12 +4,10 @@ pub mod handlers;
 pub mod internal;
 pub mod lut;
 
-use colored::Colorize;
-
-use crate::cpu::cop::Cop;
 use crate::cpu::cop::cop0::Cop0;
 use crate::cpu::decoder::Instruction;
 use crate::mmu::Mmu;
+use colored::Colorize;
 
 type RegisterValue = u32;
 type RegisterIndex = usize;
@@ -37,16 +35,14 @@ impl Cpu {
         }
     }
 
-    #[inline(always)]
     pub fn tick(&mut self, mmu: &mut Mmu) {
         if internal::HOOKS.contains_key(&self.pc) {
-            tracing::trace!(target: "psx_core::cpu", "Executing hook at PC: {:08X}", self.pc);
             let handler = internal::HOOKS.get(&self.pc).unwrap();
             handler(self, mmu);
         }
 
         if let Some((delay_slot, branch_target)) = self.delay_slot.take() {
-            tracing::debug!(
+            tracing::trace!(
                 target: "psx_core::cpu", 
                 "{}", 
                 format!("Executing delay slot instruction: {}, with branch target: {:08X}", delay_slot, branch_target).yellow());
@@ -57,16 +53,35 @@ impl Cpu {
 
         let instr = Instruction::decode(mmu.read_u32(self.pc));
 
-        tracing::debug!(target: "psx_core::cpu", "{:08X}: [{:08X}] {: <30}", self.pc, instr.raw, format!("{}", instr));
-        tracing::trace!(target: "psx_core::cpu", "{:?}", instr);
+        tracing::trace!(target: "psx_core::cpu", "{:08X}: [{:08X}] {: <30}", self.pc, instr.raw, format!("{}", instr));
 
         (instr.handler)(&instr, self, mmu);
 
         self.pc += 4;
     }
 
-    pub fn cause_exception(&mut self, mmu: &mut Mmu, exception_code: u32, address: u32) {
-        tracing::error!(target: "psx_core::cpu", "Exception occurred: code = {}, address = {:08X}", exception_code, address);
+    pub fn cause_exception(&mut self, exception_code: u32) {
+        tracing::debug!(target: "psx_core::cpu", "Exception occurred: {:02X}", exception_code);
+
+        // Set the EPC to the current PC or PC - 4 if in a branch delay slot
+        self.cop0.epc = if !self.cop0.cause.branch_delay() {
+            self.pc
+        } else {
+            self.pc - 4
+        };
+        self.cop0.cause.set_exception_code(exception_code); // Set the exception code
+        self.cop0.sr.set_current_interrupt_enable(false); // Disable interrupts
+
+        //   Exception     BEV=0         BEV=1
+        //   Reset         BFC00000h     BFC00000h   (Reset)
+        //   UTLB Miss     80000000h     BFC00100h   (Virtual memory, none such in PSX)
+        //   COP0 Break    80000040h     BFC00140h   (Debug Break)
+        //   General       80000080h     BFC00180h   (General Interrupts & Exceptions)
+        if !self.cop0.sr.boot_exception_vector_location() {
+            self.pc = 0x8000_0080;
+        } else {
+            self.pc = 0xBFC0_0180;
+        }
     }
 
     #[inline(always)]

@@ -6,30 +6,49 @@ pub fn rasterize_polygon(vertices: &[(i16, i16)], colors: &[u32], uvs: &[u32], v
     // Triangle 1: [V0, V1, V2] (vertices 1, 2, 3)
     // Triangle 2: [V1, V2, V3] (vertices 2, 3, 4)
 
+    let textured = uvs.len() != 0;
+
     if vertices.len() == 4 {
         rasterize_triangle(
             [vertices[0], vertices[1], vertices[2]],
             [colors[0], colors[1], colors[2]],
-            uvs,
+            if textured {
+                [uvs[0], uvs[1], uvs[2]]
+            } else {
+                [0, 0, 0]
+            },
+            textured,
             vram,
         );
         rasterize_triangle(
             [vertices[1], vertices[2], vertices[3]],
             [colors[1], colors[2], colors[3]],
-            uvs,
+            if textured {
+                [uvs[1], uvs[2], uvs[3]]
+            } else {
+                [0, 0, 0]
+            },
+            textured,
             vram,
         );
     } else {
         rasterize_triangle(
             [vertices[0], vertices[1], vertices[2]],
             [colors[0], colors[1], colors[2]],
-            uvs,
+            if textured {
+                [uvs[0], uvs[1], uvs[2]]
+            } else {
+                [0, 0, 0]
+            },
+            textured,
             vram,
         );
     }
 }
 
-fn rasterize_triangle(vertices: [(i16, i16); 3], colors: [u32; 3], uvs: &[u32], vram: &mut [u8]) {
+fn rasterize_triangle(
+    vertices: [(i16, i16); 3], colors: [u32; 3], uvs: [u32; 3], textured: bool, vram: &mut [u8],
+) {
     // Vertex coordinates
     let (x0, y0) = (vertices[0].0 as i32, vertices[0].1 as i32);
     let (x1, y1) = (vertices[1].0 as i32, vertices[1].1 as i32);
@@ -69,10 +88,10 @@ fn rasterize_triangle(vertices: [(i16, i16); 3], colors: [u32; 3], uvs: &[u32], 
 
             if inside {
                 // Gouraud shading or textured
-                let pixel = if uvs.len() == 0 {
+                let pixel = if !textured {
                     gouraud_shading(colors, w0, w1, w2, area)
                 } else {
-                    textured_render([uvs[0], uvs[1], uvs[2]])
+                    textured_render(uvs)
                 };
 
                 // Push to VRAM

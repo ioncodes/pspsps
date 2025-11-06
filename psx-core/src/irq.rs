@@ -1,10 +1,8 @@
 use crate::mmu::bus::{Bus8, Bus16, Bus32};
 use proc_bitfield::bitfield;
 
-pub const I_STAT_ADDR_START: u32 = 0x1F80_1070;
-pub const I_STAT_ADDR_END: u32 = I_STAT_ADDR_START + 0x04 - 1;
-pub const I_MASK_ADDR_START: u32 = 0x1F80_1074;
-pub const I_MASK_ADDR_END: u32 = I_MASK_ADDR_START + 0x04 - 1;
+crate::define_addr!(I_STAT_ADDR, 0x1F80_1070, 0, 0x04, 0x04);
+crate::define_addr!(I_MASK_ADDR, 0x1F80_1070, 1, 0x04, 0x04);
 
 bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]

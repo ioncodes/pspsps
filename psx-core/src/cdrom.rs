@@ -10,8 +10,7 @@ use crate::cdrom::reg::{
 use crate::mmu::bus::Bus8;
 use std::collections::VecDeque;
 
-pub const CDROM_ADDR_START: u32 = 0x1F80_1800;
-pub const CDROM_ADDR_END: u32 = CDROM_ADDR_START + 4 - 1;
+crate::define_addr!(CDROM_ADDR, 0x1F80_1800, 0, 0x04, 0x04);
 
 pub const CYCLE_DELAY: usize = 1000; // TODO: just a random stub
 

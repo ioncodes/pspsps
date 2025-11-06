@@ -55,3 +55,14 @@ pub(crate) const fn calc_addr(base: u32, n: u32, size: u32, boundary: u32) -> (u
     let end = start + size - 1;
     (start, end)
 }
+
+#[macro_export]
+macro_rules! define_addr {
+    ($name:ident, $base:expr, $n:expr, $size:expr, $boundary:expr) => {
+        pub const $name: (u32, u32) = crate::calc_addr($base, $n, $size, $boundary);
+        paste::paste! {
+            pub const [<$name _START>]: u32 = $name.0;
+            pub const [<$name _END>]: u32 = $name.1;
+        }
+    };
+}

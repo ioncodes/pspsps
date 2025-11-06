@@ -1,19 +1,19 @@
 use proc_bitfield::bitfield;
 use crate::mmu::bus::{Bus8, Bus16, Bus32};
 
-pub const SIO0_TX_DATA_ADDR: (u32, u32) = crate::calc_addr(0x1F80_1040, 0, 2, 0x10);
-pub const SIO0_RX_DATA_ADDR: (u32, u32) = crate::calc_addr(0x1F80_1040, 0, 2, 0x10);
-pub const SIO0_STATUS_ADDR: (u32, u32) = crate::calc_addr(0x1F80_1044, 0, 4, 0x10);
-pub const SIO0_MODE_ADDR: (u32, u32) = crate::calc_addr(0x1F80_1048, 0, 2, 0x10);
-pub const SIO0_CTRL_ADDR: (u32, u32) = crate::calc_addr(0x1F80_104A, 0, 2, 0x10);
-pub const SIO0_BAUD_ADDR: (u32, u32) = crate::calc_addr(0x1F80_104E, 0, 2, 0x10);
+crate::define_addr!(SIO0_TX_DATA_ADDR, 0x1F80_1040, 0, 2, 0x10);
+crate::define_addr!(SIO0_RX_DATA_ADDR, 0x1F80_1040, 0, 2, 0x10);
+crate::define_addr!(SIO0_STATUS_ADDR, 0x1F80_1044, 0, 4, 0x10);
+crate::define_addr!(SIO0_MODE_ADDR, 0x1F80_1048, 0, 2, 0x10);
+crate::define_addr!(SIO0_CTRL_ADDR, 0x1F80_104A, 0, 2, 0x10);
+crate::define_addr!(SIO0_BAUD_ADDR, 0x1F80_104E, 0, 2, 0x10);
 
-pub const SIO1_TX_DATA_ADDR: (u32, u32) = crate::calc_addr(0x1F80_1040, 1, 2, 0x10);
-pub const SIO1_RX_DATA_ADDR: (u32, u32) = crate::calc_addr(0x1F80_1040, 1, 2, 0x10);
-pub const SIO1_STATUS_ADDR: (u32, u32) = crate::calc_addr(0x1F80_1044, 1, 4, 0x10);
-pub const SIO1_MODE_ADDR: (u32, u32) = crate::calc_addr(0x1F80_1048, 1, 2, 0x10);
-pub const SIO1_CTRL_ADDR: (u32, u32) = crate::calc_addr(0x1F80_104A, 1, 2, 0x10);
-pub const SIO1_BAUD_ADDR: (u32, u32) = crate::calc_addr(0x1F80_104E, 1, 2, 0x10);
+crate::define_addr!(SIO1_TX_DATA_ADDR, 0x1F80_1040, 1, 2, 0x10);
+crate::define_addr!(SIO1_RX_DATA_ADDR, 0x1F80_1040, 1, 2, 0x10);
+crate::define_addr!(SIO1_STATUS_ADDR, 0x1F80_1044, 1, 4, 0x10);
+crate::define_addr!(SIO1_MODE_ADDR, 0x1F80_1048, 1, 2, 0x10);
+crate::define_addr!(SIO1_CTRL_ADDR, 0x1F80_104A, 1, 2, 0x10);
+crate::define_addr!(SIO1_BAUD_ADDR, 0x1F80_104E, 1, 2, 0x10);
 
 bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
@@ -58,12 +58,17 @@ impl Bus8 for Sio {
 }
 
 impl Bus16 for Sio {
-    fn read_u16(&mut self, address: u32) -> u16 {
+    fn read_u16(&mut self, address: u32) -> u16 {   
         todo!()
     }
 
     fn write_u16(&mut self, address: u32, value: u16) {
-        todo!()
+        match address {
+            SIO0_CTRL_ADDR_START..=SIO0_CTRL_ADDR_END => {
+
+            }
+            _ => {}
+        }
     }
 }
 

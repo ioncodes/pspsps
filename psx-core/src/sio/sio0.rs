@@ -20,13 +20,6 @@ crate::define_addr!(SIO0_CTRL_ADDR, 0x1F80_104A, 0, 2, 0x10);
 crate::define_addr!(SIO0_BAUD_ADDR, 0x1F80_104E, 0, 2, 0x10);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TransferPhase {
-    Idle,
-    ProcessingTx,    // Waiting to process TX byte (1088 cycles)
-    WaitingForFlags, // Waiting to set flags/IRQ after RX (1088 cycles)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ActiveDevice {
     None,
     Controller,
@@ -37,13 +30,9 @@ pub struct Sio0 {
     pub control: SerialControl,
     pub status: SerialStatus,
     pub mode: SerialMode,
-    pub baud: u16,
     rx_fifo: VecDeque<u8>,
-    pending_tx: Option<u8>,
-    pending_rx: Option<u8>, // Byte waiting to be made available
     cycles: usize,
-    target_cycles: usize,
-    transfer_phase: TransferPhase,
+    target_cycles: usize, // 0 = idle, >0 = waiting for IRQ
     // Devices
     controller: ControllerDevice,
     memory_card: MemoryCardDevice,
@@ -56,13 +45,9 @@ impl Default for Sio0 {
             control: SerialControl::default(),
             status: SerialStatus::default(),
             mode: SerialMode::default(),
-            baud: 0,
             rx_fifo: VecDeque::new(),
-            pending_tx: None,
-            pending_rx: None,
             cycles: 0,
-            target_cycles: 1088,
-            transfer_phase: TransferPhase::Idle,
+            target_cycles: 0, // 0 = idle, will be set to 1088 when waiting for IRQ
             controller: ControllerDevice::new(),
             memory_card: MemoryCardDevice::new(),
             active_device: ActiveDevice::None,
@@ -82,20 +67,18 @@ impl Sio0 {
     pub fn tick(&mut self, cycles: usize) {
         self.cycles += cycles;
 
-        match self.transfer_phase {
-            TransferPhase::ProcessingTx if self.cycles >= self.target_cycles => {
-                // First 1088 cycles complete: process TX byte
-                self.cycles = 0;
-                self.process_tx_byte();
-                self.transfer_phase = TransferPhase::WaitingForFlags;
-            }
-            TransferPhase::WaitingForFlags if self.cycles >= self.target_cycles => {
-                // Second 1088 cycles complete: set flags and IRQ
-                self.cycles = 0;
-                self.set_rx_flags();
-                self.transfer_phase = TransferPhase::Idle;
-            }
-            _ => {}
+        // Check if we're waiting for IRQ
+        if self.cycles >= self.target_cycles {
+            // IRQ delay complete: trigger IRQ and return to idle
+            self.cycles = 0;
+            self.target_cycles = 0; // Back to idle
+            self.trigger_irq();
+
+            // TX is ready again
+            self.status.set_tx_ready_1(true);
+            self.status.set_tx_ready_2(true);
+
+            self.cycles -= self.target_cycles;
         }
 
         // Check if devices were deselected (DTR went low)
@@ -127,7 +110,11 @@ impl Sio0 {
         // Route to active device
         match self.active_device {
             ActiveDevice::Controller => self.controller.process_byte(tx_byte),
-            ActiveDevice::MemoryCard => self.memory_card.process_byte(tx_byte),
+            ActiveDevice::MemoryCard => {
+                // Memory card is stubbed - always return 0xFF (no device present)
+                tracing::trace!(target: "psx_core::sio", tx = format!("{:02X}", tx_byte), "Memory card stubbed");
+                0xFF
+            }
             ActiveDevice::None => {
                 tracing::trace!(target: "psx_core::sio", tx = format!("{:02X}", tx_byte), "No device selected");
                 0xFF
@@ -135,48 +122,19 @@ impl Sio0 {
         }
     }
 
-    fn process_tx_byte(&mut self) {
-        if let Some(tx_byte) = self.pending_tx.take() {
-            // Route the byte to the appropriate device
-            let rx_byte = self.route_byte_to_device(tx_byte);
-
-            // Store response for later (after second delay)
-            self.pending_rx = Some(rx_byte);
-
-            tracing::trace!(
-                target: "psx_core::sio",
-                tx = format!("{:02X}", tx_byte),
-                rx = format!("{:02X}", rx_byte),
-                "Byte processed"
-            );
-        }
-    }
-
-    fn set_rx_flags(&mut self) {
-        if let Some(rx_byte) = self.pending_rx.take() {
-            // Put response in RX FIFO
-            self.rx_fifo.push_back(rx_byte);
-            self.status.set_rx_fifo_not_empty(true);
-
-            // TX is now ready again
-            self.status.set_tx_ready_1(true);
-            self.status.set_tx_ready_2(true);
+    fn trigger_irq(&mut self) {
+        // Only send IRQs for controller, NOT for memory card (stubbed)
+        if self.active_device != ActiveDevice::MemoryCard {
+            self.status.set_ack_input_level(true);
 
             // Trigger interrupt if enabled
-            if self.control.rx_interrupt_enable() {
-                self.status.set_interrupt_request(true);
-            }
-
-            // Set ACK for DSR interrupt (controller acknowledges byte)
-            self.status.set_ack_input_level(true);
-            if self.control.dsr_interrupt_enable() {
+            if self.control.rx_interrupt_enable() || self.control.tx_interrupt_enable() || self.control.dsr_interrupt_enable() {
                 self.status.set_interrupt_request(true);
             }
 
             tracing::trace!(
                 target: "psx_core::sio",
-                rx = format!("{:02X}", rx_byte),
-                "RX flags set"
+                "IRQ triggered"
             );
         }
     }
@@ -215,7 +173,7 @@ impl Bus16 for Sio0 {
             SIO0_STATUS_ADDR_START => self.status.0 as u16,
             SIO0_MODE_ADDR_START => self.mode.0,
             SIO0_CTRL_ADDR_START => self.control.0,
-            SIO0_BAUD_ADDR_START => self.baud,
+            SIO0_BAUD_ADDR_START => self.target_cycles as u16 / 8,
             _ => {
                 tracing::error!(
                     target: "psx_core::sio",
@@ -230,11 +188,28 @@ impl Bus16 for Sio0 {
     fn write_u16(&mut self, address: u32, value: u16) {
         match address {
             SIO0_TX_DATA_ADDR_START => {
-                self.pending_tx = Some(value as u8);
+                let tx_byte = value as u8;
+
+                // Immediately process TX and get RX response
+                let rx_byte = self.route_byte_to_device(tx_byte);
+
+                // Put response in RX FIFO immediately
+                self.rx_fifo.push_back(rx_byte);
+                self.status.set_rx_fifo_not_empty(true);
+
+                // TX is busy until IRQ fires
                 self.status.set_tx_ready_1(false);
                 self.status.set_tx_ready_2(false);
-                self.cycles = 0; // Reset cycle counter for first 1088 cycle delay
-                self.transfer_phase = TransferPhase::ProcessingTx;
+
+                // Start 1088 cycle countdown to IRQ
+                self.cycles = 0;
+
+                tracing::trace!(
+                    target: "psx_core::sio",
+                    tx = format!("{:02X}", tx_byte),
+                    rx = format!("{:02X}", rx_byte),
+                    "TX sent, RX available immediately"
+                );
             }
             SIO0_MODE_ADDR_START => {
                 self.mode.0 = value;
@@ -250,13 +225,11 @@ impl Bus16 for Sio0 {
                 // Handle reset bit
                 if value & 0x40 != 0 {
                     self.rx_fifo.clear();
-                    self.pending_tx = None;
-                    self.pending_rx = None;
                     self.controller.reset();
                     self.memory_card.reset();
                     self.active_device = ActiveDevice::None;
-                    self.transfer_phase = TransferPhase::Idle;
                     self.cycles = 0;
+                    self.target_cycles = 0; // Back to idle
                     self.status.set_rx_fifo_not_empty(false);
                     self.status.set_tx_ready_1(true);
                     self.status.set_tx_ready_2(true);
@@ -269,8 +242,7 @@ impl Bus16 for Sio0 {
                 tracing::trace!(target: "psx_core::sio", dtr, "CTRL");
             }
             SIO0_BAUD_ADDR_START => {
-                self.baud = value;
-                self.target_cycles = value as usize * 8; // Acordding to JunstinCase
+                self.target_cycles = value as usize * 8;
                 tracing::debug!(target: "psx_core::sio", baud = value, "BAUD");
             }
             _ => {

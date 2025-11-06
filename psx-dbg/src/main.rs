@@ -2,6 +2,9 @@ use iced::widget::{button, column, container, row, scrollable, text};
 use iced::{Element, Task, Theme};
 use psx_core::cpu::decoder::Instruction;
 use psx_core::psx::Psx;
+use tracing_subscriber::Layer as _;
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::util::SubscriberInitExt as _;
 
 static BIOS: &[u8] = include_bytes!("../../bios/SCPH1000.BIN");
 
@@ -19,25 +22,35 @@ macro_rules! monospace_text {
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    Run,
     Step,
     Reset,
 }
 
 pub struct PsxDebugger {
     psx: Psx,
+    is_running: bool,
 }
 
 impl Default for PsxDebugger {
     fn default() -> Self {
         Self {
             psx: Psx::new(BIOS),
+            is_running: false,
         }
     }
 }
 
 impl PsxDebugger {
     fn update(&mut self, message: Message) -> Task<Message> {
+        if self.is_running {
+            self.psx.step();
+        }
+
         match message {
+            Message::Run => {
+                self.is_running = true;
+            }
             Message::Step => self.psx.step(),
             Message::Reset => {
                 self.psx = Psx::new(BIOS);
@@ -49,6 +62,7 @@ impl PsxDebugger {
 
     fn view(&self) -> Element<'_, Message> {
         let controls = row![
+            button("Run").on_press(Message::Run),
             button("Step").on_press(Message::Step),
             button("Reset").on_press(Message::Reset),
         ]
@@ -165,6 +179,14 @@ impl PsxDebugger {
 }
 
 fn main() -> iced::Result {
+    let mut targets = tracing_subscriber::filter::Targets::new();
+    targets = targets.with_target("psx_core::cpu", tracing::Level::DEBUG);
+
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .without_time()
+        .with_filter(targets);
+    tracing_subscriber::registry().with(fmt_layer).init();
+
     iced::application(
         "pspsps - psx debugger",
         PsxDebugger::update,

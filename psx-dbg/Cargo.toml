@@ -6,3 +6,5 @@ edition = "2024"
 [dependencies]
 psx-core = { path = "../psx-core" }
 iced = "0.13.1"
+tracing-subscriber = "0.3.19"
+tracing = "0.1.41"

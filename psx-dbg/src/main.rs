@@ -1,4 +1,5 @@
 use eframe::egui;
+use egui::CollapsingHeader;
 use egui_dock::{DockArea, DockState};
 use psx_core::cpu::decoder::Instruction;
 use psx_core::psx::Psx;
@@ -169,6 +170,18 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
                 ui.monospace(format!("$pc: {:08X}", self.psx.cpu.pc));
                 ui.monospace(format!("$hi: {:08X}", self.psx.cpu.hi));
                 ui.monospace(format!("$lo: {:08X}", self.psx.cpu.lo));
+
+                ui.separator();
+
+                CollapsingHeader::new("COP0 Registers")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        CollapsingHeader::new("Status Register")
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                ui.monospace(format!("SR: {:08X}", self.psx.cpu.cop0[12]));
+                            });
+                    });
 
                 ui.separator();
 

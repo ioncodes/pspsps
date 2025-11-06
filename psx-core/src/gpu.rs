@@ -4,13 +4,13 @@ pub mod rasterizer;
 pub mod rgb;
 pub mod status;
 
+use crate::gpu::cmd::Gp0Command;
 use crate::gpu::cmd::poly::DrawPolygonCommand;
 use crate::gpu::cmd::rect::DrawRectangleCommand;
 use crate::gpu::cmd::tex::{
-    DrawModeSettingCommand, DrawingAreaBottomRightCommand, DrawingAreaTopLeftCommand, 
-    DrawingOffsetCommand, TextureWindowSettingCommand,
+    DrawModeSettingCommand, DrawingAreaBottomRightCommand, DrawingAreaTopLeftCommand, DrawingOffsetCommand,
+    TextureWindowSettingCommand,
 };
-use crate::gpu::cmd::Gp0Command;
 use crate::gpu::gp::{Gp, ParsedCommand};
 use crate::mmu::bus::Bus32;
 
@@ -22,27 +22,16 @@ crate::define_addr!(GP1_ADDRESS, 0x1F80_1810, 1, 0x04, 0x04);
 
 pub struct Gpu {
     pub gp: Gp,
-    pub texture_window_setting: TextureWindowSettingCommand,
-    pub drawing_area_x1: u32,
-    pub drawing_area_y1: u32,
-    pub drawing_area_x2: u32,
-    pub drawing_area_y2: u32,
-    pub drawing_offset_x: i32,
-    pub drawing_offset_y: i32,
 }
 
 impl Gpu {
     pub fn new() -> Self {
-        Self {
-            gp: Gp::new(),
-            texture_window_setting: TextureWindowSettingCommand(0),
-            drawing_area_x1: 0,
-            drawing_area_y1: 0,
-            drawing_area_x2: VRAM_WIDTH as u32,
-            drawing_area_y2: VRAM_HEIGHT as u32,
-            drawing_offset_x: 0,
-            drawing_offset_y: 0,
-        }
+        let mut gpu = Self { gp: Gp::new() };
+        
+        gpu.gp.drawing_area_bottom_right =
+            DrawingAreaBottomRightCommand((VRAM_HEIGHT as u32) << 10 | (VRAM_WIDTH as u32));
+
+        gpu
     }
 
     /// Generate a texture buffer from the current VRAM contents
@@ -127,8 +116,8 @@ impl Gpu {
         );
 
         // Apply drawing offset
-        let x = x + self.drawing_offset_x as i16;
-        let y = y + self.drawing_offset_y as i16;
+        let x = x + self.gp.drawing_offset.x_offset_signed() as i16;
+        let y = y + self.gp.drawing_offset.y_offset_signed() as i16;
 
         if cmd.textured() {
             let uv = outer_cmd.data[cmd.uv_idx()];
@@ -146,11 +135,11 @@ impl Gpu {
                 height,
                 uv,
                 texpage,
-                self.texture_window_setting,
-                self.drawing_area_x1,
-                self.drawing_area_y1,
-                self.drawing_area_x2,
-                self.drawing_area_y2,
+                self.gp.texture_window,
+                self.gp.drawing_area_top_left.x1(),
+                self.gp.drawing_area_top_left.y1(),
+                self.gp.drawing_area_bottom_right.x2(),
+                self.gp.drawing_area_bottom_right.y2(),
                 &mut self.gp.vram,
             );
         } else {
@@ -164,10 +153,10 @@ impl Gpu {
                     let screen_y = y as i32 + row as i32;
 
                     // Check drawing area bounds
-                    if screen_x < self.drawing_area_x1 as i32
-                        || screen_x >= self.drawing_area_x2 as i32
-                        || screen_y < self.drawing_area_y1 as i32
-                        || screen_y >= self.drawing_area_y2 as i32
+                    if screen_x < self.gp.drawing_area_top_left.x1() as i32
+                        || screen_x >= self.gp.drawing_area_bottom_right.x2() as i32
+                        || screen_y < self.gp.drawing_area_top_left.y1() as i32
+                        || screen_y >= self.gp.drawing_area_bottom_right.y2() as i32
                     {
                         continue;
                     }
@@ -190,8 +179,8 @@ impl Gpu {
         let vertices: Vec<(i16, i16)> = (0..cmd.vertex_count())
             .map(|i| {
                 let data = parsed_cmd.data[cmd.vertex_idx(i)];
-                let x = (data & 0xFFFF) as i16 + self.drawing_offset_x as i16;
-                let y = ((data >> 16) & 0xFFFF) as i16 + self.drawing_offset_y as i16;
+                let x = (data & 0xFFFF) as i16 + self.gp.drawing_offset.x_offset_signed() as i16;
+                let y = ((data >> 16) & 0xFFFF) as i16 + self.gp.drawing_offset.y_offset_signed() as i16;
                 (x, y)
             })
             .collect();
@@ -256,11 +245,11 @@ impl Gpu {
             &colors,
             &uvs,
             cmd.raw_texture(),
-            self.texture_window_setting,
-            self.drawing_area_x1,
-            self.drawing_area_y1,
-            self.drawing_area_x2,
-            self.drawing_area_y2,
+            self.gp.texture_window,
+            self.gp.drawing_area_top_left.x1(),
+            self.gp.drawing_area_top_left.y1(),
+            self.gp.drawing_area_bottom_right.x2(),
+            self.gp.drawing_area_bottom_right.y2(),
             self.gp.gp1_status.dither(),
             &mut self.gp.vram,
         );
@@ -320,31 +309,14 @@ impl Gpu {
         let width = (parsed_cmd.data[1] & 0xFFFF) as usize;
         let height = ((parsed_cmd.data[1] >> 16) & 0xFFFF) as usize;
 
-        let total_pixels = width * height;
-        let mut pixel_data: Vec<u16> = Vec::with_capacity(total_pixels);
-
         tracing::debug!(
             target: "psx_core::gpu",
             src_x, src_y, width, height,
             "VRAM to CPU blit"
         );
 
-        for row in 0..height {
-            for col in 0..width {
-                let vram_x = src_x as usize + col;
-                let vram_y = src_y as usize + row;
-
-                if vram_x < VRAM_WIDTH && vram_y < VRAM_HEIGHT {
-                    let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
-                    let byte0 = self.gp.vram[vram_idx];
-                    let byte1 = self.gp.vram[vram_idx + 1];
-                    let pixel = u16::from_le_bytes([byte0, byte1]);
-                    pixel_data.push(pixel);
-                }
-            }
-        }
-
-        // TODO: allow retrieving it
+        // Note: The actual data transfer happens in Gp::process_read() when the CPU
+        // reads from GPUREAD. Pixels are read directly from VRAM on-demand.
     }
 
     fn process_vram_to_vram_blit_cmd(&mut self, parsed_cmd: ParsedCommand) {
@@ -426,38 +398,32 @@ impl Gpu {
                 // TODO: textured rectangle x-flip, y-flip
             }
             0xE2 => {
-                self.texture_window_setting = TextureWindowSettingCommand(parsed_cmd.raw);
+                self.gp.texture_window = TextureWindowSettingCommand(parsed_cmd.raw);
             }
             0xE3 => {
-                let cmd = DrawingAreaTopLeftCommand(parsed_cmd.raw);
-                self.drawing_area_x1 = cmd.x1();
-                self.drawing_area_y1 = cmd.y1();
+                self.gp.drawing_area_top_left = DrawingAreaTopLeftCommand(parsed_cmd.raw);
                 tracing::debug!(
                     target: "psx_core::gpu",
-                    x1 = self.drawing_area_x1,
-                    y1 = self.drawing_area_y1,
-                    "Set drawing area"
+                    x1 = self.gp.drawing_area_top_left.x1(),
+                    y1 = self.gp.drawing_area_top_left.y1(),
+                    "Set drawing area top left"
                 );
             }
             0xE4 => {
-                let cmd = DrawingAreaBottomRightCommand(parsed_cmd.raw);
-                self.drawing_area_x2 = cmd.x2();
-                self.drawing_area_y2 = cmd.y2();
+                self.gp.drawing_area_bottom_right = DrawingAreaBottomRightCommand(parsed_cmd.raw);
                 tracing::debug!(
                     target: "psx_core::gpu",
-                    x2 = self.drawing_area_x2,
-                    y2 = self.drawing_area_y2,
-                    "Set drawing area"
+                    x2 = self.gp.drawing_area_bottom_right.x2(),
+                    y2 = self.gp.drawing_area_bottom_right.y2(),
+                    "Set drawing area bottom right"
                 );
             }
             0xE5 => {
-                let cmd = DrawingOffsetCommand(parsed_cmd.raw);
-                self.drawing_offset_x = cmd.x_offset_signed();
-                self.drawing_offset_y = cmd.y_offset_signed();
+                self.gp.drawing_offset = DrawingOffsetCommand(parsed_cmd.raw);
                 tracing::debug!(
                     target: "psx_core::gpu",
-                    x_offset = self.drawing_offset_x,
-                    y_offset = self.drawing_offset_y,
+                    x_offset = self.gp.drawing_offset.x_offset_signed(),
+                    y_offset = self.gp.drawing_offset.y_offset_signed(),
                     "Set drawing offset"
                 );
             }
@@ -477,7 +443,7 @@ impl Gpu {
 
         match cmd {
             // NOP
-            0x00 => {},
+            0x00 => {}
             // Clear Cache
             0x01 => {
                 // TODO: flush texture cache? do we even need to?
@@ -507,10 +473,10 @@ impl Gpu {
                         let vram_y = y as usize + row as usize;
 
                         // within drawing area?
-                        if vram_x < self.drawing_area_x1 as usize
-                            || vram_x >= self.drawing_area_x2 as usize
-                            || vram_y < self.drawing_area_y1 as usize
-                            || vram_y >= self.drawing_area_y2 as usize
+                        if vram_x < self.gp.drawing_area_top_left.x1() as usize
+                            || vram_x >= self.gp.drawing_area_bottom_right.x2() as usize
+                            || vram_y < self.gp.drawing_area_top_left.y1() as usize
+                            || vram_y >= self.gp.drawing_area_bottom_right.y2() as usize
                         {
                             continue;
                         }

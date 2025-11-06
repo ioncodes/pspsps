@@ -1,4 +1,8 @@
 use crate::gpu::cmd::Gp0Command;
+use crate::gpu::cmd::tex::{
+    DrawingAreaBottomRightCommand, DrawingAreaTopLeftCommand, DrawingOffsetCommand,
+    TextureWindowSettingCommand,
+};
 use crate::gpu::status::{DmaDirection, StatusRegister};
 use crate::gpu::{GP1_ADDRESS_END, GP1_ADDRESS_START, VRAM_HEIGHT, VRAM_WIDTH};
 use crate::mmu::bus::Bus32;
@@ -21,10 +25,15 @@ enum State {
 pub struct Gp {
     pub vram: Vec<u8>,
     pub gp1_status: StatusRegister,
+    pub texture_window: TextureWindowSettingCommand,
+    pub drawing_area_top_left: DrawingAreaTopLeftCommand,
+    pub drawing_area_bottom_right: DrawingAreaBottomRightCommand,
+    pub drawing_offset: DrawingOffsetCommand,
     fifo: VecDeque<ParsedCommand>,
     expected_data: usize,
     state: State,
     read_counter: usize,
+    gpuread_latch: u32,
 }
 
 impl Gp {
@@ -36,12 +45,19 @@ impl Gp {
             vram: vec![0; VRAM_WIDTH * VRAM_HEIGHT * 2], // 2 bytes per pixel (16bit)
             read_counter: 0,
             gp1_status: StatusRegister(0),
+            gpuread_latch: 0,
+            texture_window: TextureWindowSettingCommand(0),
+            drawing_area_top_left: DrawingAreaTopLeftCommand(0),
+            drawing_area_bottom_right: DrawingAreaBottomRightCommand(0),
+            drawing_offset: DrawingOffsetCommand(0),
         }
     }
 
     pub fn process_read(&mut self, address: u32) -> u32 {
         if self.fifo.is_empty() {
-            return 0xFF;
+            // No active command, return the gpuread_latch
+            // (set by GP1(10h) or previous reads)
+            return self.gpuread_latch;
         }
 
         let last_cmd = self.fifo.back_mut().unwrap();
@@ -253,6 +269,48 @@ impl Gp {
                     hres = self.gp1_status.hres(), vres = self.gp1_status.vres(),
                     "Set GPU display mode via GP1 command"
                 );
+            }
+            // GP1(10h-1Fh) - Read GPU internal register
+            0x10..=0x1F => {
+                let register_index = params & 0x07; // Mirror every 8 registers
+
+                self.gpuread_latch = match register_index {
+                    0x00 | 0x01 => {
+                        // Returns nothing (keep old value)
+                        tracing::trace!(target: "psx_core::gpu", register_index, "Read GPU register (no-op)");
+                        self.gpuread_latch
+                    }
+                    0x02 => {
+                        // Read Texture Window setting (20 bits)
+                        let value = self.texture_window.0 & 0x000F_FFFF;
+                        tracing::trace!(target: "psx_core::gpu", register_index, value = format!("{:08X}", value), "Read Texture Window setting");
+                        value
+                    }
+                    0x03 => {
+                        // Read Draw area top left (19 bits)
+                        let value = self.drawing_area_top_left.0 & 0x0007_FFFF;
+                        tracing::trace!(target: "psx_core::gpu", register_index, value = format!("{:08X}", value), "Read Draw area top left");
+                        value
+                    }
+                    0x04 => {
+                        // Read Draw area bottom right (19 bits)
+                        let value = self.drawing_area_bottom_right.0 & 0x0007_FFFF;
+                        tracing::trace!(target: "psx_core::gpu", register_index, value = format!("{:08X}", value), "Read Draw area bottom right");
+                        value
+                    }
+                    0x05 => {
+                        // Read Draw offset (22 bits)
+                        let value = self.drawing_offset.0 & 0x003F_FFFF;
+                        tracing::trace!(target: "psx_core::gpu", register_index, value = format!("{:08X}", value), "Read Draw offset");
+                        value
+                    }
+                    0x06 | 0x07 => {
+                        // Returns nothing (keep old value)
+                        tracing::trace!(target: "psx_core::gpu", register_index, "Read GPU register (no-op)");
+                        self.gpuread_latch
+                    }
+                    _ => unreachable!(),
+                };
             }
             _ => {
                 tracing::error!(

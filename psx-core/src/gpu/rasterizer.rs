@@ -80,9 +80,9 @@ fn rasterize_triangle(
 
     // Bounding box and clamping to VRAM dimensions
     let min_x = x0.min(x1).min(x2).max(0);
-    let max_x = x0.max(x1).max(x2).min(VRAM_WIDTH as i32 - 1);
+    let max_x = x0.max(x1).max(x2).min(VRAM_WIDTH as i32);
     let min_y = y0.min(y1).min(y2).max(0);
-    let max_y = y0.max(y1).max(y2).min(VRAM_HEIGHT as i32 - 1);
+    let max_y = y0.max(y1).max(y2).min(VRAM_HEIGHT as i32);
 
     let area = edge_function(x0, y0, x1, y1, x2, y2);
     if area == 0 {
@@ -92,8 +92,11 @@ fn rasterize_triangle(
     let clockwise = area < 0;
 
     // Go through each pixel in bounding box
-    for y in min_y..=max_y {
-        for x in min_x..=max_x {
+    // PSX excludes lower-right coordinates
+    // "Polygons are displayed up to \<excluding> their lower-right coordinates."
+    // HONORY MENTION: CHICHO I LOVE YOU
+    for y in min_y..max_y {
+        for x in min_x..max_x {
             // Measure the distance from point (x, y) to the edge opposite to the corresponding vertex
             // w0: distance from edge V1->V2 (opposite to V0)
             // w1: distance from edge V1->V0 (opposite to V1)
@@ -117,6 +120,11 @@ fn rasterize_triangle(
                 } else {
                     textured_render(uvs, w0, w1, w2, area, clut, texpage, texture_window, vram)
                 };
+
+                // Transparent pixel
+                if textured && pixel == 0x0000 {
+                    continue;
+                }
 
                 // Push to VRAM
                 let vram_idx = ((y as usize) * 1024 + (x as usize)) * 2;

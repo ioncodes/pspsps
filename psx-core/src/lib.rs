@@ -11,6 +11,7 @@ pub mod mmu;
 pub mod psx;
 pub mod spu;
 pub mod sio;
+pub mod timer;
 
 pub const fn regidx(register: &str) -> u8 {
     match register {

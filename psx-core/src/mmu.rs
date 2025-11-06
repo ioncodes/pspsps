@@ -10,6 +10,7 @@ use crate::mmu::bus::{Bus8 as _, Bus32};
 use crate::mmu::dma::{Channel, DMA_INTERRUPT_REGISTER_ADDRESS_END, DMA0_ADDRESS_START, Dma, TransferMode};
 use crate::sio::{SIO_ADDR_END, SIO_ADDR_START, Sio};
 use crate::spu::Spu;
+use crate::timer::{TIMER0_COUNTER_ADDR_START, TIMER2_TARGET_ADDR_END, Timers};
 
 pub struct Mmu {
     pub memory: Box<[u8; 0xFFFF_FFFF]>, // 512 KB BIOS
@@ -19,6 +20,7 @@ pub struct Mmu {
     pub dma: Dma,
     pub irq: Irq,
     pub sio: Sio,
+    pub timers: Timers,
 }
 
 impl Mmu {
@@ -30,7 +32,8 @@ impl Mmu {
             gpu: Gpu::new(),
             dma: Dma::new(),
             irq: Irq::new(),
-            sio: Sio::new()
+            sio: Sio::new(),
+            timers: Timers::new(),
         }
     }
 
@@ -112,6 +115,39 @@ impl Mmu {
             5 => self.dma.channels.5.set_completed(),
             6 => self.dma.channels.6.set_completed(),
             _ => unreachable!(),
+        }
+
+        let old_master_flag = self.dma.interrupt.master_interrupt();
+
+        let channel_mask_bit = (self.dma.interrupt.interrupt_mask() >> CHANNEL_ID) & 1;
+        if channel_mask_bit == 1 {
+            // Set the completion flag for this channel
+            let new_flags = self.dma.interrupt.interrupt_flags() | (1 << CHANNEL_ID);
+            self.dma.interrupt.set_interrupt_flags(new_flags);
+
+            tracing::trace!(
+                target: "psx_core::dma",
+                channel_id = CHANNEL_ID,
+                "DMA channel completion flag set"
+            );
+        }
+
+        // PSX-SPX: "IF b15=1 OR (b23=1 AND (b16-22 AND b24-30)>0) THEN b31=1 ELSE b31=0"
+        // Recalculate the read-only master interrupt flag
+        let bus_error = self.dma.interrupt.bus_error();
+        let master_enable = self.dma.interrupt.master_interrupt_enable();
+        let masked_flags = self.dma.interrupt.interrupt_mask() & self.dma.interrupt.interrupt_flags();
+
+        let new_master_flag = bus_error || (master_enable && masked_flags != 0);
+        self.dma.interrupt.set_master_interrupt(new_master_flag);
+
+        if !old_master_flag && new_master_flag {
+            self.irq.status.set_dma(true);
+            tracing::debug!(
+                target: "psx_core::dma",
+                channel_id = CHANNEL_ID,
+                "DMA IRQ raised"
+            );
         }
     }
 
@@ -342,6 +378,7 @@ impl bus::Bus8 for Mmu {
         let address = Self::canonicalize_virtual_address(address);
 
         match address {
+            TIMER0_COUNTER_ADDR_START..=TIMER2_TARGET_ADDR_END => self.timers.read_u8(address),
             SIO_ADDR_START..=SIO_ADDR_END => self.sio.read_u8(address),
             I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.read_u8(address),
             I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.read_u8(address),
@@ -360,6 +397,7 @@ impl bus::Bus8 for Mmu {
     fn write_u8(&mut self, address: u32, value: u8) {
         let address = Self::canonicalize_virtual_address(address);
         match address {
+            TIMER0_COUNTER_ADDR_START..=TIMER2_TARGET_ADDR_END => self.timers.write_u8(address, value),
             SIO_ADDR_START..=SIO_ADDR_END => self.sio.write_u8(address, value),
             I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.write_u8(address, value),
             I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.write_u8(address, value),
@@ -379,6 +417,7 @@ impl bus::Bus16 for Mmu {
     fn read_u16(&mut self, address: u32) -> u16 {
         let address = Self::canonicalize_virtual_address(address);
         match address {
+            TIMER0_COUNTER_ADDR_START..=TIMER2_TARGET_ADDR_END => self.timers.read_u16(address),
             SIO_ADDR_START..=SIO_ADDR_END => self.sio.read_u16(address),
             I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.read_u16(address),
             I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.read_u16(address),
@@ -391,6 +430,7 @@ impl bus::Bus16 for Mmu {
     fn write_u16(&mut self, address: u32, value: u16) {
         let address = Self::canonicalize_virtual_address(address);
         match address {
+            TIMER0_COUNTER_ADDR_START..=TIMER2_TARGET_ADDR_END => self.timers.write_u16(address, value),
             SIO_ADDR_START..=SIO_ADDR_END => self.sio.write_u16(address, value),
             I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.write_u16(address, value),
             I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.write_u16(address, value),
@@ -408,7 +448,7 @@ impl bus::Bus32 for Mmu {
     fn read_u32(&mut self, address: u32) -> u32 {
         let address = Self::canonicalize_virtual_address(address);
         match address {
-            0x1F801100..=0x1F80112F => 0xFF, // TODO: always return 0xFF for these (timers?). helps with getting to shell
+            TIMER0_COUNTER_ADDR_START..=TIMER2_TARGET_ADDR_END => self.timers.read_u32(address),
             SIO_ADDR_START..=SIO_ADDR_END => self.sio.read_u32(address),
             I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.read_u32(address),
             I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.read_u32(address),
@@ -428,6 +468,7 @@ impl bus::Bus32 for Mmu {
     fn write_u32(&mut self, address: u32, value: u32) {
         let address = Self::canonicalize_virtual_address(address);
         match address {
+            TIMER0_COUNTER_ADDR_START..=TIMER2_TARGET_ADDR_END => self.timers.write_u32(address, value),
             SIO_ADDR_START..=SIO_ADDR_END => self.sio.write_u32(address, value),
             I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.write_u32(address, value),
             I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.write_u32(address, value),

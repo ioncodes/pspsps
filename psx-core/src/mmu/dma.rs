@@ -72,11 +72,7 @@ bitfield! {
 
 impl ChannelControl {
     pub fn madr_step(&self) -> i32 {
-        if self.madr_increment_per_step() {
-            -4
-        } else {
-            4
-        }
+        if self.madr_increment_per_step() { -4 } else { 4 }
     }
 }
 
@@ -96,14 +92,16 @@ bitfield! {
         pub dma5_priority: u8 @ 20..=22,
         pub dma5_master: bool @ 23,
         pub dma6_priority: u8 @ 24..=26,
-        pub dma6_master: bool @ 27
+        pub dma6_master: bool @ 27,
+        pub cpu_priority: u8 @ 28..=30,
+        pub cpu_enable: bool @ 31,
     }
 }
 
 bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq)]
     pub struct InterruptRegister(pub u32): Debug, FromStorage, IntoStorage, DerefStorage {
-        pub completion: u8 @ 0..=6,
+        pub completion_interrupt_control: u8 @ 0..=6,
         pub bus_error: bool @ 15,
         pub interrupt_mask: u8 @ 16..=22,
         pub master_interrupt_enable: bool @ 23,
@@ -279,7 +277,7 @@ impl Dma {
                 Channel::<5>::new(), // PIO
                 Channel::<6>::new(), // OTC
             ),
-            control: ControlRegister(0),
+            control: ControlRegister(0x07654321),
             interrupt: InterruptRegister(0),
         }
     }
@@ -382,8 +380,41 @@ impl Bus32 for Dma {
             DMA4_ADDRESS_START..=DMA4_ADDRESS_END => self.channels.4.write_u32(address, value),
             DMA5_ADDRESS_START..=DMA5_ADDRESS_END => self.channels.5.write_u32(address, value),
             DMA6_ADDRESS_START..=DMA6_ADDRESS_END => self.channels.6.write_u32(address, value),
-            DMA_CONTROL_REGISTER_ADDRESS_START => self.control.0 = value,
-            DMA_INTERRUPT_REGISTER_ADDRESS_START => self.interrupt.0 = value,
+            DMA_CONTROL_REGISTER_ADDRESS_START => {
+                self.control.0 = value;
+
+                tracing::trace!(
+                    target: "psx_core::dma",
+                    value = format!("{:08X}", value),
+                    "DMA control register (DPCR) write"
+                );
+            }
+            DMA_INTERRUPT_REGISTER_ADDRESS_START => {
+                let writable_mask = 0x00FF_807F;
+                let writable_bits = value & writable_mask;
+
+                let flags_to_clear = ((value >> 24) & 0x7F) as u8;
+                let current_flags = self.interrupt.interrupt_flags();
+                let new_flags = current_flags & !flags_to_clear;
+
+                self.interrupt.0 = (self.interrupt.0 & !writable_mask) | writable_bits;
+                self.interrupt.set_interrupt_flags(new_flags);
+
+                let bus_error = self.interrupt.bus_error();
+                let master_enable = self.interrupt.master_interrupt_enable();
+                let masked_flags = self.interrupt.interrupt_mask() & self.interrupt.interrupt_flags();
+                let new_master = bus_error || (master_enable && masked_flags != 0);
+                self.interrupt.set_master_interrupt(new_master);
+
+                tracing::trace!(
+                    target: "psx_core::dma",
+                    write_value = format!("{:08X}", value),
+                    new_register = format!("{:08X}", self.interrupt.0),
+                    flags_cleared = format!("{:02X}", flags_to_clear),
+                    master_flag = new_master,
+                    "DMA interrupt register (DICR) write"
+                );
+            }
             _ => unreachable!(),
         }
     }

@@ -379,15 +379,30 @@ pub fn load_store<
         {
             // LWL, LWR, SWL, SWR do *not* throw exceptions for address alignment!
 
-            // "It reads bytes only from the word in memory which contains the specified starting byte."
-            let bytes_to_read = (vaddr & 0b11) + 1; // this many bytes in word boundary -> subtract from vaddr when reading
+            // LWL: "It reads bytes only from the word in memory which contains the specified starting byte."
+            // this many bytes in word boundary -> subtract from/add to vaddr when reading
+            let bytes_to_read = match PORTION {
+                MemoryAccessPortion::Left => (vaddr & 0b11) + 1,
+                MemoryAccessPortion::Right => 4 - (vaddr & 0b11),
+                _ => unreachable!(),
+            };
             let mut register_value = cpu.read_register(instr.rt());
 
             for idx in 0..bytes_to_read {
-                let shift = 8 * (3 - idx);
+                let shift = match PORTION {
+                    MemoryAccessPortion::Left => 8 * (3 - idx),
+                    MemoryAccessPortion::Right => 8 * idx,
+                    _ => unreachable!(),
+                };
                 let mask = 0xFFu32 << shift;
 
-                let value = cpu.read_u8(vaddr - idx);
+                let vaddr = match PORTION {
+                    MemoryAccessPortion::Left => vaddr - idx,
+                    MemoryAccessPortion::Right => vaddr + idx,
+                    _ => unreachable!(),
+                };
+                let value = cpu.read_u8(vaddr);
+
                 register_value = (register_value & !mask) | ((value as u32) << shift);
             }
 

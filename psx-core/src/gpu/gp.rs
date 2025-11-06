@@ -272,45 +272,7 @@ impl Gp {
             }
             // GP1(10h-1Fh) - Read GPU internal register
             0x10..=0x1F => {
-                let register_index = params & 0x07; // Mirror every 8 registers
-
-                self.gpuread_latch = match register_index {
-                    0x00 | 0x01 => {
-                        // Returns nothing (keep old value)
-                        tracing::trace!(target: "psx_core::gpu", register_index, "Read GPU register (no-op)");
-                        self.gpuread_latch
-                    }
-                    0x02 => {
-                        // Read Texture Window setting (20 bits)
-                        let value = self.texture_window.0 & 0x000F_FFFF;
-                        tracing::trace!(target: "psx_core::gpu", register_index, value = format!("{:08X}", value), "Read Texture Window setting");
-                        value
-                    }
-                    0x03 => {
-                        // Read Draw area top left (19 bits)
-                        let value = self.drawing_area_top_left.0 & 0x0007_FFFF;
-                        tracing::trace!(target: "psx_core::gpu", register_index, value = format!("{:08X}", value), "Read Draw area top left");
-                        value
-                    }
-                    0x04 => {
-                        // Read Draw area bottom right (19 bits)
-                        let value = self.drawing_area_bottom_right.0 & 0x0007_FFFF;
-                        tracing::trace!(target: "psx_core::gpu", register_index, value = format!("{:08X}", value), "Read Draw area bottom right");
-                        value
-                    }
-                    0x05 => {
-                        // Read Draw offset (22 bits)
-                        let value = self.drawing_offset.0 & 0x003F_FFFF;
-                        tracing::trace!(target: "psx_core::gpu", register_index, value = format!("{:08X}", value), "Read Draw offset");
-                        value
-                    }
-                    0x06 | 0x07 => {
-                        // Returns nothing (keep old value)
-                        tracing::trace!(target: "psx_core::gpu", register_index, "Read GPU register (no-op)");
-                        self.gpuread_latch
-                    }
-                    _ => unreachable!(),
-                };
+                self.read_internal_register(params);
             }
             _ => {
                 tracing::error!(
@@ -320,6 +282,51 @@ impl Gp {
                 );
             }
         }
+    }
+
+    /// GP1(10h-1Fh) - Read GPU internal register
+    /// After sending the command, the result can be read immediately from GPUREAD register.
+    /// No delay or GPUSTAT.Bit27 check required (unlike VRAM reads).
+    fn read_internal_register(&mut self, params: u32) {
+        let register_index = params & 0x07; // Mirror every 8 registers (08h-FFFFFFh mirrors 00h-07h)
+
+        self.gpuread_latch = match register_index {
+            0x00 | 0x01 => {
+                // Returns nothing (keep old value)
+                tracing::trace!(target: "psx_core::gpu", register_index, "Read GPU register (no-op)");
+                self.gpuread_latch
+            }
+            0x02 => {
+                // Read Texture Window setting (GP0(E2h), 20 bits)
+                let value = self.texture_window.0 & 0x000F_FFFF;
+                tracing::trace!(target: "psx_core::gpu", register_index, value = format!("{:08X}", value), "Read Texture Window setting");
+                value
+            }
+            0x03 => {
+                // Read Draw area top left (GP0(E3h), 19 bits)
+                let value = self.drawing_area_top_left.0 & 0x0007_FFFF;
+                tracing::trace!(target: "psx_core::gpu", register_index, value = format!("{:08X}", value), "Read Draw area top left");
+                value
+            }
+            0x04 => {
+                // Read Draw area bottom right (GP0(E4h), 19 bits)
+                let value = self.drawing_area_bottom_right.0 & 0x0007_FFFF;
+                tracing::trace!(target: "psx_core::gpu", register_index, value = format!("{:08X}", value), "Read Draw area bottom right");
+                value
+            }
+            0x05 => {
+                // Read Draw offset (GP0(E5h), 22 bits)
+                let value = self.drawing_offset.0 & 0x003F_FFFF;
+                tracing::trace!(target: "psx_core::gpu", register_index, value = format!("{:08X}", value), "Read Draw offset");
+                value
+            }
+            0x06 | 0x07 => {
+                // Returns nothing (keep old value)
+                tracing::trace!(target: "psx_core::gpu", register_index, "Read GPU register (no-op)");
+                self.gpuread_latch
+            }
+            _ => unreachable!(),
+        };
     }
 
     #[inline(always)]

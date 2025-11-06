@@ -540,3 +540,8 @@ pub fn debug_break(instr: &Instruction, cpu: &mut Cpu) {
     cpu.cause_exception(Exception::Breakpoint, instr.is_delay_slot);
     cpu.add_cycles(1);
 }
+
+pub fn gte_dispatch(instr: &Instruction, cpu: &mut Cpu) {
+    println!("GTE instruction dispatched: {}", instr);
+    todo!("Implement GTE instruction: {:08X}", instr.raw);
+}

@@ -1,3 +1,4 @@
+use psx_core::cpu::decoder::Instruction;
 use psx_core::mmu::bus::Bus32 as _;
 use psx_core::psx::Psx;
 use std::time::Instant;
@@ -27,19 +28,24 @@ fn main() {
     loop {
         let _ = psx.step().unwrap_or_else(|_| {
             println!("Registers: {:08X?}", psx.cpu.registers);
-            println!("Memory @ PC: {:08X?}", psx.cpu.mmu.read_u32(psx.cpu.pc));
+            let pc = psx.cpu.pc - 4;
+            println!("PC: {:08X}", pc);
+            let instr = psx.cpu.mmu.read_u32(pc);
+            println!("Memory @ PC: {:08X?}", instr);
+            println!("Last instruction: {:02X}", instr & 0b111111);
+
             std::process::exit(1)
         });
         instruction_count += 1;
 
         if last_report.elapsed().as_secs() >= 1 {
             let elapsed = start_time.elapsed();
-            let _ips = instruction_count as f64 / elapsed.as_secs_f64();
-            // println!(
-            //     "Instructions executed: {}, MIPS: {:.2}",
-            //     instruction_count,
-            //     ips / 1_000_000.0
-            // );
+            let ips = instruction_count as f64 / elapsed.as_secs_f64();
+            println!(
+                "Instructions executed: {}, MIPS: {:.2}",
+                instruction_count,
+                ips / 1_000_000.0
+            );
             last_report = Instant::now();
         }
     }

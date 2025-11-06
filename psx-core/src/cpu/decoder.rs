@@ -79,6 +79,30 @@ pub enum Opcode {
     StoreWordFromCoprocessor(u8),
     ReturnFromException,
 
+    // GTE
+    GteRtps,
+    GteNclip,
+    GteOp,
+    GteDpcs,
+    GteIntpl,
+    GteMvmva,
+    GteNcds,
+    GteCdp,
+    GteNcdt,
+    GteNccs,
+    GteCc,
+    GteNcs,
+    GteNct,
+    GteSqr,
+    GteDcpl,
+    GteDpct,
+    GteAvsz3,
+    GteAvsz4,
+    GteRtpt,
+    GteGpf,
+    GteGpl,
+    GteNcct,
+
     // Other
     Invalid,
 }
@@ -157,7 +181,7 @@ impl PartialEq for Instruction {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Register(u8, bool);
+pub struct Register(u8, bool, u8); // (register number, is_coproc, coproc number)
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Operand {
@@ -217,43 +241,12 @@ impl Instruction {
                 let cop_num = (op & 0x3) as u8; // Extract coprocessor number (bits 1-0 of opcode)
                 let fmt = (opcode >> 21) & 0x1F; // Extract the format field (bits 25-21)
 
-                match fmt {
-                    0b00000 => Instruction {
-                        opcode: Opcode::MoveFromCoprocessor(cop_num),
-                        raw: opcode,
-                        opcode_type: InstructionType::Cop,
-                        handler: handlers::cop::<{ handlers::CopOperation::MoveFrom }>,
-                        is_delay_slot: false,
-                    },
-                    0b00010 => Instruction {
-                        opcode: Opcode::MoveControlFromCoprocessor(cop_num),
-                        raw: opcode,
-                        opcode_type: InstructionType::Cop,
-                        handler: handlers::cop::<{ handlers::CopOperation::MoveControlFrom }>,
-                        is_delay_slot: false,
-                    },
-                    0b00100 => Instruction {
-                        opcode: Opcode::MoveToCoprocessor(cop_num),
-                        raw: opcode,
-                        opcode_type: InstructionType::Cop,
-                        handler: handlers::cop::<{ handlers::CopOperation::MoveTo }>,
-                        is_delay_slot: false,
-                    },
-                    0b00110 => Instruction {
-                        opcode: Opcode::MoveControlToCoprocessor(cop_num),
-                        raw: opcode,
-                        opcode_type: InstructionType::Cop,
-                        handler: handlers::cop::<{ handlers::CopOperation::MoveControlTo }>,
-                        is_delay_slot: false,
-                    },
-                    16 if cop_num == 0 => Instruction {
-                        opcode: Opcode::ReturnFromException,
-                        raw: opcode,
-                        opcode_type: InstructionType::Cop,
-                        handler: handlers::cop::<{ handlers::CopOperation::ReturnFromException }>,
-                        is_delay_slot: false,
-                    },
-                    _ => Instruction::invalid(),
+                if cop_num == 2 && fmt & 0b10000 != 0 {
+                    // GTE
+                    Self::decode_gte(opcode)
+                } else {
+                    // Other coprocessor instructions
+                    Self::decode_other_cop(opcode, fmt, cop_num)
                 }
             }
             0x30..=0x33 | 0x38..=0x3B => {
@@ -361,20 +354,20 @@ impl Instruction {
         match self.opcode_type {
             InstructionType::RType => match self.opcode {
                 Opcode::ShiftLeftLogical | Opcode::ShiftRightLogical | Opcode::ShiftRightArithmetic => {
-                    Some(Operand::Register(Register(self.rd(), false)))
+                    Some(Operand::Register(Register(self.rd(), false, 0)))
                 }
-                Opcode::JumpRegister => Some(Operand::Register(Register(self.rs(), false))),
-                Opcode::JumpAndLinkRegister => Some(Operand::Register(Register(self.rd(), false))),
-                Opcode::MoveFromHi | Opcode::MoveFromLo => Some(Operand::Register(Register(self.rd(), false))),
-                Opcode::MoveToHi | Opcode::MoveToLo => Some(Operand::Register(Register(self.rs(), false))),
+                Opcode::JumpRegister => Some(Operand::Register(Register(self.rs(), false, 0))),
+                Opcode::JumpAndLinkRegister => Some(Operand::Register(Register(self.rd(), false, 0))),
+                Opcode::MoveFromHi | Opcode::MoveFromLo => Some(Operand::Register(Register(self.rd(), false, 0))),
+                Opcode::MoveToHi | Opcode::MoveToLo => Some(Operand::Register(Register(self.rs(), false, 0))),
                 Opcode::Multiply | Opcode::MultiplyUnsigned | Opcode::Divide | Opcode::DivideUnsigned => {
-                    Some(Operand::Register(Register(self.rs(), false)))
+                    Some(Operand::Register(Register(self.rs(), false, 0)))
                 }
                 Opcode::SystemCall | Opcode::Break => None,
-                _ => Some(Operand::Register(Register(self.rd(), false))),
+                _ => Some(Operand::Register(Register(self.rd(), false, 0))),
             },
             InstructionType::IType => match self.opcode {
-                Opcode::LoadUpperImmediate => Some(Operand::Register(Register(self.rt(), false))),
+                Opcode::LoadUpperImmediate => Some(Operand::Register(Register(self.rt(), false, 0))),
                 Opcode::BranchGreaterThanZero
                 | Opcode::BranchLessEqualZero
                 | Opcode::BranchGreaterEqualZero
@@ -382,12 +375,12 @@ impl Instruction {
                 | Opcode::BranchLessThanZeroAndLink
                 | Opcode::BranchGreaterEqualZeroAndLink
                 | Opcode::BranchEqual
-                | Opcode::BranchNotEqual => Some(Operand::Register(Register(self.rs(), false))),
-                _ => Some(Operand::Register(Register(self.rt(), false))),
+                | Opcode::BranchNotEqual => Some(Operand::Register(Register(self.rs(), false, 0))),
+                _ => Some(Operand::Register(Register(self.rt(), false, 0))),
             },
             InstructionType::JType => Some(Operand::Address(self.address() << 2)),
             InstructionType::Cop if self.opcode != Opcode::ReturnFromException => {
-                Some(Operand::Register(Register(self.rt(), false)))
+                Some(Operand::Register(Register(self.rt(), false, 0)))
             }
             _ => None,
         }
@@ -397,20 +390,20 @@ impl Instruction {
         match self.opcode_type {
             InstructionType::RType => match self.opcode {
                 Opcode::ShiftLeftLogical | Opcode::ShiftRightLogical | Opcode::ShiftRightArithmetic => {
-                    Some(Operand::Register(Register(self.rt(), false)))
+                    Some(Operand::Register(Register(self.rt(), false, 0)))
                 }
                 Opcode::ShiftLeftLogicalVariable
                 | Opcode::ShiftRightLogicalVariable
-                | Opcode::ShiftRightArithmeticVariable => Some(Operand::Register(Register(self.rs(), false))),
+                | Opcode::ShiftRightArithmeticVariable => Some(Operand::Register(Register(self.rs(), false, 0))),
                 Opcode::JumpRegister | Opcode::MoveFromHi | Opcode::MoveFromLo | Opcode::SystemCall | Opcode::Break => {
                     None
                 }
-                Opcode::JumpAndLinkRegister => Some(Operand::Register(Register(self.rs(), false))),
+                Opcode::JumpAndLinkRegister => Some(Operand::Register(Register(self.rs(), false, 0))),
                 Opcode::MoveToHi | Opcode::MoveToLo => None,
                 Opcode::Multiply | Opcode::MultiplyUnsigned | Opcode::Divide | Opcode::DivideUnsigned => {
-                    Some(Operand::Register(Register(self.rt(), false)))
+                    Some(Operand::Register(Register(self.rt(), false, 0)))
                 }
-                _ => Some(Operand::Register(Register(self.rs(), false))),
+                _ => Some(Operand::Register(Register(self.rs(), false, 0))),
             },
             InstructionType::IType => match self.opcode {
                 Opcode::LoadUpperImmediate => Some(Operand::Immediate(self.immediate() as u32)),
@@ -420,7 +413,7 @@ impl Instruction {
                 | Opcode::BranchLessThanZero
                 | Opcode::BranchLessThanZeroAndLink
                 | Opcode::BranchGreaterEqualZeroAndLink => Some(Operand::Immediate((self.immediate() as i16) as u32)),
-                Opcode::BranchEqual | Opcode::BranchNotEqual => Some(Operand::Register(Register(self.rt(), false))),
+                Opcode::BranchEqual | Opcode::BranchNotEqual => Some(Operand::Register(Register(self.rt(), false, 0))),
                 Opcode::LoadByte
                 | Opcode::LoadByteUnsigned
                 | Opcode::LoadHalfword
@@ -429,7 +422,7 @@ impl Instruction {
                 | Opcode::LoadWordLeft
                 | Opcode::LoadWordRight => Some(Operand::MemoryAddress {
                     offset: self.offset(),
-                    base: Register(self.rs(), false),
+                    base: Register(self.rs(), false, 0),
                 }),
                 Opcode::StoreByte
                 | Opcode::StoreHalfword
@@ -437,13 +430,13 @@ impl Instruction {
                 | Opcode::StoreWordLeft
                 | Opcode::StoreWordRight => Some(Operand::MemoryAddress {
                     offset: self.immediate() as i16,
-                    base: Register(self.rs(), false),
+                    base: Register(self.rs(), false, 0),
                 }),
-                _ => Some(Operand::Register(Register(self.rs(), false))),
+                _ => Some(Operand::Register(Register(self.rs(), false, 0))),
             },
             InstructionType::JType => None,
             InstructionType::Cop if self.opcode != Opcode::ReturnFromException => {
-                Some(Operand::Register(Register(self.rd(), true)))
+                Some(Operand::Register(Register(self.rd(), true, (self.op() & 0x3) as u8)))
             }
             _ => None,
         }
@@ -457,7 +450,7 @@ impl Instruction {
                 }
                 Opcode::ShiftLeftLogicalVariable
                 | Opcode::ShiftRightLogicalVariable
-                | Opcode::ShiftRightArithmeticVariable => Some(Operand::Register(Register(self.rd(), false))),
+                | Opcode::ShiftRightArithmeticVariable => Some(Operand::Register(Register(self.rd(), false, 0))),
                 Opcode::JumpRegister => None,
                 Opcode::JumpAndLinkRegister => None,
                 Opcode::MoveFromHi
@@ -470,7 +463,7 @@ impl Instruction {
                 | Opcode::MultiplyUnsigned
                 | Opcode::Divide
                 | Opcode::DivideUnsigned => None,
-                _ => Some(Operand::Register(Register(self.rt(), false))),
+                _ => Some(Operand::Register(Register(self.rt(), false, 0))),
             },
             InstructionType::IType => match self.opcode {
                 Opcode::LoadUpperImmediate
@@ -502,6 +495,85 @@ impl Instruction {
             },
             InstructionType::JType => None,
             _ => None,
+        }
+    }
+
+    fn decode_other_cop(opcode: u32, fmt: u32, cop_num: u8) -> Instruction {
+        match fmt {
+            0b00000 => Instruction {
+                opcode: Opcode::MoveFromCoprocessor(cop_num),
+                raw: opcode,
+                opcode_type: InstructionType::Cop,
+                handler: handlers::cop::<{ handlers::CopOperation::MoveFrom }>,
+                is_delay_slot: false,
+            },
+            0b00010 => Instruction {
+                opcode: Opcode::MoveControlFromCoprocessor(cop_num),
+                raw: opcode,
+                opcode_type: InstructionType::Cop,
+                handler: handlers::cop::<{ handlers::CopOperation::MoveControlFrom }>,
+                is_delay_slot: false,
+            },
+            0b00100 => Instruction {
+                opcode: Opcode::MoveToCoprocessor(cop_num),
+                raw: opcode,
+                opcode_type: InstructionType::Cop,
+                handler: handlers::cop::<{ handlers::CopOperation::MoveTo }>,
+                is_delay_slot: false,
+            },
+            0b00110 => Instruction {
+                opcode: Opcode::MoveControlToCoprocessor(cop_num),
+                raw: opcode,
+                opcode_type: InstructionType::Cop,
+                handler: handlers::cop::<{ handlers::CopOperation::MoveControlTo }>,
+                is_delay_slot: false,
+            },
+            0b10000 if cop_num == 0 => Instruction {
+                opcode: Opcode::ReturnFromException,
+                raw: opcode,
+                opcode_type: InstructionType::Cop,
+                handler: handlers::cop::<{ handlers::CopOperation::ReturnFromException }>,
+                is_delay_slot: false,
+            },
+            _ => Instruction::invalid(),
+        }
+    }
+
+    fn decode_gte(opcode: u32) -> Instruction {
+        let cmd = (opcode & 0x3F) as u8;
+
+        let gte_opcode = match cmd {
+            0x01 => Opcode::GteRtps,
+            0x06 => Opcode::GteNclip,
+            0x0C => Opcode::GteOp,
+            0x10 => Opcode::GteDpcs,
+            0x11 => Opcode::GteIntpl,
+            0x12 => Opcode::GteMvmva,
+            0x13 => Opcode::GteNcds,
+            0x14 => Opcode::GteCdp,
+            0x16 => Opcode::GteNcdt,
+            0x1B => Opcode::GteNccs,
+            0x1C => Opcode::GteCc,
+            0x1E => Opcode::GteNcs,
+            0x20 => Opcode::GteNct,
+            0x28 => Opcode::GteSqr,
+            0x29 => Opcode::GteDcpl,
+            0x2A => Opcode::GteDpct,
+            0x2D => Opcode::GteAvsz3,
+            0x2E => Opcode::GteAvsz4,
+            0x30 => Opcode::GteRtpt,
+            0x3D => Opcode::GteGpf,
+            0x3E => Opcode::GteGpl,
+            0x3F => Opcode::GteNcct,
+            _ => return Instruction::invalid(),
+        };
+
+        Instruction {
+            opcode: gte_opcode,
+            raw: opcode,
+            opcode_type: InstructionType::Cop,
+            handler: handlers::gte_dispatch,
+            is_delay_slot: false,
         }
     }
 }
@@ -601,6 +673,30 @@ impl std::fmt::Display for Opcode {
             Opcode::LoadWordToCoprocessor(cop) => return write!(f, "lwc{}", cop),
             Opcode::StoreWordFromCoprocessor(cop) => return write!(f, "swc{}", cop),
             Opcode::ReturnFromException => "rfe",
+
+            // GTE
+            Opcode::GteRtps => "rtps",
+            Opcode::GteNclip => "nclip",
+            Opcode::GteOp => "op",
+            Opcode::GteDpcs => "dpcs",
+            Opcode::GteIntpl => "intpl",
+            Opcode::GteMvmva => "mvmva",
+            Opcode::GteNcds => "ncds",
+            Opcode::GteCdp => "cdp",
+            Opcode::GteNcdt => "ncdt",
+            Opcode::GteNccs => "nccs",
+            Opcode::GteCc => "cc",
+            Opcode::GteNcs => "ncs",
+            Opcode::GteNct => "nct",
+            Opcode::GteSqr => "sqr",
+            Opcode::GteDcpl => "dcpl",
+            Opcode::GteDpct => "dpct",
+            Opcode::GteAvsz3 => "avsz3",
+            Opcode::GteAvsz4 => "avsz4",
+            Opcode::GteRtpt => "rtpt",
+            Opcode::GteGpf => "gpf",
+            Opcode::GteGpl => "gpl",
+            Opcode::GteNcct => "ncct",
 
             // Other
             Opcode::Invalid => "???",

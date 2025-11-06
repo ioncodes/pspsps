@@ -231,6 +231,9 @@ impl Debugger {
                         .send(DebuggerEvent::Paused)
                         .expect("Failed to send paused event");
                 }
+                DebuggerEvent::UpdateController(controller_state) => {
+                    self.psx.set_controller_state(controller_state);
+                }
                 _ => {}
             }
         }

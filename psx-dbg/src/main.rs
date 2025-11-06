@@ -7,6 +7,7 @@ use clap::Parser;
 use eframe::egui;
 use egui_dock::{DockArea, DockState};
 use egui_toast::{Toast, ToastKind, Toasts};
+use psx_core::sio::joy::ControllerState;
 use std::collections::HashMap;
 use std::time::Duration;
 use tracing_subscriber::Layer as _;
@@ -155,6 +156,36 @@ impl PsxDebugger {
 
 impl eframe::App for PsxDebugger {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Poll keyboard state and build controller state
+        let mut controller = ControllerState::default();
+
+        ctx.input(|i| {
+            // D-Pad (Arrow keys)
+            controller.d_up = i.key_down(egui::Key::ArrowUp);
+            controller.d_down = i.key_down(egui::Key::ArrowDown);
+            controller.d_left = i.key_down(egui::Key::ArrowLeft);
+            controller.d_right = i.key_down(egui::Key::ArrowRight);
+
+            // Action buttons
+            controller.cross = i.key_down(egui::Key::Y);      // Y = Cross
+            controller.circle = i.key_down(egui::Key::X);     // X = Circle
+            controller.square = i.key_down(egui::Key::A);     // A = Square
+            controller.triangle = i.key_down(egui::Key::S);   // S = Triangle
+
+            // Shoulder buttons
+            controller.l1 = i.key_down(egui::Key::Q);         // Q = L1
+            controller.l2 = i.key_down(egui::Key::W);         // W = L2
+            controller.r1 = i.key_down(egui::Key::E);         // E = R1
+            controller.r2 = i.key_down(egui::Key::R);         // R = R2
+
+            // System buttons
+            controller.start = i.key_down(egui::Key::Enter);  // Enter = Start
+            controller.select = i.key_down(egui::Key::Space); // Space = Select
+        });
+
+        // Send controller state to debugger thread
+        let _ = self.channel_send.send(DebuggerEvent::UpdateController(controller));
+
         while let Ok(event) = self.channel_recv.try_recv() {
             match event {
                 DebuggerEvent::BreakpointHit(addr) => {
@@ -297,6 +328,7 @@ fn main() -> eframe::Result {
         targets = targets.with_target("psx_core::irq", tracing_level);
         targets = targets.with_target("psx_core::sio", tracing_level);
         targets = targets.with_target("psx_core::cdrom", tracing_level);
+        targets = targets.with_target("psx_dbg", tracing_level);
     }
 
     if args.json {

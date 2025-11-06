@@ -1,22 +1,16 @@
+pub mod joy;
+pub mod sio0;
+pub mod sio1;
+
 use crate::mmu::bus::{Bus8, Bus16, Bus32};
+use crate::sio::joy::ControllerState;
+use crate::sio::sio1::{SIO1_CTRL_ADDR_START, Sio1};
 use proc_bitfield::bitfield;
+use sio0::{SIO0_BAUD_ADDR_END, SIO0_TX_DATA_ADDR_START, Sio0};
+use sio1::{SIO1_BAUD_ADDR_END, SIO1_TX_DATA_ADDR_START};
 
-pub const SIO_ADDR_START: u32 = 0x1F80_1040;
-pub const SIO_ADDR_END: u32 = 0x1F80_105F;
-
-crate::define_addr!(SIO0_TX_DATA_ADDR, 0x1F80_1040, 0, 4, 0x10);
-crate::define_addr!(SIO0_RX_DATA_ADDR, 0x1F80_1040, 0, 4, 0x10);
-crate::define_addr!(SIO0_STATUS_ADDR, 0x1F80_1044, 0, 4, 0x10);
-crate::define_addr!(SIO0_MODE_ADDR, 0x1F80_1048, 0, 2, 0x10);
-crate::define_addr!(SIO0_CTRL_ADDR, 0x1F80_104A, 0, 2, 0x10);
-crate::define_addr!(SIO0_BAUD_ADDR, 0x1F80_104E, 0, 2, 0x10);
-
-crate::define_addr!(SIO1_TX_DATA_ADDR, 0x1F80_1040, 1, 4, 0x10);
-crate::define_addr!(SIO1_RX_DATA_ADDR, 0x1F80_1040, 1, 4, 0x10);
-crate::define_addr!(SIO1_STATUS_ADDR, 0x1F80_1044, 1, 4, 0x10);
-crate::define_addr!(SIO1_MODE_ADDR, 0x1F80_1048, 1, 2, 0x10);
-crate::define_addr!(SIO1_CTRL_ADDR, 0x1F80_104A, 1, 2, 0x10);
-crate::define_addr!(SIO1_BAUD_ADDR, 0x1F80_104E, 1, 2, 0x10);
+pub const SIO_ADDR_START: u32 = SIO0_TX_DATA_ADDR_START;
+pub const SIO_ADDR_END: u32 = SIO1_BAUD_ADDR_END;
 
 bitfield! {
     #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -36,89 +30,108 @@ bitfield! {
     }
 }
 
-#[derive(Default)]
-pub struct SerialInterface {
-    pub control: SerialControl,
+bitfield! {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub struct SerialStatus(pub u32): Debug, FromStorage, IntoStorage, DerefStorage {
+        pub tx_ready_1: bool @ 0,
+        pub rx_fifo_not_empty: bool @ 1,
+        pub tx_ready_2: bool @ 2,
+        pub rx_parity_error: bool @ 3,
+        pub ack_input_level: bool @ 7,
+        pub interrupt_request: bool @ 9,
+        pub baud_timer: u32 @ 11..=31,
+    }
+}
+
+impl Default for SerialStatus {
+    fn default() -> Self {
+        let mut status = SerialStatus(0);
+        status.set_tx_ready_1(true);
+        status.set_tx_ready_2(true);
+        status
+    }
+}
+
+bitfield! {
+    #[derive(Clone, Copy, PartialEq, Eq, Default)]
+    pub struct SerialMode(pub u16): Debug, FromStorage, IntoStorage, DerefStorage {
+        pub baud_reload_factor: u8 @ 0..=1,
+        pub char_length: u8 @ 2..=3,
+        pub parity_enable: bool @ 4,
+        pub parity_odd: bool @ 5,
+        pub clock_polarity: bool @ 8,
+    }
 }
 
 pub struct Sio {
-    sio0: SerialInterface,
-    sio1: SerialInterface,
+    sio0: Sio0,
+    sio1: Sio1,
 }
 
 impl Sio {
     pub fn new() -> Self {
         Sio {
-            sio0: SerialInterface::default(),
-            sio1: SerialInterface::default()
+            sio0: Sio0::new(),
+            sio1: Sio1::new(),
         }
+    }
+
+    pub fn set_controller_state(&mut self, state: ControllerState) {
+        self.sio0.set_controller_state(state);
+    }
+
+    pub fn tick(&mut self, cycles: usize) {
+        self.sio0.tick(cycles);
+    }
+
+    pub fn should_trigger_irq(&self) -> bool {
+        self.sio0.should_trigger_irq()
     }
 }
 
 impl Bus8 for Sio {
     fn read_u8(&mut self, address: u32) -> u8 {
         match address {
-            _ => {
-                tracing::error!(
-                    target: "psx_core::sio",
-                    address = format!("{:08X}", address),
-                    "Unimplemented SIO read"
-                );
+            SIO0_TX_DATA_ADDR_START..=SIO0_BAUD_ADDR_END => self.sio0.read_u8(address),
+            SIO1_TX_DATA_ADDR_START..=SIO1_BAUD_ADDR_END => {
+                tracing::warn!(target: "psx_core::sio", address = format!("{:08X}", address), "SIO1 read not implemented");
                 0xFF
             }
+            _ => unreachable!("Invalid SIO address: {:08X}", address),
         }
     }
 
     fn write_u8(&mut self, address: u32, value: u8) {
-        tracing::warn!(target: "psx_core::sio", "SIO 8-bit write detected");
-        self.write_u16(address, value as u16);
+        match address {
+            SIO0_TX_DATA_ADDR_START..=SIO0_BAUD_ADDR_END => self.sio0.write_u8(address, value),
+            SIO1_TX_DATA_ADDR_START..=SIO1_BAUD_ADDR_END => {
+                tracing::warn!(target: "psx_core::sio", address = format!("{:08X}", address), "SIO1 write not implemented");
+            }
+            _ => unreachable!("Invalid SIO address: {:08X}", address),
+        }
     }
 }
 
 impl Bus16 for Sio {
     fn read_u16(&mut self, address: u32) -> u16 {
         match address {
-            _ => {
-                tracing::error!(
-                    target: "psx_core::sio",
-                    address = format!("{:08X}", address),
-                    "Unimplemented SIO read"
-                );
+            SIO0_TX_DATA_ADDR_START..=SIO0_BAUD_ADDR_END => self.sio0.read_u16(address),
+            SIO1_TX_DATA_ADDR_START..=SIO1_BAUD_ADDR_END => {
+                tracing::warn!(target: "psx_core::sio", address = format!("{:08X}", address), "SIO1 read not implemented");
                 0xFF
             }
+            _ => unreachable!("Invalid SIO address: {:08X}", address),
         }
     }
 
     fn write_u16(&mut self, address: u32, value: u16) {
         match address {
-            SIO0_CTRL_ADDR_START => {
-                self.sio0.control.0 = value;
-                tracing::debug!(
-                    target: "psx_core::sio",
-                    txen = self.sio0.control.tx_enable(),
-                    rxen = self.sio0.control.rx_enable(),
-                    "SIO0 CTRL set"
-                );
-            },
-            SIO1_CTRL_ADDR_START => {
-                self.sio1.control.0 = value;
-                tracing::debug!(
-                    target: "psx_core::sio",
-                    raw = format!("{:04X}", value),
-                    txen = self.sio0.control.tx_enable(),
-                    rxen = self.sio0.control.rx_enable(),
-                    "SIO1 CTRL set"
-                );
-            },
-            _ => {
-                tracing::error!(
-                    target: "psx_core::sio",
-                    raw = format!("{:04X}", value),
-                    address = format!("{:08X}", address),
-                    value = format!("{:04X}", value),
-                    "Unimplemented SIO write"
-                )
+            SIO0_TX_DATA_ADDR_START..=SIO0_BAUD_ADDR_END => self.sio0.write_u16(address, value),
+            SIO1_CTRL_ADDR_START => self.sio1.control.0 = value,
+            SIO1_TX_DATA_ADDR_START..=SIO1_BAUD_ADDR_END => {
+                tracing::warn!(target: "psx_core::sio", address = format!("{:08X}", address), "SIO1 write not implemented");
             }
+            _ => unreachable!("Invalid SIO address: {:08X}", address),
         }
     }
 }
@@ -126,19 +139,22 @@ impl Bus16 for Sio {
 impl Bus32 for Sio {
     fn read_u32(&mut self, address: u32) -> u32 {
         match address {
-            _ => {
-                tracing::error!(
-                    target: "psx_core::sio",
-                    address = format!("{:08X}", address),
-                    "Unimplemented SIO read"
-                );
+            SIO0_TX_DATA_ADDR_START..=SIO0_BAUD_ADDR_END => self.sio0.read_u32(address),
+            SIO1_TX_DATA_ADDR_START..=SIO1_BAUD_ADDR_END => {
+                tracing::warn!(target: "psx_core::sio", address = format!("{:08X}", address), "SIO1 read not implemented");
                 0xFF
             }
+            _ => unreachable!("Invalid SIO address: {:08X}", address),
         }
     }
 
     fn write_u32(&mut self, address: u32, value: u32) {
-        tracing::warn!(target: "psx_core::sio", "SIO 32-bit write detected");
-        self.write_u16(address, value as u16);
+        match address {
+            SIO0_TX_DATA_ADDR_START..=SIO0_BAUD_ADDR_END => self.sio0.write_u32(address, value),
+            SIO1_TX_DATA_ADDR_START..=SIO1_BAUD_ADDR_END => {
+                tracing::warn!(target: "psx_core::sio", address = format!("{:08X}", address), "SIO1 write not implemented");
+            }
+            _ => unreachable!("Invalid SIO address: {:08X}", address),
+        }
     }
 }

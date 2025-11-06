@@ -118,14 +118,6 @@ pub fn branch<
 >(
     instr: &Instruction, cpu: &mut Cpu, mmu: &mut Mmu,
 ) {
-    tracing::debug!(
-        target: "psx_core::cpu",
-        "Branching with link: {}, link register defined: {}, type: {:?}, addressing: {:?}",
-        LINK,
-        LINK_REGISTER_DEFINED,
-        TYPE,
-        ADDRESSING
-    );
     let compare = |x: u32, y: u32| match TYPE {
         BranchType::Equal => x == y,
         BranchType::NotEqual => x != y,

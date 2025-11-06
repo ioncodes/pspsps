@@ -5,6 +5,7 @@ use egui_dock::{DockArea, DockState};
 use egui_toast::{Toast, ToastKind, Toasts};
 use psx_core::psx::Psx;
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 use tracing_subscriber::Layer as _;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
@@ -78,7 +79,7 @@ impl Default for PsxDebugger {
 impl eframe::App for PsxDebugger {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if self.is_running && !self.breakpoint_hit {
-            for _ in 0..100 {
+            for _ in 0..1000 {
                 if self.breakpoints.contains(&self.psx.cpu.pc) {
                     self.breakpoint_hit = true;
                     self.is_running = false;
@@ -86,7 +87,8 @@ impl eframe::App for PsxDebugger {
                     self.toasts.add(Toast {
                         text: format!("Breakpoint hit at {:08X}", self.psx.cpu.pc).into(),
                         kind: ToastKind::Info,
-                        options: Default::default(),
+                        options: egui_toast::ToastOptions::default()
+                            .duration(Some(Duration::from_secs(1))),
                         style: Default::default(),
                     });
 

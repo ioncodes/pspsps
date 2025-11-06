@@ -3,12 +3,12 @@ pub mod gp;
 pub mod rasterizer;
 pub mod status;
 
-use crate::gpu::cmd::Gp0Command;
 use crate::gpu::cmd::poly::DrawPolygonCommand;
 use crate::gpu::cmd::rect::DrawRectangleCommand;
 use crate::gpu::cmd::tex::{
     DrawModeSettingCommand, DrawingAreaBottomRightCommand, DrawingAreaTopLeftCommand, TextureWindowSettingCommand,
 };
+use crate::gpu::cmd::Gp0Command;
 use crate::gpu::gp::{Gp, ParsedCommand};
 use crate::mmu::bus::Bus32;
 

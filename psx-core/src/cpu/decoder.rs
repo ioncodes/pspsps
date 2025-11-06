@@ -158,9 +158,9 @@ pub enum Operand {
 impl std::fmt::Display for Register {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let register_name = if self.1 {
-            lut::COP_REGISTER_NAME_LUT[self.0 as usize]
+            lut::COP_REGISTER_NAME_LUT.get(self.0 as usize).unwrap_or(&"???")
         } else {
-            lut::REGISTER_NAME_LUT[self.0 as usize]
+            lut::REGISTER_NAME_LUT.get(self.0 as usize).unwrap_or(&"???")
         };
         write!(f, "{}", register_name)
     }
@@ -322,23 +322,16 @@ impl Instruction {
     pub fn operand1(&self) -> Option<Operand> {
         match self.opcode_type {
             InstructionType::RType => match self.opcode {
-                Opcode::ShiftLeftLogical
-                | Opcode::ShiftRightLogical
-                | Opcode::ShiftRightArithmetic => {
+                Opcode::ShiftLeftLogical | Opcode::ShiftRightLogical | Opcode::ShiftRightArithmetic => {
                     Some(Operand::Register(Register(self.rd(), false)))
                 }
                 Opcode::JumpRegister => Some(Operand::Register(Register(self.rs(), false))),
                 Opcode::JumpAndLinkRegister => Some(Operand::Register(Register(self.rd(), false))),
-                Opcode::MoveFromHi | Opcode::MoveFromLo => {
-                    Some(Operand::Register(Register(self.rd(), false)))
-                }
-                Opcode::MoveToHi | Opcode::MoveToLo => {
+                Opcode::MoveFromHi | Opcode::MoveFromLo => Some(Operand::Register(Register(self.rd(), false))),
+                Opcode::MoveToHi | Opcode::MoveToLo => Some(Operand::Register(Register(self.rs(), false))),
+                Opcode::Multiply | Opcode::MultiplyUnsigned | Opcode::Divide | Opcode::DivideUnsigned => {
                     Some(Operand::Register(Register(self.rs(), false)))
                 }
-                Opcode::Multiply
-                | Opcode::MultiplyUnsigned
-                | Opcode::Divide
-                | Opcode::DivideUnsigned => Some(Operand::Register(Register(self.rs(), false))),
                 Opcode::SystemCall | Opcode::Break => None,
                 _ => Some(Operand::Register(Register(self.rd(), false))),
             },
@@ -365,27 +358,20 @@ impl Instruction {
     pub fn operand2(&self) -> Option<Operand> {
         match self.opcode_type {
             InstructionType::RType => match self.opcode {
-                Opcode::ShiftLeftLogical
-                | Opcode::ShiftRightLogical
-                | Opcode::ShiftRightArithmetic => {
+                Opcode::ShiftLeftLogical | Opcode::ShiftRightLogical | Opcode::ShiftRightArithmetic => {
                     Some(Operand::Register(Register(self.rt(), false)))
                 }
                 Opcode::ShiftLeftLogicalVariable
                 | Opcode::ShiftRightLogicalVariable
-                | Opcode::ShiftRightArithmeticVariable => {
-                    Some(Operand::Register(Register(self.rs(), false)))
+                | Opcode::ShiftRightArithmeticVariable => Some(Operand::Register(Register(self.rs(), false))),
+                Opcode::JumpRegister | Opcode::MoveFromHi | Opcode::MoveFromLo | Opcode::SystemCall | Opcode::Break => {
+                    None
                 }
-                Opcode::JumpRegister
-                | Opcode::MoveFromHi
-                | Opcode::MoveFromLo
-                | Opcode::SystemCall
-                | Opcode::Break => None,
                 Opcode::JumpAndLinkRegister => Some(Operand::Register(Register(self.rs(), false))),
                 Opcode::MoveToHi | Opcode::MoveToLo => None,
-                Opcode::Multiply
-                | Opcode::MultiplyUnsigned
-                | Opcode::Divide
-                | Opcode::DivideUnsigned => Some(Operand::Register(Register(self.rt(), false))),
+                Opcode::Multiply | Opcode::MultiplyUnsigned | Opcode::Divide | Opcode::DivideUnsigned => {
+                    Some(Operand::Register(Register(self.rt(), false)))
+                }
                 _ => Some(Operand::Register(Register(self.rs(), false))),
             },
             InstructionType::IType => match self.opcode {
@@ -395,12 +381,8 @@ impl Instruction {
                 | Opcode::BranchGreaterEqualZero
                 | Opcode::BranchLessThanZero
                 | Opcode::BranchLessThanZeroAndLink
-                | Opcode::BranchGreaterEqualZeroAndLink => {
-                    Some(Operand::Immediate((self.immediate() as i16) as u32))
-                }
-                Opcode::BranchEqual | Opcode::BranchNotEqual => {
-                    Some(Operand::Register(Register(self.rt(), false)))
-                }
+                | Opcode::BranchGreaterEqualZeroAndLink => Some(Operand::Immediate((self.immediate() as i16) as u32)),
+                Opcode::BranchEqual | Opcode::BranchNotEqual => Some(Operand::Register(Register(self.rt(), false))),
                 Opcode::LoadByte
                 | Opcode::LoadByteUnsigned
                 | Opcode::LoadHalfword
@@ -432,14 +414,12 @@ impl Instruction {
     pub fn operand3(&self) -> Option<Operand> {
         match self.opcode_type {
             InstructionType::RType => match self.opcode {
-                Opcode::ShiftLeftLogical
-                | Opcode::ShiftRightLogical
-                | Opcode::ShiftRightArithmetic => Some(Operand::Immediate(self.shamt() as u32)),
+                Opcode::ShiftLeftLogical | Opcode::ShiftRightLogical | Opcode::ShiftRightArithmetic => {
+                    Some(Operand::Immediate(self.shamt() as u32))
+                }
                 Opcode::ShiftLeftLogicalVariable
                 | Opcode::ShiftRightLogicalVariable
-                | Opcode::ShiftRightArithmeticVariable => {
-                    Some(Operand::Register(Register(self.rd(), false)))
-                }
+                | Opcode::ShiftRightArithmeticVariable => Some(Operand::Register(Register(self.rd(), false))),
                 Opcode::JumpRegister => None,
                 Opcode::JumpAndLinkRegister => None,
                 Opcode::MoveFromHi
@@ -477,9 +457,7 @@ impl Instruction {
                 | Opcode::StoreWord
                 | Opcode::StoreWordLeft
                 | Opcode::StoreWordRight => None,
-                Opcode::AddImmediateUnsigned
-                | Opcode::AddImmediate
-                | Opcode::SetLessThanImmediate => {
+                Opcode::AddImmediateUnsigned | Opcode::AddImmediate | Opcode::SetLessThanImmediate => {
                     Some(Operand::SignedImmediate(self.immediate() as i16))
                 }
                 _ => Some(Operand::Immediate((self.immediate() as i16) as u32)),

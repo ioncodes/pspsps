@@ -75,7 +75,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     color = apply_scanlines(uv, color);
     color = apply_bloom(color);
     color = apply_vignette(uv, color);
-    color = adjust_contrast_brightness(color);
+    // color = adjust_contrast_brightness(color);
 
     // Clamp to valid range
     color = clamp(color, vec3<f32>(0.0), vec3<f32>(1.0));

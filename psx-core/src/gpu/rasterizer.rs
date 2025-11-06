@@ -1,4 +1,5 @@
 use crate::gpu::cmd::tex::TextureWindowSettingCommand;
+use crate::gpu::rgb;
 use crate::gpu::{VRAM_HEIGHT, VRAM_WIDTH};
 
 // -4  +0  -3  +1   ;\dither offsets for first two scanlines
@@ -330,17 +331,9 @@ fn sample_texture(
 fn gouraud_shading(
     colors: [u32; 3], w0: i32, w1: i32, w2: i32, area: i32, dither_enabled: bool, x: i32, y: i32,
 ) -> u16 {
-    let r0 = (colors[0] & 0xFF) as i32;
-    let g0 = ((colors[0] >> 8) & 0xFF) as i32;
-    let b0 = ((colors[0] >> 16) & 0xFF) as i32;
-
-    let r1 = (colors[1] & 0xFF) as i32;
-    let g1 = ((colors[1] >> 8) & 0xFF) as i32;
-    let b1 = ((colors[1] >> 16) & 0xFF) as i32;
-
-    let r2 = (colors[2] & 0xFF) as i32;
-    let g2 = ((colors[2] >> 8) & 0xFF) as i32;
-    let b2 = ((colors[2] >> 16) & 0xFF) as i32;
+    let (r0, g0, b0) = rgb::extract_rgb888(colors[0]);
+    let (r1, g1, b1) = rgb::extract_rgb888(colors[1]);
+    let (r2, g2, b2) = rgb::extract_rgb888(colors[2]);
 
     // Gouraud shading
     // color = ((w0 x color0) + (w1 x color1) + (w2 x color2)) / area
@@ -354,10 +347,7 @@ fn gouraud_shading(
     if dither_enabled && is_gouraud {
         apply_dither(r, g, b, x, y)
     } else {
-        let r5 = ((r >> 3) & 0x1F) as u16;
-        let g5 = ((g >> 3) & 0x1F) as u16;
-        let b5 = ((b >> 3) & 0x1F) as u16;
-        (b5 << 10) | (g5 << 5) | r5
+        rgb::rgb888_to_rgb555(r, g, b)
     }
 }
 
@@ -437,28 +427,13 @@ fn textured_render(
     // Blend texture color with vertex color
     // "finalChannel.rgb = (texel.rgb * vertexColour.rgb) / vec3(128.0)"
 
-    // Extract RGB555 from texel
-    let tex_r5 = (texel & 0x1F) as i32;
-    let tex_g5 = ((texel >> 5) & 0x1F) as i32;
-    let tex_b5 = ((texel >> 10) & 0x1F) as i32;
-
-    // Convert to RGB888 for modulation
-    let tex_r8 = (tex_r5 << 3) | (tex_r5 >> 2);
-    let tex_g8 = (tex_g5 << 3) | (tex_g5 >> 2);
-    let tex_b8 = (tex_b5 << 3) | (tex_b5 >> 2);
+    // Convert texel from RGB555 to RGB888 for modulation
+    let (tex_r8, tex_g8, tex_b8) = rgb::rgb555_to_rgb888(texel);
 
     // Interpolate vertex colors
-    let r0 = (colors[0] & 0xFF) as i32;
-    let g0 = ((colors[0] >> 8) & 0xFF) as i32;
-    let b0 = ((colors[0] >> 16) & 0xFF) as i32;
-
-    let r1 = (colors[1] & 0xFF) as i32;
-    let g1 = ((colors[1] >> 8) & 0xFF) as i32;
-    let b1 = ((colors[1] >> 16) & 0xFF) as i32;
-
-    let r2 = (colors[2] & 0xFF) as i32;
-    let g2 = ((colors[2] >> 8) & 0xFF) as i32;
-    let b2 = ((colors[2] >> 16) & 0xFF) as i32;
+    let (r0, g0, b0) = rgb::extract_rgb888(colors[0]);
+    let (r1, g1, b1) = rgb::extract_rgb888(colors[1]);
+    let (r2, g2, b2) = rgb::extract_rgb888(colors[2]);
 
     let vert_r = ((r0 * w0) + (r1 * w1) + (r2 * w2)) / area;
     let vert_g = ((g0 * w0) + (g1 * w1) + (g2 * w2)) / area;
@@ -474,10 +449,7 @@ fn textured_render(
     if dither_enabled && is_modulated {
         apply_dither(mod_r, mod_g, mod_b, x, y)
     } else {
-        let r5 = ((mod_r >> 3).clamp(0, 31)) as u16;
-        let g5 = ((mod_g >> 3).clamp(0, 31)) as u16;
-        let b5 = ((mod_b >> 3).clamp(0, 31)) as u16;
-        (b5 << 10) | (g5 << 5) | r5
+        rgb::rgb888_to_rgb555(mod_r, mod_g, mod_b)
     }
 }
 

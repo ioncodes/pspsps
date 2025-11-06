@@ -78,7 +78,9 @@ impl Default for PsxDebugger {
             breakpoint_hit: false,
             widgets,
             show_in_disassembly: None,
-            toasts: Toasts::new(),
+            toasts: Toasts::new()
+                .anchor(egui::Align2::RIGHT_BOTTOM, (-10.0, -10.0))
+                .direction(egui::Direction::BottomUp),
             trace_buffer: VecDeque::new(),
         }
     }
@@ -96,7 +98,7 @@ impl eframe::App for PsxDebugger {
                         text: format!("Breakpoint hit at {:08X}", self.psx.cpu.pc).into(),
                         kind: ToastKind::Info,
                         options: egui_toast::ToastOptions::default()
-                            .duration(Some(Duration::from_secs(1))),
+                            .duration(Some(Duration::from_secs(3))),
                         style: Default::default(),
                     });
 
@@ -124,6 +126,7 @@ impl eframe::App for PsxDebugger {
             widgets: &mut self.widgets,
             show_in_disassembly: &mut self.show_in_disassembly,
             trace_buffer: &mut self.trace_buffer,
+            toasts: &mut self.toasts,
         };
 
         DockArea::new(&mut self.dock_state).show(ctx, &mut tab_viewer);
@@ -139,6 +142,7 @@ struct TabViewer<'a> {
     widgets: &'a mut HashMap<TabKind, Box<dyn Widget>>,
     show_in_disassembly: &'a mut Option<u32>,
     trace_buffer: &'a mut VecDeque<(u32, Instruction)>,
+    toasts: &'a mut Toasts,
 }
 
 impl<'a> egui_dock::TabViewer for TabViewer<'a> {
@@ -161,6 +165,7 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
                 breakpoint_hit: self.breakpoint_hit,
                 show_in_disassembly: self.show_in_disassembly,
                 trace_buffer: self.trace_buffer,
+                toasts: self.toasts,
             };
             widget.ui(ui, &mut context);
         }

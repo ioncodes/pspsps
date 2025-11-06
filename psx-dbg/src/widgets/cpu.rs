@@ -1,8 +1,12 @@
+use std::io::Write as _;
+
 use super::{SharedContext, Widget};
 use egui::{CollapsingHeader, Label, RichText, Ui};
+use egui_toast::{Toast, ToastKind};
 use psx_core::cpu::cop::Cop;
 use psx_core::cpu::cop::cop0::COP0_SR;
 use psx_core::cpu::decoder::Instruction;
+use std::time::Duration;
 
 pub struct CpuWidget {
     follow_pc: bool,
@@ -41,7 +45,7 @@ impl Widget for CpuWidget {
                 let pc_before = context.psx.cpu.pc;
                 let instruction = context.psx.step();
                 *context.breakpoint_hit = false;
-                
+
                 // Add to trace buffer with limit of 1000
                 if context.trace_buffer.len() >= 1000 {
                     context.trace_buffer.pop_front();
@@ -55,6 +59,20 @@ impl Widget for CpuWidget {
                 *context.is_running = false;
                 *context.breakpoint_hit = false;
                 context.trace_buffer.clear();
+            }
+
+            if ui.button("Dump Memory").clicked() {
+                let mut file = std::fs::File::create("memory_dump.bin").unwrap();
+                file.write_all(context.psx.cpu.mmu.memory.as_slice())
+                    .unwrap();
+
+                context.toasts.add(Toast {
+                    text: "Memory dumped to memory_dump.bin".into(),
+                    kind: ToastKind::Success,
+                    options: egui_toast::ToastOptions::default()
+                        .duration(Some(Duration::from_secs(3))),
+                    style: Default::default(),
+                });
             }
         });
 

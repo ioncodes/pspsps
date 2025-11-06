@@ -28,33 +28,33 @@ impl Bus8 for MmuState {
 impl Bus16 for MmuState {
     fn read_u16(&mut self, address: u32) -> u16 {
         let address = Mmu::canonicalize_virtual_address(address);
-        let low = self.data[address as usize] as u16;
-        let high = self.data[(address + 1) as usize] as u16;
+        let low = self.read_u8(address) as u16;
+        let high = self.read_u8(address + 1) as u16;
         (high << 8) | low
     }
 
     fn write_u16(&mut self, address: u32, value: u16) {
         let address = Mmu::canonicalize_virtual_address(address);
-        self.data[address as usize] = (value & 0xFF) as u8;
-        self.data[(address + 1) as usize] = (value >> 8) as u8;
+        self.write_u8(address, (value & 0xFF) as u8);
+        self.write_u8(address + 1, (value >> 8) as u8);
     }
 }
 
 impl Bus32 for MmuState {
     fn read_u32(&mut self, address: u32) -> u32 {
         let address = Mmu::canonicalize_virtual_address(address);
-        let low = self.data[address as usize] as u32;
-        let mid = self.data[(address + 1) as usize] as u32;
-        let high = self.data[(address + 2) as usize] as u32;
-        let quad = self.data[(address + 3) as usize] as u32;
-        (quad << 24) | (high << 16) | (mid << 8) | low
+        let a = self.read_u8(address) as u32;
+        let b = self.read_u8(address + 1) as u32;
+        let c = self.read_u8(address + 2) as u32;
+        let d = self.read_u8(address + 3) as u32;
+        (d << 24) | (c << 16) | (b << 8) | a
     }
 
     fn write_u32(&mut self, address: u32, value: u32) {
         let address = Mmu::canonicalize_virtual_address(address);
-        self.data[address as usize] = (value & 0xFF) as u8;
-        self.data[(address + 1) as usize] = (value >> 8) as u8;
-        self.data[(address + 2) as usize] = (value >> 16) as u8;
-        self.data[(address + 3) as usize] = (value >> 24) as u8;
+        self.write_u8(address, (value & 0xFF) as u8);
+        self.write_u8(address + 1, (value >> 8) as u8);
+        self.write_u8(address + 2, (value >> 16) as u8);
+        self.write_u8(address + 3, (value >> 24) as u8);
     }
 }

@@ -1,5 +1,6 @@
 pub mod cmd;
 pub mod gp;
+pub mod status;
 
 use crate::gpu::cmd::{DrawRectangleCommand, Gp0Command};
 use crate::gpu::gp::{Gp, ParsedCommand};

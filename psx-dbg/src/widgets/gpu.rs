@@ -20,18 +20,40 @@ impl Widget for GpuWidget {
     fn ui(&mut self, ui: &mut Ui, shared_context: &mut SharedContext) {
         let gpu_state = &shared_context.state.gpu;
 
-        // Display GPU status information
         ui.heading("GPU Status");
         ui.horizontal(|ui| {
+            ui.label("GPUSTAT:");
+            ui.monospace(format!("{:08X}", gpu_state.gp1_status.0));
+        });
+
+        ui.horizontal(|ui| {
             ui.label(format!(
-                "Resolution: {}x{}",
-                gpu_state.horizontal_resolution, gpu_state.vertical_resolution
+                "Resolution: {}x{} {} (interlaced: {})",
+                gpu_state.gp1_status.hres(),
+                gpu_state.gp1_status.vres(),
+                gpu_state.gp1_status.video_mode(),
+                gpu_state.gp1_status.vertical_interlace()
+            ));
+            ui.checkbox(&mut gpu_state.gp1_status.display_enable(), "Display Enable");
+        });
+
+        ui.horizontal(|ui| {
+            ui.label(format!(
+                "Ready CMD: {}",
+                gpu_state.gp1_status.ready_to_receive_cmd_word()
             ));
             ui.separator();
-            ui.label(format!("FIFO: {}", gpu_state.fifo_len));
+            ui.label(format!(
+                "Ready VRAM to CPU: {}",
+                gpu_state.gp1_status.ready_to_send_vram_to_cpu()
+            ));
             ui.separator();
-            ui.label(format!("GP1 Status: 0x{:08X}", gpu_state.gp1_status));
+            ui.label(format!(
+                "Ready DMA: {}",
+                gpu_state.gp1_status.ready_to_receive_dma_block()
+            ));
         });
+
         ui.separator();
 
         // Display VRAM texture

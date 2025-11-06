@@ -1,17 +1,71 @@
-use std::io::Write as _;
-
-use crate::io::DebuggerEvent;
-
 use super::{SharedContext, Widget};
+use crate::io::DebuggerEvent;
 use egui::{CollapsingHeader, Label, RichText, Ui};
 use egui_toast::{Toast, ToastKind};
 use psx_core::cpu::cop::Cop;
 use psx_core::cpu::cop::cop0::{COP0_SR, Exception};
 use psx_core::cpu::decoder::Instruction;
-use psx_core::mmu::bus::Bus32 as _;
+use psx_core::mmu::bus::{Bus8, Bus32 as _};
+use rayon::prelude::*;
+use std::io::Write as _;
 use std::time::Duration;
 
 const INSTRUCTIONS_TO_DISPLAY: usize = 128;
+
+#[derive(Copy, Clone)]
+struct SendMmuPtr(usize);
+unsafe impl Send for SendMmuPtr {}
+unsafe impl Sync for SendMmuPtr {}
+
+impl SendMmuPtr {
+    unsafe fn new(ptr: *mut crate::states::mmu::MmuState) -> Self {
+        Self(ptr as usize)
+    }
+
+    unsafe fn as_ptr(&self) -> *mut crate::states::mmu::MmuState {
+        self.0 as *mut crate::states::mmu::MmuState
+    }
+}
+
+fn dump_memory_multithreaded(
+    mmu_state: &mut crate::states::mmu::MmuState, output_path: &str,
+) -> std::io::Result<()> {
+    // Split 4GB into chunks for parallel processing
+    const CHUNK_SIZE: u32 = 16 * 1024 * 1024; // 16MB chunks
+    const TOTAL_SIZE: u64 = 0x1_0000_0000; // 4GB
+    let num_chunks = (TOTAL_SIZE / CHUNK_SIZE as u64) as u32;
+
+    let send_ptr = unsafe { SendMmuPtr::new(mmu_state as *mut crate::states::mmu::MmuState) };
+
+    // Collect all chunks in parallel
+    let chunks: Vec<(u32, Vec<u8>)> = (0..num_chunks)
+        .into_par_iter()
+        .map(move |chunk_idx| {
+            let start_addr = chunk_idx * CHUNK_SIZE;
+            let mut buffer = Vec::with_capacity(CHUNK_SIZE as usize);
+
+            // SAFETY: We accept unsafe here as there *should* be no side-effects as long as we only read
+            unsafe {
+                let mmu_ref = &mut *send_ptr.as_ptr();
+
+                // Read this chunk through MmuState to handle address canonicalization
+                for offset in 0..CHUNK_SIZE {
+                    let addr = start_addr.wrapping_add(offset);
+                    buffer.push(mmu_ref.read_u8(addr));
+                }
+            }
+
+            (start_addr, buffer)
+        })
+        .collect();
+
+    let mut file = std::fs::File::create(output_path)?;
+    for (_, buffer) in chunks {
+        file.write_all(&buffer)?;
+    }
+
+    Ok(())
+}
 
 pub struct CpuWidget {
     follow_pc: bool,
@@ -66,16 +120,26 @@ impl Widget for CpuWidget {
             }
 
             if ui.button("Dump Memory").clicked() {
-                let mut file = std::fs::File::create("memory_dump.bin").unwrap();
-                file.write_all(context.state.mmu.data.as_slice()).unwrap();
-
-                context.toasts.add(Toast {
-                    text: "Memory dumped to memory_dump.bin".into(),
-                    kind: ToastKind::Success,
-                    options: egui_toast::ToastOptions::default()
-                        .duration(Some(Duration::from_secs(3))),
-                    style: Default::default(),
-                });
+                match dump_memory_multithreaded(&mut context.state.mmu, "memory_dump.bin") {
+                    Ok(_) => {
+                        context.toasts.add(Toast {
+                            text: "Memory dumped to memory_dump.bin (4GB)".into(),
+                            kind: ToastKind::Success,
+                            options: egui_toast::ToastOptions::default()
+                                .duration(Some(Duration::from_secs(3))),
+                            style: Default::default(),
+                        });
+                    }
+                    Err(e) => {
+                        context.toasts.add(Toast {
+                            text: format!("Failed to dump memory: {}", e).into(),
+                            kind: ToastKind::Error,
+                            options: egui_toast::ToastOptions::default()
+                                .duration(Some(Duration::from_secs(5))),
+                            style: Default::default(),
+                        });
+                    }
+                }
             }
         });
 

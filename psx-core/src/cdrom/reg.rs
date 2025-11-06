@@ -73,6 +73,15 @@ bitfield! {
     }
 }
 
+bitfield! {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub struct HChpCtl(pub u8): Debug, FromStorage, IntoStorage, DerefStorage {
+        pub sound_map_enable: bool @ 5,
+        pub request_sector_buffer_write: bool @ 6,
+        pub request_sector_buffer_read: bool @ 7,
+    }
+}
+
 
 bitfield! {
      #[derive(Clone, Copy, PartialEq, Eq)]

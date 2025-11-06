@@ -288,6 +288,7 @@ fn main() -> eframe::Result {
         targets = targets.with_target("psx_core::tty", tracing_level);
         targets = targets.with_target("psx_core::bios", tracing_level);
         targets = targets.with_target("psx_core::gpu", tracing_level);
+        targets = targets.with_target("psx_core::irq", tracing_level);
     }
 
     if args.json {

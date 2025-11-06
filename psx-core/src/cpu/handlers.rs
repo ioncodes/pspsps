@@ -24,8 +24,8 @@ pub enum BranchType {
     NotEqual,
     LessEqualZero,
     LessThanZero,
-    BranchGreaterEqualZero,
-    BranchGreaterThanZero,
+    GreaterEqualZero,
+    GreaterThanZero,
 }
 
 #[derive(Debug, ConstParamTy, PartialEq, Eq)]
@@ -131,8 +131,8 @@ pub fn branch<
         BranchType::NotEqual => x != y,
         BranchType::LessThanZero => (x as i32) < 0,
         BranchType::LessEqualZero => (x as i32) <= 0,
-        BranchType::BranchGreaterEqualZero => (x as i32) >= 0,
-        BranchType::BranchGreaterThanZero => (x as i32) > 0,
+        BranchType::GreaterEqualZero => (x as i32) >= 0,
+        BranchType::GreaterThanZero => (x as i32) > 0,
         _ => true, // Unconditional branches do not require comparison
     };
 

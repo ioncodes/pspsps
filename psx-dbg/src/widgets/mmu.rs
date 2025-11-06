@@ -46,7 +46,7 @@ impl Widget for MmuWidget {
 
             for col in 0..16 {
                 let byte_addr = addr + col;
-                let byte = context.psx.mmu.read_u8(byte_addr);
+                let byte = context.psx.cpu.mmu.read_u8(byte_addr);
                 line.push_str(&format!("{:02X} ", byte));
 
                 if col == 7 {
@@ -57,7 +57,7 @@ impl Widget for MmuWidget {
             line.push_str(" |");
             for col in 0..16 {
                 let byte_addr = addr + col;
-                let byte = context.psx.mmu.read_u8(byte_addr);
+                let byte = context.psx.cpu.mmu.read_u8(byte_addr);
                 if byte >= 32 && byte <= 126 {
                     line.push(byte as char);
                 } else {

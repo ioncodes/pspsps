@@ -1,4 +1,5 @@
 use crate::cpu::Cpu;
+use crate::cpu::decoder::Instruction;
 
 const PSX_RESET_ADDRESS: u32 = 0xBFC0_0000;
 
@@ -15,7 +16,7 @@ impl Psx {
         Self { cpu }
     }
 
-    pub fn step(&mut self) {
-        self.cpu.tick();
+    pub fn step(&mut self) -> Instruction {
+        self.cpu.tick()
     }
 }

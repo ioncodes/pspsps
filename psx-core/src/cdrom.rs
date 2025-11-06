@@ -5,7 +5,7 @@ use crate::cdrom::irq::DiskIrq;
 use crate::cdrom::reg::{
     AddressRegister, AdpCtlRegister, HClrCtl, HIntMaskRegister, HIntSts, REG_ADDRESS_ADDR, REG_ADPCTL_ADDR,
     REG_COMMAND_ADDR, REG_HCLRCTL_ADDR, REG_HINTMSK_ADDR_R, REG_HINTMSK_ADDR_W, REG_HINTSTS_ADDR, REG_HSTS_ADDR,
-    REG_PARAMETER_ADDR, REG_RESULT_ADDR, StatusCode,
+    REG_PARAMETER_ADDR, REG_RDDATA_ADDR, REG_RESULT_ADDR, StatusCode,
 };
 use crate::mmu::bus::Bus8;
 use proc_bitfield::with_bits;
@@ -27,10 +27,14 @@ pub const ERROR_CANNOT_RESPONSE: u8 = 0x80;
 pub const ERROR_SEEK_FAILED: u8 = 0x04;
 pub const ERROR_DRIVE_DOOR_BECAME_OPENED: u8 = 0x08;
 
+// "File.IMG - 2352 (930h) bytes per sector"
+const SECTOR_SIZE: usize = 2352;
+
 struct PendingInterrupt {
     irq: DiskIrq,
     response: Vec<u8>,
     cycles_until_fire: usize,
+    is_read: bool,
 }
 
 pub struct Cdrom {
@@ -44,7 +48,9 @@ pub struct Cdrom {
     parameter_fifo: VecDeque<u8>,
     result_fifo: VecDeque<u8>,
     interrupt_queue: VecDeque<PendingInterrupt>,
-    cursor: usize,
+    requested_cursor: usize,
+    current_cursor: usize,
+    read_in_progress: bool,
 }
 
 impl Cdrom {
@@ -60,7 +66,9 @@ impl Cdrom {
             parameter_fifo: VecDeque::new(),
             result_fifo: VecDeque::new(),
             interrupt_queue: VecDeque::new(),
-            cursor: 0,
+            requested_cursor: 0,
+            current_cursor: 0,
+            read_in_progress: false,
         }
     }
 
@@ -95,6 +103,16 @@ impl Cdrom {
 
                     // Trigger the interrupt
                     self.trigger_irq(pending.irq);
+
+                    if pending.is_read && self.read_in_progress {
+                        self.queue_interrupt(
+                            DiskIrq::DataReady,
+                            vec![self.cdrom_bin[self.current_cursor]],
+                            FIRST_RESP_GENERIC_DELAY,
+                            true,
+                        );
+                        self.current_cursor += 1;
+                    }
                 } else {
                     // Decrement the cycle counter
                     pending.cycles_until_fire -= cycles;
@@ -112,11 +130,12 @@ impl Cdrom {
         false
     }
 
-    fn queue_interrupt(&mut self, irq: DiskIrq, response: Vec<u8>, delay_cycles: usize) {
+    fn queue_interrupt(&mut self, irq: DiskIrq, response: Vec<u8>, delay_cycles: usize, is_read: bool) {
         self.interrupt_queue.push_back(PendingInterrupt {
             irq,
             response,
             cycles_until_fire: delay_cycles,
+            is_read,
         });
     }
 
@@ -139,11 +158,28 @@ impl Cdrom {
             // 0x01 	GetStat 	INT3: status
             0x01 => {
                 let status = self.status();
-                self.queue_interrupt(DiskIrq::CommandAcknowledged, vec![status.0], FIRST_RESP_GENERIC_DELAY);
+                self.queue_interrupt(
+                    DiskIrq::CommandAcknowledged,
+                    vec![status.0],
+                    FIRST_RESP_GENERIC_DELAY,
+                    false,
+                );
             }
-            // 0x02 	Setloc 	min, sec, frame 	INT3: status
+            // Setloc - Command 02h,amm,ass,asect --> INT3(stat)
             0x02 => {
                 self.execute_setloc();
+            }
+            // Setmode - Command 0Eh,mode --> INT3(stat)
+            0x0E => {
+                self.execute_setmode();
+            }
+            // ReadN - Command 06h --> INT3(stat) --> INT1(stat) --> datablock
+            0x06 => {
+                self.execute_readn();
+            }
+            // SeekL - Command 15h --> INT3(stat) --> INT2(stat)
+            0x15 => {
+                self.execute_seekl();
             }
             // 0x19 	Test * 	sub, ... 	INT3: ...
             0x19 => {
@@ -191,6 +227,7 @@ impl Cdrom {
                     DiskIrq::CommandAcknowledged,
                     vec![0x94, 0x09, 0x19, 0xC0], // Sept 19, 1994, version vC0 (a)
                     FIRST_RESP_GENERIC_DELAY,
+                    false,
                 );
             }
             _ => {
@@ -225,13 +262,18 @@ impl Cdrom {
             error_stat.set_id_error(true);
 
             let response = vec![error_stat.0, ERROR_DRIVE_DOOR_BECAME_OPENED];
-            self.queue_interrupt(DiskIrq::DiskError, response, FIRST_RESP_GENERIC_DELAY);
+            self.queue_interrupt(DiskIrq::DiskError, response, FIRST_RESP_GENERIC_DELAY, false);
 
             return;
         }
 
         // First response: INT3 acknowledgment with status
-        self.queue_interrupt(DiskIrq::CommandAcknowledged, vec![status.0], FIRST_RESP_GENERIC_DELAY);
+        self.queue_interrupt(
+            DiskIrq::CommandAcknowledged,
+            vec![status.0],
+            FIRST_RESP_GENERIC_DELAY,
+            false,
+        );
 
         // Second response: INT2 (success) or INT5 (error)
         if self.disk_inserted() {
@@ -239,7 +281,7 @@ impl Cdrom {
             let response = vec![
                 status.0, 0x00, 0x20, 0x00, b'S', b'C', b'E', b'A', // Region: SCEA (America/NTSC)
             ];
-            self.queue_interrupt(DiskIrq::CommandCompleted, response, SECOND_RESP_GETID_DELAY);
+            self.queue_interrupt(DiskIrq::CommandCompleted, response, SECOND_RESP_GETID_DELAY, false);
         } else {
             // Error: Disk missing
             let mut error_stat = status;
@@ -247,7 +289,7 @@ impl Cdrom {
             error_stat.set_id_error(true);
 
             let response = vec![error_stat.0, ERROR_INVALID_COMMAND];
-            self.queue_interrupt(DiskIrq::DiskError, response, SECOND_RESP_GETID_DELAY);
+            self.queue_interrupt(DiskIrq::DiskError, response, SECOND_RESP_GETID_DELAY, false);
         }
     }
 
@@ -263,9 +305,7 @@ impl Cdrom {
 
         let block_addr = (((minutes * 60) + seconds) * 75 + frames) - 150;
 
-        // "File.IMG - 2352 (930h) bytes per sector"
-        self.cursor = block_addr * 2352;
-        // TODO: Handle out-of-bounds cursor?
+        self.requested_cursor = block_addr * SECTOR_SIZE;
 
         tracing::debug!(
             target: "psx_core::cdrom",
@@ -273,12 +313,90 @@ impl Cdrom {
             sec = seconds,
             frame = frames,
             lba = block_addr,
-            cursor = self.cursor,
+            cursor = self.requested_cursor,
             "Setloc",
         );
 
         let status = self.status();
-        self.queue_interrupt(DiskIrq::CommandAcknowledged, vec![status.0], FIRST_RESP_GENERIC_DELAY);
+        self.queue_interrupt(
+            DiskIrq::CommandAcknowledged,
+            vec![status.0],
+            FIRST_RESP_GENERIC_DELAY,
+            false,
+        );
+    }
+
+    fn execute_seekl(&mut self) {
+        tracing::debug!(
+            target: "psx_core::cdrom",
+            cursor = self.requested_cursor,
+            "SeekL",
+        );
+
+        self.current_cursor = self.requested_cursor;
+
+        let status = self.status();
+        self.queue_interrupt(
+            DiskIrq::CommandAcknowledged,
+            vec![status.0],
+            FIRST_RESP_GENERIC_DELAY,
+            false,
+        );
+        self.queue_interrupt(
+            DiskIrq::CommandCompleted,
+            vec![status.0],
+            SECOND_RESP_PAUSE_DELAY,
+            false,
+        );
+    }
+
+    fn execute_setmode(&mut self) {
+        let mode = self.parameter_fifo.pop_front().unwrap();
+
+        tracing::error!(
+            target: "psx_core::cdrom",
+            mode = format!("{:08b}", mode as u8),
+            "Setmode",
+        );
+
+        let status = self.status();
+        self.queue_interrupt(
+            DiskIrq::CommandAcknowledged,
+            vec![status.0],
+            FIRST_RESP_GENERIC_DELAY,
+            false,
+        );
+    }
+
+    fn execute_readn(&mut self) {
+        tracing::debug!(
+            target: "psx_core::cdrom",
+            cursor = self.current_cursor,
+            "ReadN",
+        );
+
+        let status = self.status();
+        self.queue_interrupt(
+            DiskIrq::CommandAcknowledged,
+            vec![status.0],
+            FIRST_RESP_GENERIC_DELAY,
+            false,
+        );
+        self.queue_interrupt(
+            DiskIrq::CommandCompleted,
+            vec![status.0],
+            SECOND_RESP_PAUSE_DELAY,
+            false,
+        );
+
+        self.read_in_progress = true;
+        self.queue_interrupt(
+            DiskIrq::DataReady,
+            vec![self.cdrom_bin[self.current_cursor]],
+            FIRST_RESP_GENERIC_DELAY,
+            true,
+        );
+        self.current_cursor += 1;
     }
 
     fn trigger_irq(&mut self, irq: DiskIrq) {
@@ -322,7 +440,22 @@ impl Bus8 for Cdrom {
                 );
                 0xFF
             }),
-            // REG_RDDATA_ADDR => self.rdata,
+            REG_RDDATA_ADDR => {
+                let value = self.result_fifo.pop_front().unwrap_or_else(|| {
+                    tracing::warn!(
+                        target: "psx_core::cdrom",
+                        "RDDATA underflow on read",
+                    );
+                    0xFF
+                });
+                tracing::debug!(
+                    target: "psx_core::cdrom",
+                    bank = self.address.current_bank(),
+                    rdata = format!("{:02X}", value),
+                    "CDROM RDDATA read",
+                );
+                value
+            }
             REG_HINTMSK_ADDR_R if self.address.current_bank() == 0 || self.address.current_bank() == 2 => {
                 tracing::trace!(
                     target: "psx_core::cdrom",

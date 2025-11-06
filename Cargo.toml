@@ -5,6 +5,7 @@ members = ["psx-bench", "psx-core", "psx-dbg", "psx-trace-ingestor"]
 [profile.release]
 lto = "fat"
 debug = true
+codegen-units = 1
 
 [profile.dev]
 opt-level = 3

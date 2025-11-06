@@ -1,4 +1,3 @@
-use psx_core::cpu::decoder::Instruction;
 use psx_core::mmu::bus::Bus32 as _;
 use psx_core::psx::Psx;
 use std::time::Instant;

@@ -163,9 +163,7 @@ pub fn branch<
 
     if perform_branch {
         let branch_target = match ADDRESSING {
-            BranchAddressing::AbsoluteImmediate => {
-                (instr.address() << 2) | ((cpu.pc + 4) & 0xF000_0000)
-            }
+            BranchAddressing::AbsoluteImmediate => (instr.address() << 2) | ((cpu.pc + 4) & 0xF000_0000),
             BranchAddressing::AbsoluteRegister => {
                 if !Mmu::is_word_aligned(rs_value) {
                     cpu.cause_exception(Exception::AddressErrorLoad, instr.is_delay_slot);
@@ -308,11 +306,7 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
             }
         }
         AluOperation::SetLessThan => {
-            let result = if UNSIGNED {
-                x < y
-            } else {
-                (x as i32) < (y as i32)
-            };
+            let result = if UNSIGNED { x < y } else { (x as i32) < (y as i32) };
 
             cpu.write_register(dst, if result { 1 } else { 0 });
         }
@@ -384,9 +378,7 @@ pub fn load_store<
             cpu.write_u16(vaddr, (cpu.read_register(instr.rt()) & 0xFFFF) as u16);
             cpu.add_cycles(1);
         }
-        MemoryTransferSize::Word
-            if TYPE == MemoryAccessType::Load && PORTION == MemoryAccessPortion::Full =>
-        {
+        MemoryTransferSize::Word if TYPE == MemoryAccessType::Load && PORTION == MemoryAccessPortion::Full => {
             if vaddr % 4 != 0 {
                 cpu.cause_exception(Exception::AddressErrorLoad, instr.is_delay_slot);
                 return;
@@ -396,9 +388,7 @@ pub fn load_store<
             cpu.schedule_load(instr.rt(), value);
             cpu.add_cycles(2);
         }
-        MemoryTransferSize::Word
-            if TYPE == MemoryAccessType::Store && PORTION == MemoryAccessPortion::Full =>
-        {
+        MemoryTransferSize::Word if TYPE == MemoryAccessType::Store && PORTION == MemoryAccessPortion::Full => {
             if vaddr % 4 != 0 {
                 cpu.cause_exception(Exception::AddressErrorStore, instr.is_delay_slot);
                 return;
@@ -407,9 +397,7 @@ pub fn load_store<
             cpu.write_u32(vaddr, cpu.read_register(instr.rt()));
             cpu.add_cycles(1);
         }
-        MemoryTransferSize::Word
-            if TYPE == MemoryAccessType::Load && PORTION != MemoryAccessPortion::Full =>
-        {
+        MemoryTransferSize::Word if TYPE == MemoryAccessType::Load && PORTION != MemoryAccessPortion::Full => {
             // LWL, LWR, SWL, SWR do *not* throw exceptions for address alignment!
 
             // LWL: "It reads bytes only from the word in memory which contains the specified starting byte."
@@ -442,9 +430,7 @@ pub fn load_store<
             cpu.schedule_load(instr.rt(), register_value);
             cpu.add_cycles(2);
         }
-        MemoryTransferSize::Word
-            if TYPE == MemoryAccessType::Store && PORTION != MemoryAccessPortion::Full =>
-        {
+        MemoryTransferSize::Word if TYPE == MemoryAccessType::Store && PORTION != MemoryAccessPortion::Full => {
             let bytes_to_write = match PORTION {
                 MemoryAccessPortion::Left => Mmu::word_align(vaddr) + 1,
                 MemoryAccessPortion::Right => 4 - Mmu::word_align(vaddr),
@@ -477,10 +463,7 @@ pub fn load_store<
     }
 }
 
-pub fn move_multiply<
-    const DIRECTION: MultiplyMoveDirection,
-    const REGISTER: MultiplyMoveRegister,
->(
+pub fn move_multiply<const DIRECTION: MultiplyMoveDirection, const REGISTER: MultiplyMoveRegister>(
     instr: &Instruction, cpu: &mut Cpu,
 ) {
     match DIRECTION {

@@ -79,6 +79,30 @@ pub enum Opcode {
     StoreWordFromCoprocessor(u8),
     ReturnFromException,
 
+    // GTE
+    GteRtps,
+    GteNclip,
+    GteOp,
+    GteDpcs,
+    GteIntpl,
+    GteMvmva,
+    GteNcds,
+    GteCdp,
+    GteNcdt,
+    GteNccs,
+    GteCc,
+    GteNcs,
+    GteNct,
+    GteSqr,
+    GteDcpl,
+    GteDpct,
+    GteAvsz3,
+    GteAvsz4,
+    GteRtpt,
+    GteGpf,
+    GteGpl,
+    GteNcct,
+
     // Other
     Invalid,
 }
@@ -359,19 +383,31 @@ impl Instruction {
 
     // Helper methods to format instruction fields for display
     fn fmt_rd(&self) -> String {
-        lut::REGISTER_NAME_LUT.get(self.rd() as usize).unwrap_or(&"???").to_string()
+        lut::REGISTER_NAME_LUT
+            .get(self.rd() as usize)
+            .unwrap_or(&"???")
+            .to_string()
     }
 
     fn fmt_rs(&self) -> String {
-        lut::REGISTER_NAME_LUT.get(self.rs() as usize).unwrap_or(&"???").to_string()
+        lut::REGISTER_NAME_LUT
+            .get(self.rs() as usize)
+            .unwrap_or(&"???")
+            .to_string()
     }
 
     fn fmt_rt(&self) -> String {
-        lut::REGISTER_NAME_LUT.get(self.rt() as usize).unwrap_or(&"???").to_string()
+        lut::REGISTER_NAME_LUT
+            .get(self.rt() as usize)
+            .unwrap_or(&"???")
+            .to_string()
     }
 
     fn fmt_ft(&self) -> String {
-        lut::COP_REGISTER_NAME_LUT.get(self.ft() as usize).unwrap_or(&"???").to_string()
+        lut::COP_REGISTER_NAME_LUT
+            .get(self.ft() as usize)
+            .unwrap_or(&"???")
+            .to_string()
     }
 
     fn fmt_shamt(&self) -> String {
@@ -383,7 +419,10 @@ impl Instruction {
     }
 
     fn fmt_base(&self) -> String {
-        lut::REGISTER_NAME_LUT.get(self.base() as usize).unwrap_or(&"???").to_string()
+        lut::REGISTER_NAME_LUT
+            .get(self.base() as usize)
+            .unwrap_or(&"???")
+            .to_string()
     }
 
     fn fmt_imm(&self) -> String {
@@ -500,7 +539,7 @@ impl Instruction {
             Opcode::ReturnFromException => "",
 
             // Other
-            Opcode::Invalid => "",
+            _ => "???",
         }
     }
 }
@@ -600,6 +639,30 @@ impl std::fmt::Display for Opcode {
             Opcode::LoadWordToCoprocessor(cop) => return write!(f, "lwc{}", cop),
             Opcode::StoreWordFromCoprocessor(cop) => return write!(f, "swc{}", cop),
             Opcode::ReturnFromException => "rfe",
+
+            // GTE
+            Opcode::GteRtps => "rtps",
+            Opcode::GteNclip => "nclip",
+            Opcode::GteOp => "op",
+            Opcode::GteDpcs => "dpcs",
+            Opcode::GteIntpl => "intpl",
+            Opcode::GteMvmva => "mvmva",
+            Opcode::GteNcds => "ncds",
+            Opcode::GteCdp => "cdp",
+            Opcode::GteNcdt => "ncdt",
+            Opcode::GteNccs => "nccs",
+            Opcode::GteCc => "cc",
+            Opcode::GteNcs => "ncs",
+            Opcode::GteNct => "nct",
+            Opcode::GteSqr => "sqr",
+            Opcode::GteDcpl => "dcpl",
+            Opcode::GteDpct => "dpct",
+            Opcode::GteAvsz3 => "avsz3",
+            Opcode::GteAvsz4 => "avsz4",
+            Opcode::GteRtpt => "rtpt",
+            Opcode::GteGpf => "gpf",
+            Opcode::GteGpl => "gpl",
+            Opcode::GteNcct => "ncct",
 
             // Other
             Opcode::Invalid => "???",

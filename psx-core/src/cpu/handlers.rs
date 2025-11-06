@@ -133,7 +133,7 @@ pub fn branch<
         BranchType::LessEqualZero => (x as i32) <= 0,
         BranchType::GreaterEqualZero => (x as i32) >= 0,
         BranchType::GreaterThanZero => (x as i32) > 0,
-        _ => true, // Unconditional branches do not require comparison
+        BranchType::Unconditional => true, // Unconditional branches do not require comparison
     };
 
     // return address = PC + 8, where:
@@ -141,7 +141,23 @@ pub fn branch<
     // PC + 4 = next instruction (delay slot)
     // PC + 8 = instruction after the delay slot
     let return_address = cpu.pc + 8;
-    let perform_branch = compare(cpu.read_register(instr.rs()), cpu.read_register(instr.rt()));
+
+    // Cache rs, in case rs == rd as rs takes precedence over rd
+    let rs_value = cpu.read_register(instr.rs());
+
+    // Instructions like jal store the return address in reg 31 by default
+    // however, for instructions like JALR the reg is explicit (and may be different)
+    // This happens unconditionally (regardless of branch taken or not), even if there is an exception
+    if LINK {
+        let link_register = if LINK_REGISTER_DEFINED {
+            instr.rd()
+        } else {
+            crate::regidx("$ra")
+        };
+        cpu.write_register(link_register, return_address);
+    }
+
+    let perform_branch = compare(rs_value, cpu.read_register(instr.rt()));
 
     if perform_branch {
         let branch_target = match ADDRESSING {
@@ -149,14 +165,12 @@ pub fn branch<
                 (instr.address() << 2) | ((cpu.pc + 4) & 0xF000_0000)
             }
             BranchAddressing::AbsoluteRegister => {
-                let addr = cpu.registers[instr.rs() as usize];
-                if !Mmu::is_word_aligned(addr) {
+                if !Mmu::is_word_aligned(rs_value) {
                     cpu.cause_exception(Exception::AddressErrorLoad, instr.is_delay_slot);
-                    // TODO: do we add cycles here?
+                    cpu.add_cycles(1);
                     return;
                 }
-
-                addr
+                rs_value
             }
             BranchAddressing::RelativeOffset => {
                 cpu.pc.wrapping_add_signed((instr.offset() as i32) << 2) + 4 // +4 to account for the delay slot
@@ -170,19 +184,6 @@ pub fn branch<
         // with the branch target being PC + 8 (the instruction after the delay slot)
         // TODO: Verify if this is correct and does not cause weird side effects with the debugger or something
         cpu.set_delay_slot(cpu.pc + 8);
-    }
-
-    // Instructions like jal store the return address in reg 31 by default
-    // however, for instructions like JALR the reg is explicit (and may be different)
-    // This happens unconditionally (regardless of branch taken or not)
-    if LINK {
-        let reg_idx = if LINK_REGISTER_DEFINED {
-            instr.rd()
-        } else {
-            crate::regidx("$ra")
-        };
-
-        cpu.write_register(reg_idx, return_address);
     }
 
     cpu.add_cycles(1);

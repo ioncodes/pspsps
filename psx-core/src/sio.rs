@@ -1,4 +1,5 @@
 pub mod joy;
+pub mod memcard;
 pub mod sio0;
 pub mod sio1;
 

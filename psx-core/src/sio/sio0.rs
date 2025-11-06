@@ -1,7 +1,16 @@
-use super::joy::ControllerState;
+use super::joy::{ControllerDevice, ControllerState};
+use super::memcard::MemoryCardDevice;
 use crate::mmu::bus::{Bus8, Bus16, Bus32};
 use crate::sio::{SerialControl, SerialMode, SerialStatus};
 use std::collections::VecDeque;
+
+pub trait SioDevice {
+    fn process_byte(&mut self, tx_byte: u8) -> u8;
+    fn reset(&mut self);
+    fn is_selected(&self) -> bool;
+    fn deselect(&mut self);
+    fn device_id(&self) -> u8;
+}
 
 crate::define_addr!(SIO0_TX_DATA_ADDR, 0x1F80_1040, 0, 4, 0x10);
 crate::define_addr!(SIO0_RX_DATA_ADDR, 0x1F80_1040, 0, 4, 0x10);
@@ -11,18 +20,17 @@ crate::define_addr!(SIO0_CTRL_ADDR, 0x1F80_104A, 0, 2, 0x10);
 crate::define_addr!(SIO0_BAUD_ADDR, 0x1F80_104E, 0, 2, 0x10);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ControllerTransferState {
-    Idle,
-    Selected,
-    CommandReceived,
-    SendingData(u8), // byte index
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TransferPhase {
     Idle,
     ProcessingTx,    // Waiting to process TX byte (1088 cycles)
     WaitingForFlags, // Waiting to set flags/IRQ after RX (1088 cycles)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ActiveDevice {
+    None,
+    Controller,
+    MemoryCard,
 }
 
 pub struct Sio0 {
@@ -36,8 +44,10 @@ pub struct Sio0 {
     cycles: usize,
     target_cycles: usize,
     transfer_phase: TransferPhase,
-    transfer_state: ControllerTransferState,
-    controller_state: ControllerState,
+    // Devices
+    controller: ControllerDevice,
+    memory_card: MemoryCardDevice,
+    active_device: ActiveDevice,
 }
 
 impl Default for Sio0 {
@@ -53,8 +63,9 @@ impl Default for Sio0 {
             cycles: 0,
             target_cycles: 1088,
             transfer_phase: TransferPhase::Idle,
-            transfer_state: ControllerTransferState::Idle,
-            controller_state: ControllerState::default(),
+            controller: ControllerDevice::new(),
+            memory_card: MemoryCardDevice::new(),
+            active_device: ActiveDevice::None,
         }
     }
 }
@@ -65,7 +76,7 @@ impl Sio0 {
     }
 
     pub fn set_controller_state(&mut self, state: ControllerState) {
-        self.controller_state = state;
+        self.controller.set_state(state);
     }
 
     pub fn tick(&mut self, cycles: usize) {
@@ -87,12 +98,11 @@ impl Sio0 {
             _ => {}
         }
 
-        // Check if controller was deselected (DTR went low)
+        // Check if devices were deselected (DTR went low)
         if !self.control.dtr_output_level() {
-            if self.transfer_state != ControllerTransferState::Idle {
-                tracing::debug!(target: "psx_core::sio", "Controller deselected");
-                self.transfer_state = ControllerTransferState::Idle;
-            }
+            self.controller.deselect();
+            self.memory_card.deselect();
+            self.active_device = ActiveDevice::None;
         }
     }
 
@@ -100,65 +110,35 @@ impl Sio0 {
         self.status.interrupt_request()
     }
 
-    fn process_controller_byte(&mut self, tx_byte: u8) -> u8 {
-        match self.transfer_state {
-            ControllerTransferState::Idle => {
-                // First byte should be 0x01 to select controller with DTR asserted
-                if tx_byte == 0x01 && self.control.dtr_output_level() {
-                    self.transfer_state = ControllerTransferState::Selected;
-                    tracing::debug!(target: "psx_core::sio", "Controller selected");
-                    0xFF // Hi-Z response (controller present)
-                } else if tx_byte == 0x01 {
-                    tracing::debug!(target: "psx_core::sio", "Controller select byte received but DTR not asserted");
-                    0xFF
-                } else {
-                    tracing::trace!(target: "psx_core::sio", tx = format!("{:02X}", tx_byte), "Byte received while idle");
-                    0xFF
+    fn route_byte_to_device(&mut self, tx_byte: u8) -> u8 {
+        // If no device is active and DTR is asserted, check for device selection
+        if self.active_device == ActiveDevice::None && self.control.dtr_output_level() {
+            match tx_byte {
+                0x01 => {
+                    self.active_device = ActiveDevice::Controller;
                 }
-            }
-            // 42h  idlo  Receive ID bit0..7 (variable) and Send Read Command (ASCII "B")
-            ControllerTransferState::Selected => {
-                if tx_byte == 0x42 {
-                    self.transfer_state = ControllerTransferState::CommandReceived;
-                    tracing::trace!(target: "psx_core::sio", "Read controller command");
-                    0x41 // Digital pad ID low byte
-                } else {
-                    tracing::error!(target: "psx_core::sio", tx = format!("{:02X}", tx_byte), "Unknown command while controller selected");
-                    0xFF
+                0x81 => {
+                    self.active_device = ActiveDevice::MemoryCard;
                 }
+                _ => {}
             }
-            // TAP  idhi  Receive ID bit8..15 (usually/always 5Ah)
-            ControllerTransferState::CommandReceived => {
-                self.transfer_state = ControllerTransferState::SendingData(0);
-                0x5A
-            }
-            ControllerTransferState::SendingData(index) => {
-                let (byte1, byte2) = self.controller_state.to_button_bytes();
-                let response = match index {
-                    0 => {
-                        self.transfer_state = ControllerTransferState::SendingData(1);
-                        byte1 // First button byte
-                    }
-                    1 => {
-                        // Last byte - transfer complete
-                        self.transfer_state = ControllerTransferState::Idle;
-                        byte2 // Second button byte
-                    }
-                    _ => {
-                        self.transfer_state = ControllerTransferState::Idle;
-                        0xFF
-                    }
-                };
+        }
 
-                response
+        // Route to active device
+        match self.active_device {
+            ActiveDevice::Controller => self.controller.process_byte(tx_byte),
+            ActiveDevice::MemoryCard => self.memory_card.process_byte(tx_byte),
+            ActiveDevice::None => {
+                tracing::trace!(target: "psx_core::sio", tx = format!("{:02X}", tx_byte), "No device selected");
+                0xFF
             }
         }
     }
 
     fn process_tx_byte(&mut self) {
         if let Some(tx_byte) = self.pending_tx.take() {
-            // Process the byte through the controller
-            let rx_byte = self.process_controller_byte(tx_byte);
+            // Route the byte to the appropriate device
+            let rx_byte = self.route_byte_to_device(tx_byte);
 
             // Store response for later (after second delay)
             self.pending_rx = Some(rx_byte);
@@ -272,7 +252,9 @@ impl Bus16 for Sio0 {
                     self.rx_fifo.clear();
                     self.pending_tx = None;
                     self.pending_rx = None;
-                    self.transfer_state = ControllerTransferState::Idle;
+                    self.controller.reset();
+                    self.memory_card.reset();
+                    self.active_device = ActiveDevice::None;
                     self.transfer_phase = TransferPhase::Idle;
                     self.cycles = 0;
                     self.status.set_rx_fifo_not_empty(false);

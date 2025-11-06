@@ -313,6 +313,8 @@ fn main() -> eframe::Result {
         targets = targets.with_target("psx_core::gpu", tracing_level);
         targets = targets.with_target("psx_core::irq", tracing_level);
         targets = targets.with_target("psx_core::sio", tracing_level);
+        targets = targets.with_target("psx_core::joy", tracing_level);
+        targets = targets.with_target("psx_core::mc", tracing_level);
         targets = targets.with_target("psx_core::cdrom", tracing_level);
     }
 

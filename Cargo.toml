@@ -9,3 +9,4 @@ codegen-units = 1
 
 [profile.dev]
 opt-level = 3
+debug-assertions = true

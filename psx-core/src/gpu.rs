@@ -173,8 +173,17 @@ impl Gpu {
             }
         }
 
-        // TODO: rasterize the polygon using the extracted vertices and colors
-        rasterizer::rasterize_triangle();
+        tracing::debug!(
+            target: "psx_core::gpu",
+            vertex_count = cmd.vertex_count(),
+            gouraud = cmd.gouraud(),
+            vertices = ?vertices.iter().map(|(x, y)| format!("({}, {})", x, y)).collect::<Vec<_>>(),
+            colors = ?colors.iter().map(|c| format!("{:06X}", c)).collect::<Vec<_>>(),
+            "Rasterizing polygon"
+        );
+
+        // Rasterize the polygon (triangle or quad) into VRAM
+        rasterizer::rasterize_polygon(&vertices, &colors, &mut self.gp.vram);
     }
 
     fn process_cpu_to_vram_blit_cmd(&mut self, parsed_cmd: ParsedCommand) {

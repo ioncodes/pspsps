@@ -283,7 +283,7 @@ pub fn load_store<
     const IS_LUI: bool,
     const TYPE: MemoryAccessType,
     const TRANSFER_SIZE: MemoryTransferSize,
-    const PORTION: MemoryAccessPortion,
+    const PORTION: MemoryAccessPortion, // TODO: implement this
 >(
     instr: &Instruction, cpu: &mut Cpu,
 ) {
@@ -305,15 +305,35 @@ pub fn load_store<
             cpu.write_u8(vaddr, (cpu.read_register(instr.rt()) & 0xFF) as u8);
         }
         MemoryTransferSize::HalfWord if TYPE == MemoryAccessType::Load => {
+            if vaddr % 2 != 0 {
+                cpu.cause_exception(Exception::AddressErrorLoad, instr.is_delay_slot);
+                return;
+            }
+
             cpu.write_register(instr.rt(), cpu.read_u16(vaddr) as u32);
         }
         MemoryTransferSize::HalfWord if TYPE == MemoryAccessType::Store => {
+            if vaddr % 2 != 0 {
+                cpu.cause_exception(Exception::AddressErrorStore, instr.is_delay_slot);
+                return;
+            }
+
             cpu.write_u16(vaddr, (cpu.read_register(instr.rt()) & 0xFFFF) as u16);
         }
         MemoryTransferSize::Word if TYPE == MemoryAccessType::Load => {
+            if vaddr % 4 != 0 {
+                cpu.cause_exception(Exception::AddressErrorLoad, instr.is_delay_slot);
+                return;
+            }
+
             cpu.write_register(instr.rt(), cpu.read_u32(vaddr));
         }
         MemoryTransferSize::Word if TYPE == MemoryAccessType::Store => {
+            if vaddr % 4 != 0 {
+                cpu.cause_exception(Exception::AddressErrorStore, instr.is_delay_slot);
+                return;
+            }
+
             cpu.write_u32(vaddr, cpu.read_register(instr.rt()));
         }
         _ => todo!(
@@ -364,6 +384,6 @@ pub fn system_call(instr: &Instruction, cpu: &mut Cpu) {
     cpu.cause_exception(Exception::Syscall, instr.is_delay_slot);
 }
 
-pub fn debug_break(_instr: &Instruction, _cpu: &mut Cpu) {
-    todo!("Implement break");
+pub fn debug_break(instr: &Instruction, cpu: &mut Cpu) {
+    cpu.cause_exception(Exception::Breakpoint, instr.is_delay_slot);
 }

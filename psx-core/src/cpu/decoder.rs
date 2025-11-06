@@ -139,8 +139,6 @@ impl Instruction {
 impl PartialEq for Instruction {
     fn eq(&self, other: &Self) -> bool {
         self.opcode == other.opcode
-            && self.raw == other.raw
-            && self.opcode_type == other.opcode_type
     }
 }
 

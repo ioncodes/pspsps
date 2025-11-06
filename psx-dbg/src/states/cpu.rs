@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub struct CpuState {
     pub pc: u32,
     pub registers: [u32; 32],

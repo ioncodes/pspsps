@@ -1,17 +1,20 @@
 use super::{SharedContext, Widget};
-use egui::Ui;
+use egui::{RichText, Ui};
 use psx_core::mmu::bus::Bus8 as _;
+use std::collections::HashMap;
 
 const ROWS_TO_DISPLAY: u32 = 128;
 
 pub struct MmuWidget {
     memory_address: u32,
+    previous_memory: HashMap<u32, u8>,
 }
 
 impl MmuWidget {
     pub fn new() -> Self {
         Self {
             memory_address: 0x80000000,
+            previous_memory: HashMap::new(),
         }
     }
 }
@@ -38,6 +41,17 @@ impl Widget for MmuWidget {
             }
 
             if ui.button("Refresh").clicked() {
+                // Capture current visible memory before refreshing
+                let start_addr = self.memory_address & !0xF;
+                self.previous_memory.clear();
+                for row in 0..ROWS_TO_DISPLAY {
+                    for col in 0..16 {
+                        let addr = start_addr + (row * 16) + col;
+                        let byte = context.state.mmu.read_u8(addr);
+                        self.previous_memory.insert(addr, byte);
+                    }
+                }
+
                 context
                     .channel_send
                     .send(crate::io::DebuggerEvent::UpdateMmu)
@@ -48,35 +62,66 @@ impl Widget for MmuWidget {
         ui.separator();
 
         let start_addr = self.memory_address & !0xF;
+        let color_changed = egui::Color32::from_rgb(255, 150, 150); // Light red for changed
 
         for row in 0..ROWS_TO_DISPLAY {
             let addr = start_addr + (row * 16);
 
-            let mut line = format!("{:08X}: ", addr);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
 
-            for col in 0..16 {
-                let byte_addr = addr + col;
-                let byte = context.state.mmu.read_u8(byte_addr);
-                line.push_str(&format!("{:02X} ", byte));
+                // Address
+                ui.label(RichText::new(format!("{:08X}: ", addr)).monospace());
 
-                if col == 7 {
-                    line.push(' ');
+                // Hex bytes
+                for col in 0..16 {
+                    let byte_addr = addr + col;
+                    let byte = context.state.mmu.read_u8(byte_addr);
+
+                    // Check if byte changed
+                    let changed = self.previous_memory.get(&byte_addr)
+                        .map(|&prev| prev != byte)
+                        .unwrap_or(false);
+
+                    if changed {
+                        ui.colored_label(color_changed, RichText::new(format!("{:02X}", byte)).monospace());
+                    } else {
+                        ui.label(RichText::new(format!("{:02X}", byte)).monospace());
+                    }
+                    ui.label(RichText::new(" ").monospace());
+
+                    if col == 7 {
+                        ui.label(RichText::new(" ").monospace());
+                    }
                 }
-            }
 
-            line.push_str(" |");
-            for col in 0..16 {
-                let byte_addr = addr + col;
-                let byte = context.state.mmu.read_u8(byte_addr);
-                if byte >= 32 && byte <= 126 {
-                    line.push(byte as char);
-                } else {
-                    line.push('.');
+                ui.label(RichText::new(" |").monospace());
+
+                // ASCII representation
+                for col in 0..16 {
+                    let byte_addr = addr + col;
+                    let byte = context.state.mmu.read_u8(byte_addr);
+
+                    // Check if byte changed
+                    let changed = self.previous_memory.get(&byte_addr)
+                        .map(|&prev| prev != byte)
+                        .unwrap_or(false);
+
+                    let ch = if byte >= 32 && byte <= 126 {
+                        byte as char
+                    } else {
+                        '.'
+                    };
+
+                    if changed {
+                        ui.colored_label(color_changed, RichText::new(ch.to_string()).monospace());
+                    } else {
+                        ui.label(RichText::new(ch.to_string()).monospace());
+                    }
                 }
-            }
-            line.push('|');
 
-            ui.monospace(line);
+                ui.label(RichText::new("|").monospace());
+            });
         }
     }
 }

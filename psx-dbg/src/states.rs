@@ -7,6 +7,7 @@ pub mod tty;
 
 pub struct State {
     pub cpu: cpu::CpuState,
+    pub previous_cpu: cpu::CpuState,
     pub mmu: mmu::MmuState,
     pub tty: tty::TtyState,
     pub trace: trace::TraceState,
@@ -14,12 +15,14 @@ pub struct State {
     pub gpu: gpu::GpuState,
     pub is_running: bool,
     pub ignore_errors: bool,
+    pub should_update_previous_cpu: bool,
 }
 
 impl State {
     pub fn new() -> Self {
         Self {
             cpu: cpu::CpuState::default(),
+            previous_cpu: cpu::CpuState::default(),
             mmu: mmu::MmuState::default(),
             tty: tty::TtyState::default(),
             trace: trace::TraceState::default(),
@@ -27,6 +30,7 @@ impl State {
             gpu: gpu::GpuState::default(),
             is_running: false,
             ignore_errors: true,
+            should_update_previous_cpu: false,
         }
     }
 }

@@ -15,3 +15,5 @@ clap = { version = "4.0", features = ["derive"] }
 crossbeam-channel = "0.5.15"
 rayon = "1.11.0"
 image = "0.25"
+pest = "2.7"
+pest_derive = "2.7"

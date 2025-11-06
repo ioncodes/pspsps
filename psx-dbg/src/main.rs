@@ -191,6 +191,12 @@ impl eframe::App for PsxDebugger {
                     self.state.trace = state;
                 }
                 DebuggerEvent::CpuUpdated(state) => {
+                    // Only update previous state when flagged (running or just stepped)
+                    // This prevents change highlighting from disappearing when paused
+                    if self.state.should_update_previous_cpu {
+                        self.state.previous_cpu = self.state.cpu.clone();
+                        self.state.should_update_previous_cpu = false;
+                    }
                     self.state.cpu = state;
                 }
                 DebuggerEvent::MmuUpdated(state) => {
@@ -225,6 +231,11 @@ impl eframe::App for PsxDebugger {
                 }
                 _ => {}
             }
+        }
+
+        // Set flag to update previous_cpu when running (for change tracking)
+        if self.state.is_running {
+            self.state.should_update_previous_cpu = true;
         }
 
         self.channel_send

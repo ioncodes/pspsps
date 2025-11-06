@@ -1,0 +1,42 @@
+WHITESPACE = _{ " " | "\t" }
+
+// Main instruction rule
+instruction = { opcode ~ operands? }
+
+// Opcode (instruction mnemonic) - starts with letter, can contain digits (e.g., lwc2, mtc2)
+opcode = @{ ASCII_ALPHA ~ (ASCII_ALPHA | ASCII_DIGIT)* }
+
+// Operands list
+operands = { operand ~ ("," ~ operand)* }
+
+// Individual operand types
+operand = {
+    memory_address |
+    cpu_register |
+    gte_register |
+    hex_immediate |
+    decimal_immediate |
+    offset |
+    identifier
+}
+
+// Memory address: offset($register)
+memory_address = { (hex_immediate | decimal_immediate | offset) ~ "(" ~ cpu_register ~ ")" }
+
+// CPU register: starts with $
+cpu_register = @{ "$" ~ (ASCII_ALPHA | ASCII_DIGIT)+ }
+
+// GTE/COP2 register: lowercase alphanumeric without $
+gte_register = @{ ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT)+ }
+
+// Hex immediate: 0xHEX
+hex_immediate = @{ "0x" ~ ASCII_HEX_DIGIT+ }
+
+// Decimal immediate: just digits
+decimal_immediate = @{ ASCII_DIGIT+ }
+
+// Offset: signed number
+offset = @{ ("+" | "-") ~ ASCII_DIGIT+ }
+
+// Generic identifier: for things like labels, flags, etc.
+identifier = @{ ASCII_ALPHA+ }

@@ -1,6 +1,6 @@
 use super::{SharedContext, Widget};
 use crate::io::DebuggerEvent;
-use egui::{CollapsingHeader, Label, RichText, Ui};
+use egui::{CollapsingHeader, RichText, Ui};
 use egui_toast::{Toast, ToastKind};
 use psx_core::cpu::cop::Cop;
 use psx_core::cpu::cop::cop0::{COP0_SR, Exception};
@@ -9,8 +9,158 @@ use psx_core::mmu::bus::{Bus8, Bus32 as _};
 use rayon::prelude::*;
 use std::io::Write as _;
 use std::time::Duration;
+use pest::Parser;
+use pest::iterators::Pair;
+use pest_derive::Parser;
+
+#[derive(Parser)]
+#[grammar = "grammar/instruction.pest"]
+struct InstructionParser;
 
 const INSTRUCTIONS_TO_DISPLAY: usize = 128;
+
+// Helper function to render a colorized instruction using PEG parser
+fn render_instruction(ui: &mut Ui, addr: u32, instr: &Instruction, is_pc: bool, has_breakpoint: bool) {
+
+    // Color scheme from the reference design
+    let color_address = egui::Color32::from_rgb(127, 165, 204);   // (0.50, 0.65, 0.80)
+    let color_opcode = egui::Color32::from_rgb(178, 216, 229);    // (0.70, 0.85, 0.90)
+    let color_register = egui::Color32::from_rgb(165, 204, 255);  // (0.65, 0.80, 1.00)
+    let color_immediate = egui::Color32::from_rgb(242, 165, 204); // (0.95, 0.65, 0.80)
+    let color_symbol = egui::Color32::from_rgb(191, 140, 242);    // (0.75, 0.55, 0.95) - used for COP/GTE registers
+    let color_shift_type = egui::Color32::from_rgb(153, 229, 255); // (0.60, 0.90, 1.00)
+
+    // Draw indicator on the left (breakpoint or PC marker)
+    let (response, painter) = ui.allocate_painter(egui::Vec2::new(16.0, ui.text_style_height(&egui::TextStyle::Monospace)), egui::Sense::hover());
+    let rect = response.rect;
+    let center = rect.center();
+
+    if has_breakpoint {
+        // Red circle for breakpoint
+        painter.circle_filled(center, 4.0, egui::Color32::RED);
+    } else if is_pc {
+        // Green triangle pointing right for PC
+        let triangle = vec![
+            egui::pos2(center.x - 4.0, center.y - 4.0),
+            egui::pos2(center.x + 4.0, center.y),
+            egui::pos2(center.x - 4.0, center.y + 4.0),
+        ];
+        painter.add(egui::Shape::convex_polygon(triangle, egui::Color32::GREEN, egui::Stroke::NONE));
+    }
+
+    // Render everything with zero spacing for compact display
+    ui.scope(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+
+        // Address
+        ui.colored_label(color_address, RichText::new(format!("{:08X}", addr)).monospace());
+        ui.label(RichText::new(" ").monospace());
+
+        // Raw instruction hex (use opcode color)
+        ui.colored_label(color_opcode, RichText::new(format!("{:08X}", instr.raw)).monospace());
+        ui.label(RichText::new(" ").monospace());
+
+        // Parse the instruction string with PEG
+        let instr_str = format!("{}", instr);
+
+        let parsed = InstructionParser::parse(Rule::instruction, &instr_str);
+
+        match parsed {
+            Ok(mut pairs) => {
+                if let Some(instruction_pair) = pairs.next() {
+                    let mut first_operand = true;
+
+                    for pair in instruction_pair.into_inner() {
+                        match pair.as_rule() {
+                            Rule::opcode => {
+                                let opcode_color = if has_breakpoint {
+                                    egui::Color32::RED
+                                } else {
+                                    color_opcode
+                                };
+                                ui.colored_label(opcode_color, RichText::new(format!("{:<8}", pair.as_str())).monospace());
+                            }
+                            Rule::operands => {
+                                for operand in pair.into_inner() {
+                                    if !first_operand {
+                                        ui.label(RichText::new(", ").monospace());
+                                    }
+                                    first_operand = false;
+
+                                    render_operand(ui, operand, color_register, color_symbol,
+                                                 color_immediate, color_immediate, color_shift_type);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                // Fallback: just display as-is if parsing fails
+                // Only print first few errors to avoid spam
+                static PRINT_COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+                if PRINT_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 10 {
+                    eprintln!("Parse error for '{}': {:?}", instr_str, e);
+                }
+                ui.label(RichText::new(&instr_str).monospace());
+            }
+        }
+    });
+}
+
+fn render_operand(
+    ui: &mut Ui,
+    operand: Pair<Rule>,
+    color_register: egui::Color32,
+    color_cop_register: egui::Color32,
+    color_immediate: egui::Color32,
+    color_offset: egui::Color32,
+    color_shift_type: egui::Color32,
+) {
+    match operand.as_rule() {
+        Rule::operand => {
+            // operand is a wrapper, get the actual inner rule
+            if let Some(inner) = operand.into_inner().next() {
+                render_operand(ui, inner, color_register, color_cop_register,
+                             color_immediate, color_offset, color_shift_type);
+            }
+        }
+        Rule::cpu_register => {
+            ui.colored_label(color_register, RichText::new(operand.as_str()).monospace());
+        }
+        Rule::gte_register => {
+            ui.colored_label(color_cop_register, RichText::new(operand.as_str()).monospace());
+        }
+        Rule::hex_immediate | Rule::decimal_immediate | Rule::offset => {
+            ui.colored_label(color_immediate, RichText::new(operand.as_str()).monospace());
+        }
+        Rule::memory_address => {
+            // Memory address: offset($register)
+            for inner in operand.into_inner() {
+                match inner.as_rule() {
+                    Rule::hex_immediate | Rule::decimal_immediate | Rule::offset => {
+                        ui.colored_label(color_offset, RichText::new(inner.as_str()).monospace());
+                    }
+                    Rule::cpu_register => {
+                        ui.label(RichText::new("(").monospace());
+                        ui.colored_label(color_register, RichText::new(inner.as_str()).monospace());
+                        ui.label(RichText::new(")").monospace());
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Rule::identifier => {
+            // Generic identifiers like sf, lm, etc.
+            ui.colored_label(color_shift_type, RichText::new(operand.as_str()).monospace());
+        }
+        _ => {
+            eprintln!("Unknown rule in render_operand: {:?} ({})", operand.as_rule(), operand.as_str());
+            ui.label(RichText::new(operand.as_str()).monospace());
+        }
+    }
+}
 
 #[derive(Copy, Clone)]
 struct SendMmuPtr(usize);
@@ -106,6 +256,8 @@ impl Widget for CpuWidget {
             }
 
             if ui.button("Step").clicked() {
+                // Set flag to update previous_cpu on next update (to show what changed)
+                context.state.should_update_previous_cpu = true;
                 context
                     .channel_send
                     .send(DebuggerEvent::Step)
@@ -153,66 +305,111 @@ impl Widget for CpuWidget {
         ui.separator();
 
         ui.heading("Registers");
-        ui.monospace(format!(
-            "$00: {:08X}  $at: {:08X}  $v0: {:08X}  $v1: {:08X}",
-            context.state.cpu.registers[0],
-            context.state.cpu.registers[1],
-            context.state.cpu.registers[2],
-            context.state.cpu.registers[3]
-        ));
-        ui.monospace(format!(
-            "$a0: {:08X}  $a1: {:08X}  $a2: {:08X}  $a3: {:08X}",
-            context.state.cpu.registers[4],
-            context.state.cpu.registers[5],
-            context.state.cpu.registers[6],
-            context.state.cpu.registers[7]
-        ));
-        ui.monospace(format!(
-            "$t0: {:08X}  $t1: {:08X}  $t2: {:08X}  $t3: {:08X}",
-            context.state.cpu.registers[8],
-            context.state.cpu.registers[9],
-            context.state.cpu.registers[10],
-            context.state.cpu.registers[11]
-        ));
-        ui.monospace(format!(
-            "$t4: {:08X}  $t5: {:08X}  $t6: {:08X}  $t7: {:08X}",
-            context.state.cpu.registers[12],
-            context.state.cpu.registers[13],
-            context.state.cpu.registers[14],
-            context.state.cpu.registers[15]
-        ));
-        ui.monospace(format!(
-            "$s0: {:08X}  $s1: {:08X}  $s2: {:08X}  $s3: {:08X}",
-            context.state.cpu.registers[16],
-            context.state.cpu.registers[17],
-            context.state.cpu.registers[18],
-            context.state.cpu.registers[19]
-        ));
-        ui.monospace(format!(
-            "$s4: {:08X}  $s5: {:08X}  $s6: {:08X}  $s7: {:08X}",
-            context.state.cpu.registers[20],
-            context.state.cpu.registers[21],
-            context.state.cpu.registers[22],
-            context.state.cpu.registers[23]
-        ));
-        ui.monospace(format!(
-            "$t8: {:08X}  $t9: {:08X}  $k0: {:08X}  $k1: {:08X}",
-            context.state.cpu.registers[24],
-            context.state.cpu.registers[25],
-            context.state.cpu.registers[26],
-            context.state.cpu.registers[27]
-        ));
-        ui.monospace(format!(
-            "$gp: {:08X}  $sp: {:08X}  $fp: {:08X}  $ra: {:08X}",
-            context.state.cpu.registers[28],
-            context.state.cpu.registers[29],
-            context.state.cpu.registers[30],
-            context.state.cpu.registers[31]
-        ));
-        ui.monospace(format!(
-            "$hi: {:08X}  $lo: {:08X}",
-            context.state.cpu.hi, context.state.cpu.lo
-        ));
+
+        // Helper closure to render a register with change highlighting
+        let render_reg = |ui: &mut Ui, name: &str, idx: usize| {
+            let changed = context.state.cpu.registers[idx] != context.state.previous_cpu.registers[idx];
+            let text = format!("{}: {:08X}", name, context.state.cpu.registers[idx]);
+            if changed {
+                ui.colored_label(egui::Color32::from_rgb(255, 150, 150), RichText::new(text).monospace());
+            } else {
+                ui.label(RichText::new(text).monospace());
+            }
+        };
+
+        // Render registers in rows
+        ui.horizontal(|ui| {
+            render_reg(ui, "$00", 0);
+            ui.label("  ");
+            render_reg(ui, "$at", 1);
+            ui.label("  ");
+            render_reg(ui, "$v0", 2);
+            ui.label("  ");
+            render_reg(ui, "$v1", 3);
+        });
+        ui.horizontal(|ui| {
+            render_reg(ui, "$a0", 4);
+            ui.label("  ");
+            render_reg(ui, "$a1", 5);
+            ui.label("  ");
+            render_reg(ui, "$a2", 6);
+            ui.label("  ");
+            render_reg(ui, "$a3", 7);
+        });
+        ui.horizontal(|ui| {
+            render_reg(ui, "$t0", 8);
+            ui.label("  ");
+            render_reg(ui, "$t1", 9);
+            ui.label("  ");
+            render_reg(ui, "$t2", 10);
+            ui.label("  ");
+            render_reg(ui, "$t3", 11);
+        });
+        ui.horizontal(|ui| {
+            render_reg(ui, "$t4", 12);
+            ui.label("  ");
+            render_reg(ui, "$t5", 13);
+            ui.label("  ");
+            render_reg(ui, "$t6", 14);
+            ui.label("  ");
+            render_reg(ui, "$t7", 15);
+        });
+        ui.horizontal(|ui| {
+            render_reg(ui, "$s0", 16);
+            ui.label("  ");
+            render_reg(ui, "$s1", 17);
+            ui.label("  ");
+            render_reg(ui, "$s2", 18);
+            ui.label("  ");
+            render_reg(ui, "$s3", 19);
+        });
+        ui.horizontal(|ui| {
+            render_reg(ui, "$s4", 20);
+            ui.label("  ");
+            render_reg(ui, "$s5", 21);
+            ui.label("  ");
+            render_reg(ui, "$s6", 22);
+            ui.label("  ");
+            render_reg(ui, "$s7", 23);
+        });
+        ui.horizontal(|ui| {
+            render_reg(ui, "$t8", 24);
+            ui.label("  ");
+            render_reg(ui, "$t9", 25);
+            ui.label("  ");
+            render_reg(ui, "$k0", 26);
+            ui.label("  ");
+            render_reg(ui, "$k1", 27);
+        });
+        ui.horizontal(|ui| {
+            render_reg(ui, "$gp", 28);
+            ui.label("  ");
+            render_reg(ui, "$sp", 29);
+            ui.label("  ");
+            render_reg(ui, "$fp", 30);
+            ui.label("  ");
+            render_reg(ui, "$ra", 31);
+        });
+        ui.horizontal(|ui| {
+            let hi_changed = context.state.cpu.hi != context.state.previous_cpu.hi;
+            let lo_changed = context.state.cpu.lo != context.state.previous_cpu.lo;
+
+            if hi_changed {
+                ui.colored_label(egui::Color32::from_rgb(255, 150, 150),
+                    RichText::new(format!("$hi: {:08X}", context.state.cpu.hi)).monospace());
+            } else {
+                ui.label(RichText::new(format!("$hi: {:08X}", context.state.cpu.hi)).monospace());
+            }
+
+            ui.label("  ");
+
+            if lo_changed {
+                ui.colored_label(egui::Color32::from_rgb(255, 150, 150),
+                    RichText::new(format!("$lo: {:08X}", context.state.cpu.lo)).monospace());
+            } else {
+                ui.label(RichText::new(format!("$lo: {:08X}", context.state.cpu.lo)).monospace());
+            }
+        });
 
         ui.separator();
 
@@ -300,60 +497,56 @@ impl Widget for CpuWidget {
             .collect();
 
         for (addr, instr) in instructions {
-            ui.horizontal(|ui| {
-                let has_breakpoint = context.state.breakpoints.breakpoints.contains(&addr);
+            let has_breakpoint = context.state.breakpoints.breakpoints.contains(&addr);
+            let is_pc = addr == context.state.cpu.pc;
 
-                let line = format!("{:08X}: {}", addr, instr);
-                let line = if has_breakpoint {
-                    Label::new(RichText::new(line).monospace().color(egui::Color32::RED))
+            let response = ui.horizontal(|ui| {
+                // Render the colorized instruction
+                render_instruction(ui, addr, &instr, is_pc, has_breakpoint);
+            })
+            .response
+            .on_hover_text(
+                RichText::new(format!(
+                    "Raw: {:08X}\n\
+                     Opcode: {}\n\
+                     op: {:02X}\n\
+                     rs: {:02X}\n\
+                     rt: {:02X}\n\
+                     rd: {:02X}\n\
+                     shamt: {:02X}\n\
+                     funct: {:02X}\n\
+                     imm: {:04X}\n\
+                     offset: {}\n\
+                     address: {:08X}\n\
+                     Click to toggle breakpoint",
+                    instr.raw,
+                    instr.opcode,
+                    instr.op(),
+                    instr.rs(),
+                    instr.rt(),
+                    instr.rd(),
+                    instr.shamt(),
+                    instr.funct(),
+                    instr.immediate(),
+                    instr.offset(),
+                    instr.address()
+                ))
+                .monospace(),
+            );
+
+            if response.clicked() {
+                if has_breakpoint {
+                    context
+                        .channel_send
+                        .send(DebuggerEvent::RemoveBreakpoint(addr))
+                        .expect("Failed to send remove breakpoint event");
                 } else {
-                    Label::new(RichText::new(line).monospace())
-                };
-
-                if ui
-                    .add(line)
-                    .on_hover_text(
-                        RichText::new(format!(
-                            "Raw: {:08X}\n\
-                         Opcode: {}\n\
-                         op: {:02X}\n\
-                         rs: {:02X}\n\
-                         rt: {:02X}\n\
-                         rd: {:02X}\n\
-                         shamt: {:02X}\n\
-                         funct: {:02X}\n\
-                         imm: {:04X}\n\
-                         offset: {}\n\
-                         address: {:08X}\n",
-                            instr.raw,
-                            instr.opcode,
-                            instr.op(),
-                            instr.rs(),
-                            instr.rt(),
-                            instr.rd(),
-                            instr.shamt(),
-                            instr.funct(),
-                            instr.immediate(),
-                            instr.offset(),
-                            instr.address()
-                        ))
-                        .monospace(),
-                    )
-                    .clicked()
-                {
-                    if has_breakpoint {
-                        context
-                            .channel_send
-                            .send(DebuggerEvent::RemoveBreakpoint(addr))
-                            .expect("Failed to send remove breakpoint event");
-                    } else {
-                        context
-                            .channel_send
-                            .send(DebuggerEvent::AddBreakpoint(addr))
-                            .expect("Failed to send add breakpoint event");
-                    }
+                    context
+                        .channel_send
+                        .send(DebuggerEvent::AddBreakpoint(addr))
+                        .expect("Failed to send add breakpoint event");
                 }
-            });
+            }
         }
     }
 }

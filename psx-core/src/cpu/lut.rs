@@ -934,3 +934,19 @@ pub static COP_REGISTER_NAME_LUT: [&str; 16] = [
     "???", "???", "???", "BPC", "???", "BDA", "TAR", "DCIC", "BadA", "BDAM", "???", "BPCM", "SR",
     "CAUSE", "EPC", "PRID",
 ];
+
+// GTE Data Registers (cop2r0-31)
+pub static GTE_DATA_REGISTER_NAME_LUT: [&str; 32] = [
+    "vxy0", "vz0", "vxy1", "vz1", "vxy2", "vz2", "rgbc", "otz",
+    "ir0", "ir1", "ir2", "ir3", "sxy0", "sxy1", "sxy2", "sxyp",
+    "sz0", "sz1", "sz2", "sz3", "rgb0", "rgb1", "rgb2", "res1",
+    "mac0", "mac1", "mac2", "mac3", "irgb", "orgb", "lzcs", "lzcr",
+];
+
+// GTE Control Registers (cop2r32-63)
+pub static GTE_CONTROL_REGISTER_NAME_LUT: [&str; 32] = [
+    "r11r12", "r13r21", "r22r23", "r31r32", "r33", "trx", "try", "trz",
+    "l11l12", "l13l21", "l22l23", "l31l32", "l33", "rbk", "gbk", "bbk",
+    "lr1lr2", "lr3lg1", "lg2lg3", "lb1lb2", "lb3", "rfc", "gfc", "bfc",
+    "ofx", "ofy", "h", "dqa", "dqb", "zsf3", "zsf4", "flag",
+];

@@ -181,7 +181,15 @@ impl PartialEq for Instruction {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Register(u8, bool);
+pub enum RegisterType {
+    Cpu,
+    Cop0Control,
+    GteData,
+    GteControl,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Register(u8, RegisterType);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Operand {
@@ -195,10 +203,11 @@ pub enum Operand {
 
 impl std::fmt::Display for Register {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let register_name = if self.1 {
-            lut::COP_REGISTER_NAME_LUT.get(self.0 as usize).unwrap_or(&"???")
-        } else {
-            lut::REGISTER_NAME_LUT.get(self.0 as usize).unwrap_or(&"???")
+        let register_name = match self.1 {
+            RegisterType::Cpu => lut::REGISTER_NAME_LUT.get(self.0 as usize).unwrap_or(&"???"),
+            RegisterType::Cop0Control => lut::COP_REGISTER_NAME_LUT.get(self.0 as usize).unwrap_or(&"???"),
+            RegisterType::GteData => lut::GTE_DATA_REGISTER_NAME_LUT.get(self.0 as usize).unwrap_or(&"???"),
+            RegisterType::GteControl => lut::GTE_CONTROL_REGISTER_NAME_LUT.get(self.0 as usize).unwrap_or(&"???"),
         };
         write!(f, "{}", register_name)
     }
@@ -450,10 +459,36 @@ impl Instruction {
     }
 
     fn fmt_ft(&self) -> String {
-        lut::COP_REGISTER_NAME_LUT
-            .get(self.ft() as usize)
-            .unwrap_or(&"???")
-            .to_string()
+        match self.opcode {
+            // For COP2 data moves (MFC2/MTC2), use rd field with GTE data registers
+            Opcode::MoveFromCoprocessor(2) | Opcode::MoveToCoprocessor(2) => {
+                lut::GTE_DATA_REGISTER_NAME_LUT
+                    .get(self.rd() as usize)
+                    .unwrap_or(&"???")
+                    .to_string()
+            }
+            // For COP2 control moves (CFC2/CTC2), use rd field with GTE control registers
+            Opcode::MoveControlFromCoprocessor(2) | Opcode::MoveControlToCoprocessor(2) => {
+                lut::GTE_CONTROL_REGISTER_NAME_LUT
+                    .get(self.rd() as usize)
+                    .unwrap_or(&"???")
+                    .to_string()
+            }
+            // For LWC2/SWC2, use ft field with GTE data registers
+            Opcode::LoadWordToCoprocessor(2) | Opcode::StoreWordFromCoprocessor(2) => {
+                lut::GTE_DATA_REGISTER_NAME_LUT
+                    .get(self.ft() as usize)
+                    .unwrap_or(&"???")
+                    .to_string()
+            }
+            // Default: use COP0 register names
+            _ => {
+                lut::COP_REGISTER_NAME_LUT
+                    .get(self.ft() as usize)
+                    .unwrap_or(&"???")
+                    .to_string()
+            }
+        }
     }
 
     fn fmt_shamt(&self) -> String {
@@ -490,6 +525,87 @@ impl Instruction {
         } else {
             format!("{}", offset)
         }
+    }
+
+    // GTE-specific helper methods
+    fn gte_sf(&self) -> u8 {
+        ((self.raw >> 19) & 0x1) as u8
+    }
+
+    fn gte_lm(&self) -> u8 {
+        ((self.raw >> 10) & 0x1) as u8
+    }
+
+    fn gte_mx(&self) -> u8 {
+        ((self.raw >> 17) & 0x3) as u8
+    }
+
+    fn gte_v(&self) -> u8 {
+        ((self.raw >> 15) & 0x3) as u8
+    }
+
+    fn gte_cv(&self) -> u8 {
+        ((self.raw >> 13) & 0x3) as u8
+    }
+
+    fn fmt_gte_sf(&self) -> &'static str {
+        if self.gte_sf() != 0 {
+            "sf"
+        } else {
+            ""
+        }
+    }
+
+    fn fmt_gte_lm(&self) -> &'static str {
+        if self.gte_lm() != 0 {
+            "lm"
+        } else {
+            ""
+        }
+    }
+
+    fn fmt_gte_mx(&self) -> &'static str {
+        match self.gte_mx() {
+            0 => "rt",
+            1 => "llm",
+            2 => "lcm",
+            _ => "???",
+        }
+    }
+
+    fn fmt_gte_v(&self) -> &'static str {
+        match self.gte_v() {
+            0 => "v0",
+            1 => "v1",
+            2 => "v2",
+            3 => "ir",
+            _ => "???",
+        }
+    }
+
+    fn fmt_gte_cv(&self) -> &'static str {
+        match self.gte_cv() {
+            0 => "tr",
+            1 => "bk",
+            2 => "fc",
+            3 => "none",
+            _ => "???",
+        }
+    }
+
+    fn fmt_gte_data(&self) -> String {
+        lut::GTE_DATA_REGISTER_NAME_LUT
+            .get(self.rt() as usize)
+            .unwrap_or(&"???")
+            .to_string()
+    }
+
+    fn fmt_gte_control(&self) -> String {
+        let idx = (self.rd() as usize).saturating_sub(32);
+        lut::GTE_CONTROL_REGISTER_NAME_LUT
+            .get(idx)
+            .unwrap_or(&"???")
+            .to_string()
     }
 
     // Returns the format string for the instruction
@@ -583,6 +699,30 @@ impl Instruction {
             Opcode::LoadWordToCoprocessor(_) => "@ft, @offset(@base)",
             Opcode::StoreWordFromCoprocessor(_) => "@ft, @offset(@base)",
             Opcode::ReturnFromException => "",
+
+            // GTE Commands
+            Opcode::GteRtps => "@sf",
+            Opcode::GteRtpt => "@sf",
+            Opcode::GteNclip => "",
+            Opcode::GteOp => "@sf @lm",
+            Opcode::GteDpcs => "@sf @lm",
+            Opcode::GteIntpl => "@sf @lm",
+            Opcode::GteMvmva => "@mx @v @cv @sf @lm",
+            Opcode::GteNcds => "@sf @lm",
+            Opcode::GteCdp => "@sf @lm",
+            Opcode::GteNcdt => "@sf @lm",
+            Opcode::GteNccs => "@sf @lm",
+            Opcode::GteCc => "@lm",
+            Opcode::GteNcs => "@sf @lm",
+            Opcode::GteNct => "@sf @lm",
+            Opcode::GteSqr => "@sf @lm",
+            Opcode::GteDcpl => "@sf @lm",
+            Opcode::GteDpct => "@sf @lm",
+            Opcode::GteAvsz3 => "",
+            Opcode::GteAvsz4 => "",
+            Opcode::GteGpf => "@sf @lm",
+            Opcode::GteGpl => "@sf @lm",
+            Opcode::GteNcct => "@sf @lm",
 
             // Other
             _ => "???",
@@ -728,7 +868,7 @@ impl std::fmt::Display for Instruction {
         }
 
         // Perform replacements for all tagged entities
-        let formatted = fmt_str
+        let mut formatted = fmt_str
             .replace("@rd", &self.fmt_rd())
             .replace("@rs", &self.fmt_rs())
             .replace("@rt", &self.fmt_rt())
@@ -739,8 +879,23 @@ impl std::fmt::Display for Instruction {
             .replace("@imm", &self.fmt_imm())
             .replace("@simm", &self.fmt_simm())
             .replace("@target", &self.fmt_target())
-            .replace("@branch_offset", &self.fmt_branch_offset());
+            .replace("@branch_offset", &self.fmt_branch_offset())
+            // GTE-specific replacements
+            .replace("@sf", &self.fmt_gte_sf())
+            .replace("@lm", &self.fmt_gte_lm())
+            .replace("@mx", &self.fmt_gte_mx())
+            .replace("@v", &self.fmt_gte_v())
+            .replace("@cv", &self.fmt_gte_cv())
+            .replace("@gte_data", &self.fmt_gte_data())
+            .replace("@gte_control", &self.fmt_gte_control());
 
-        write!(f, "{} {}", opcode_str, formatted)
+        // Normalize whitespace (collapse multiple spaces into one, trim)
+        formatted = formatted.split_whitespace().collect::<Vec<_>>().join(" ");
+
+        if formatted.is_empty() {
+            write!(f, "{}", opcode_str)
+        } else {
+            write!(f, "{} {}", opcode_str, formatted)
+        }
     }
 }

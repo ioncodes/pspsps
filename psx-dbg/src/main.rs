@@ -23,14 +23,17 @@ use crate::io::DebuggerEvent;
 #[derive(Parser, Debug)]
 #[command(about = "pspsps - a cute psx debugger", long_about = None)]
 struct Args {
-    #[arg(long, value_delimiter = ',', help = "List of tracing targets")]
-    log_targets: Option<Vec<String>>,
+    #[arg(long, help = "Path to BIOS file (required)")]
+    bios: String,
+
+    #[arg(long, help = "Path to CDROM image")]
+    cdrom: Option<String>,
 
     #[arg(long, help = "Path to EXE to sideload")]
     sideload: Option<String>,
 
-    #[arg(long, help = "Path to BIOS file (required)")]
-    bios: String,
+    #[arg(long, value_delimiter = ',', help = "List of tracing targets")]
+    log_targets: Option<Vec<String>>,
 
     #[arg(long, help = "Enable debug logging")]
     debug: bool,
@@ -88,7 +91,7 @@ impl Default for PsxDebugger {
 }
 
 impl PsxDebugger {
-    fn new(bios_path: String, sideload_file: Option<String>) -> Self {
+    fn new(bios_path: String, sideload_file: Option<String>, cdrom_file: Option<String>) -> Self {
         let mut dock_state = DockState::new(vec![TabKind::Cpu, TabKind::Trace]);
         let [_left_node, right_node] =
             dock_state
@@ -117,16 +120,9 @@ impl PsxDebugger {
         let (response_channel_send, response_channel_recv) = crossbeam_channel::unbounded();
 
         let thread = std::thread::spawn(move || {
-            let mut debugger = Debugger::new(bios_path, response_channel_send, request_channel_recv);
-
-            // Sideload EXE if provided
-            if let Some(file_path) = sideload_file {
-                match std::fs::read(&file_path) {
-                    Ok(exe_data) => debugger.sideload_exe(exe_data),
-                    Err(e) => panic!("Failed to read EXE file {}: {}", file_path, e),
-                }
-            }
-
+            let mut debugger = Debugger::new(bios_path, response_channel_send, request_channel_recv)
+                .with_sideloaded_exe(sideload_file)
+                .with_cdrom_image(cdrom_file);
             debugger.run();
         });
 
@@ -346,6 +342,6 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "pspsps - a cute psx debugger",
         options,
-        Box::new(|_cc| Ok(Box::new(PsxDebugger::new(args.bios, args.sideload)))),
+        Box::new(|_cc| Ok(Box::new(PsxDebugger::new(args.bios, args.sideload, args.cdrom)))),
     )
 }

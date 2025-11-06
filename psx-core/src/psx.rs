@@ -35,6 +35,10 @@ impl Psx {
         self.sideload_exe = Some(Exe::parse(exe_buffer));
     }
 
+    pub fn load_cdrom(&mut self, cue_buffer: Vec<u8>, bin_buffer: Vec<u8>) {
+        self.cpu.mmu.cdrom.insert_disk(cue_buffer, bin_buffer);
+    }
+
     pub fn set_controller_state(&mut self, state: ControllerState) {
         self.cpu.mmu.sio.set_controller_state(state);
     }
@@ -56,8 +60,9 @@ impl Psx {
 
             tracing::info!(
                 target: "psx_core::psx",
-                "Sideloaded EXE at {:08X} with entry point {:08X}",
-                PSX_SIDELOAD_EXE_ADDRESS, exe.entry_point
+                address = format!("{:08X}", PSX_SIDELOAD_EXE_ADDRESS), 
+                entrypoint = format!("{:08X}", exe.entry_point),
+                "Sideloaded EXE"
             );
         }
 

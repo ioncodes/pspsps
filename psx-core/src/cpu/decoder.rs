@@ -174,7 +174,7 @@ impl std::fmt::Display for Operand {
             Operand::Offset(offset) if *offset >= 0 => write!(f, "+{}", offset),
             Operand::Offset(offset) => write!(f, "{}", offset),
             Operand::MemoryAddress { offset, base } => {
-                write!(f, "0x{:X}({})", offset, base)
+                write!(f, "{}({})", offset, base)
             }
         }
     }
@@ -399,7 +399,7 @@ impl Instruction {
                 | Opcode::LoadWord
                 | Opcode::LoadWordLeft
                 | Opcode::LoadWordRight => Some(Operand::MemoryAddress {
-                    offset: self.immediate() as i16,
+                    offset: self.offset(),
                     base: Register(self.rs(), false),
                 }),
                 Opcode::StoreByte

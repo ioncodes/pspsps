@@ -11,6 +11,8 @@ use psx_core::cpu::decoder::Instruction;
 use psx_core::mmu::Addressable;
 use std::time::Duration;
 
+const INSTRUCTIONS_TO_DISPLAY: usize = 128;
+
 pub struct CpuWidget {
     follow_pc: bool,
     current_address: String,
@@ -217,7 +219,7 @@ impl Widget for CpuWidget {
         let start =
             u32::from_str_radix(&self.current_address, 16).unwrap_or(context.state.cpu.pc) as usize;
 
-        let instructions: Vec<(u32, Instruction)> = (0..40)
+        let instructions: Vec<(u32, Instruction)> = (0..INSTRUCTIONS_TO_DISPLAY)
             .map(|i| {
                 let addr = (start + i * 4) as u32;
                 let instr_raw = context.state.mmu.read_u32(addr);

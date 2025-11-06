@@ -1,5 +1,5 @@
 use crate::gpu::cmd::Gp0Command;
-use crate::gpu::{GP0_ADDRESS_START, GP1_ADDRESS_END, GP1_ADDRESS_START};
+use crate::gpu::{GP0_ADDRESS_START, GP1_ADDRESS_END, GP1_ADDRESS_START, VRAM_HEIGHT, VRAM_WIDTH};
 use crate::mmu::Addressable;
 use std::collections::VecDeque;
 
@@ -37,7 +37,7 @@ impl Gp {
             state: State::WaitingForCommand,
             gp0_rw_cache: [0; 4],
             gp1_rw_cache: [0; 4],
-            vram: vec![0; 1024 * 1024],
+            vram: vec![0; VRAM_WIDTH * VRAM_HEIGHT * 2], // 2 bytes per pixel (16bit)
             read_counter: 0,
             gp1_status: 0x1480_2000,
             vertical_resolution: 240,
@@ -255,6 +255,34 @@ impl Gp {
             self.horizontal_resolution as usize,
             self.vertical_resolution as usize,
         )
+    }
+
+    /// Generate a frame buffer from VRAM
+    /// Converts entire VRAM to RGB888 format
+    pub fn generate_frame(&self, buffer: &mut [(u8, u8, u8)]) {
+        // Render entire VRAM (1024x512)
+        for y in 0..512 {
+            for x in 0..1024 {
+                let vram_idx = (y * 1024 + x) * 2;
+
+                // Read RGB555 pixel from VRAM
+                let pixel_u16 = u16::from_le_bytes([self.vram[vram_idx], self.vram[vram_idx + 1]]);
+
+                // Extract RGB555 components
+                let r5 = (pixel_u16 & 0x1F) as u8;
+                let g5 = ((pixel_u16 >> 5) & 0x1F) as u8;
+                let b5 = ((pixel_u16 >> 10) & 0x1F) as u8;
+
+                // Convert RGB555 to RGB888
+                let r8 = (r5 << 3) | (r5 >> 2);
+                let g8 = (g5 << 3) | (g5 >> 2);
+                let b8 = (b5 << 3) | (b5 >> 2);
+
+                // Buffer is 1024 pixels wide (VRAM_WIDTH)
+                let buffer_idx = y * VRAM_WIDTH + x;
+                buffer[buffer_idx] = (r8, g8, b8);
+            }
+        }
     }
 }
 

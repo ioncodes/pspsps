@@ -207,9 +207,7 @@ impl Cpu {
                 && let Some((reg_idx, val)) = self.load_delay.take()
                 && reg_idx != index as usize
             {
-                {
-                    self.registers[reg_idx] = val;
-                }
+                self.registers[reg_idx] = val;
             }
 
             self.load_delay = Some((index as usize, value));

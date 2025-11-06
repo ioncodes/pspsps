@@ -80,31 +80,37 @@ impl Sio0 {
 
     fn process_controller_byte(&mut self, tx_byte: u8) -> u8 {
         match self.transfer_state {
-            ControllerTransferState::Idle => {
+            ControllerTransferState::Idle if tx_byte == 0x01 => {
                 // First byte should be 0x01 to select controller
                 // DTR bit = 1 means controller port is selected
-                if tx_byte == 0x01 && self.control.dtr_output_level() {
-                    self.transfer_state = ControllerTransferState::Selected;
-                    tracing::debug!(target: "psx_core::sio", "Controller selected");
-                    0xFF
-                } else {
-                    0xFF
-                }
+                self.transfer_state = ControllerTransferState::Selected;
+                tracing::debug!(target: "psx_core::sio", "Controller selected");
+                0x41
+            }
+            ControllerTransferState::Idle => {
+                tracing::error!(
+                    target: "psx_core::sio",
+                    tx = format!("{:02X}", tx_byte),
+                    "Unknown command while controller idle"
+                );
+                0xFF
+            }
+            // 42h  idlo  Receive ID bit0..7 (variable) and Send Read Command (ASCII "B")
+            ControllerTransferState::Selected if tx_byte == 0x42 => {
+                self.transfer_state = ControllerTransferState::CommandReceived;
+                tracing::trace!(target: "psx_core::sio", "Read controller command");
+                0x41
             }
             ControllerTransferState::Selected => {
-                // Second byte is the command (0x42 = Read Data)
-                if tx_byte == 0x42 {
-                    self.transfer_state = ControllerTransferState::CommandReceived;
-                    tracing::trace!(target: "psx_core::sio", "Read controller command");
-                    0x69
-                } else {
-                    tracing::warn!(target: "psx_core::sio", command = format!("{:02X}", tx_byte), "Unknown controller command");
-                    self.transfer_state = ControllerTransferState::Idle;
-                    0xFF
-                }
+                tracing::error!(
+                    target: "psx_core::sio",
+                    tx = format!("{:02X}", tx_byte),
+                    "Unknown command while controller selected"
+                );
+                0xFF
             }
             ControllerTransferState::CommandReceived => {
-                // Third byte: ignore (TAP), return 0x5A (always)
+                // TAP  idhi  Receive ID bit8..15 (usually/always 5Ah)
                 self.transfer_state = ControllerTransferState::SendingData(0);
                 0x5A
             }

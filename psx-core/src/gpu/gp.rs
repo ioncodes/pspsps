@@ -218,6 +218,13 @@ impl Gp {
 
                 tracing::trace!(target: "psx_core::gpu", "Command Buffer Reset via GP1 command");
             }
+            // GP1(03h) - Display Enable
+            0x03 => {
+                let display_enable = (params & 0b1) == 1;
+                self.gp1_status.set_display_enable(display_enable);
+
+                tracing::trace!(target: "psx_core::gpu", enabled = !display_enable, "Display Enable via GP1 command");
+            }
             // DMA Direction / Data Request
             0x04 => {
                 let dma_direction: DmaDirection = ((params & 0b11) as u8).into();

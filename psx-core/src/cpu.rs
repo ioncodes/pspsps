@@ -1,13 +1,21 @@
+pub mod cop;
 pub mod decoder;
 pub mod handlers;
-mod lut;
+pub mod lut;
 
-#[derive(Debug, Clone)]
+use crate::cpu::decoder::Instruction;
+
+type RegisterValue = u32;
+type RegisterIndex = usize;
+
 pub struct Cpu {
     pub pc: u32,
-    pub registers: [u32; 32],
+    pub registers: [RegisterValue; 32],
     pub hi: u32,
     pub lo: u32,
+    pub load_delay: Option<(RegisterIndex, RegisterValue)>, // Loads are delayed by one instruction
+    pub delay_slot: Option<Instruction>, // Instructions following branches are in a delay slot and execute immediately after the branch
+    pub cop0: [RegisterValue; 64],       // COP0 registers
 }
 
 impl Cpu {
@@ -17,6 +25,9 @@ impl Cpu {
             registers: [0; 32],
             hi: 0,
             lo: 0,
+            load_delay: None,
+            delay_slot: None,
+            cop0: [0; 64],
         }
     }
 }

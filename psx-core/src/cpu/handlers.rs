@@ -98,7 +98,7 @@ pub fn branch<const LINK: bool, const REGISTER: bool, const TYPE: BranchType>(
     instr: &Instruction, cpu: &mut Cpu, _mmu: &mut Mmu,
 ) {
     if LINK {
-        cpu.registers[31] = cpu.pc + 4;
+        cpu.registers[31] = cpu.pc; // PC is the address of the next instruction
     }
 
     match TYPE {

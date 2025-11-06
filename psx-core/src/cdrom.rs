@@ -35,11 +35,11 @@ pub const ERROR_CANNOT_RESPONSE: u8 = 0x80;
 const SECTOR_SIZE: usize = 2352; // Raw CD-ROM sector size
 const SECTOR_SUBHEADER_OFFSET: usize = 12; // Offset to subheader (after sync+header)
 const SECTOR_SUBHEADER_SIZE: usize = 4; // File, channel, submode, coding
-const SECTOR_DATA_OFFSET_MODE1: usize = 12; // Data starts after sync+header (0x0C)
 const SECTOR_DATA_OFFSET_MODE2: usize = 24; // Data starts after sync+header+subheader (0x18)
 const SECTOR_DATA_SIZE_2048: usize = 2048; // User data size (0x800)
 const SECTOR_DATA_SIZE_2340: usize = 2340; // Whole sector size (0x924)
-const SECTOR_DATA_END_FORM2: usize = 2060; // Form 2 data sector end (0x80C)
+// PSX-SPX: "Mode 2 Form 2: 018h-92Bh User Data (2324 bytes)"
+const SECTOR_DATA_SIZE_FORM2: usize = 2324; // Form 2: 2324 bytes (0x914)
 
 const SETLOC_CURRENT_LBA_OFFSET: usize = 8;
 const XA_SUBMODE_REALTIME: u8 = 0x64;
@@ -251,11 +251,23 @@ impl Cdrom {
             }
         }
 
+        // PSX-SPX: "Bit 5: Sector Size (0=800h=DataOnly, 1=924h=WholeSectorExceptSyncBytes)"
         let whole_sector = self.mode.sector_size();
-        let (sector_size_max, data_offset) = if whole_sector {
-            (SECTOR_DATA_SIZE_2340, SECTOR_DATA_OFFSET_MODE1)
+
+        // PSX-SPX: "Mode 2 sectors: Data starts at 018h (24 bytes) after Sync(12) + Header(4) + Sub-Header(8)"
+        let data_offset = SECTOR_DATA_OFFSET_MODE2; // Always 24 for Mode 2
+
+        // PSX-SPX: "Sub-Header Submode Byte 012h, Bit 5: Form indicator - 0=Form1/800h-byte data, 1=Form2, 914h-byte data"
+        let submode = self.subheader[2];
+        let is_form2 = (submode >> 5) & 1; // Check bit 5 for Form 2
+
+        // Calculate sector size based on form and whole_sector mode
+        let sector_size_max = if whole_sector {
+            SECTOR_DATA_SIZE_2340 // Return whole sector (2340 bytes)
+        } else if is_form2 == 1 {
+            SECTOR_DATA_SIZE_FORM2 // Form 2: return 2324 bytes
         } else {
-            (SECTOR_DATA_SIZE_2048, SECTOR_DATA_OFFSET_MODE2)
+            SECTOR_DATA_SIZE_2048 // Form 1: return 2048 bytes
         };
 
         // Calculate actual byte position in the disc image
@@ -278,15 +290,7 @@ impl Cdrom {
         self.sector_offset += 1;
 
         // Check for sector boundary
-        let submode = self.subheader[2];
-        let is_data = (submode >> 3) & 1;
-
-        // Special handling for Form 2 data sectors (end at SECTOR_DATA_END_FORM2 instead of full size)
-        let reached_end = if is_data == 1 && sector_size_max == SECTOR_DATA_SIZE_2048 {
-            self.sector_offset >= SECTOR_DATA_END_FORM2
-        } else {
-            self.sector_offset >= sector_size_max
-        };
+        let reached_end = self.sector_offset >= sector_size_max;
 
         if reached_end {
             // Sector complete, advance to next sector
@@ -366,6 +370,30 @@ impl Cdrom {
             // Init - Command 0Ah --> INT3(stat late) --> INT2(stat)
             0x0A => {
                 self.execute_init();
+            }
+            // Mute - Command 0Bh --> INT3(stat)
+            0x0B => {
+                // PSX-SPX: "Turn off audio streaming to SPU (affects both CD-DA and XA-ADPCM)"
+                // TODO: For now, just acknowledge the command
+                let status = self.status();
+                self.queue_interrupt(
+                    DiskIrq::CommandAcknowledged,
+                    vec![status.0],
+                    FIRST_RESP_GENERIC_DELAY,
+                    false,
+                );
+            }
+            // Demute - Command 0Ch --> INT3(stat)
+            0x0C => {
+                // PSX-SPX: "Turn on audio streaming to SPU (affects both CD-DA and XA-ADPCM)"
+                // TODO: For now, just acknowledge the command
+                let status = self.status();
+                self.queue_interrupt(
+                    DiskIrq::CommandAcknowledged,
+                    vec![status.0],
+                    FIRST_RESP_GENERIC_DELAY,
+                    false,
+                );
             }
             // Setmode - Command 0Eh,mode --> INT3(stat)
             0x0E => {

@@ -32,18 +32,6 @@ impl Mmu {
         }
     }
 
-    pub fn update_cdrom(&mut self, cycles: i32) {
-        self.cdrom.update(cycles);
-
-        if self.cdrom.check_and_clear_irq() {
-            tracing::debug!(
-                target: "psx_core::cdrom",
-                "CDROM IRQ triggered"
-            );
-            self.irq.status.set_cdrom(true);
-        }
-    }
-
     pub fn perform_dma_transfers(&mut self) {
         if self.dma.channels.0.channel_control.start_transfer() {
             self.transfer_dma_channel(self.dma.channels.0);
@@ -54,10 +42,9 @@ impl Mmu {
         }
 
         if self.dma.channels.2.channel_control.start_transfer() {
-            if self.gpu.gp.gp1_status.dma_direction() == DmaDirection::CpuToGpu {
-                self.transfer_dma_channel(self.dma.channels.2);
-            } else {
-                tracing::warn!(
+            self.transfer_dma_channel(self.dma.channels.2);
+            if self.gpu.gp.gp1_status.dma_direction() != DmaDirection::CpuToGpu {
+                tracing::error!(
                     target: "psx_core::mmu",
                     channel_id = 2,
                     dma_direction = %self.gpu.gp.gp1_status.dma_direction(),

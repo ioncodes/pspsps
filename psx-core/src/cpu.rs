@@ -5,6 +5,7 @@ pub mod internal;
 pub mod lut;
 
 use crate::cpu::cop::cop0::{Cop0, Exception};
+use crate::cpu::cop::cop2::Cop2;
 use crate::cpu::decoder::Instruction;
 use crate::mmu::Mmu;
 use crate::mmu::bus::{Bus8 as _, Bus16 as _, Bus32 as _};
@@ -18,6 +19,7 @@ pub struct Cpu {
     pub load_delay_pending: bool,         // True if load_delay was just scheduled this instruction
     pub delay_slot: Option<(Instruction, u32)>, // Delay slot (instruction, branch destination)
     pub cop0: Cop0,                       // COP0 registers
+    pub cop2: Cop2,                       // COP2 registers
     pub mmu: Mmu,
     pub cycles: usize,      // Number of cycles executed
     exception_raised: bool, // Indicates if an exception has been raised
@@ -34,6 +36,7 @@ impl Cpu {
             load_delay_pending: false,
             delay_slot: None,
             cop0: Cop0::new(),
+            cop2: Cop2::new(),
             mmu: Mmu::new(),
             exception_raised: false,
             cycles: 0,
@@ -150,7 +153,7 @@ impl Cpu {
     }
 
     pub fn restore_from_exception(&mut self) {
-        tracing::debug!(target: "psx_core::cpu", "Returning from exception");
+        tracing::trace!(target: "psx_core::cpu", "Returning from exception");
 
         // Restore pre-exception state
         self.cop0

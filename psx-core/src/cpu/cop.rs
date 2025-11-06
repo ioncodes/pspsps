@@ -1,5 +1,6 @@
 pub mod cop0;
 pub mod registers;
+pub mod cop2;
 
 pub trait Cop {
     fn read_register(&self, register: u32) -> u32;

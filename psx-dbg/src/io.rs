@@ -1,6 +1,3 @@
-use psx_core::cpu::decoder::Instruction;
-use std::collections::VecDeque;
-
 use crate::states::breakpoints::BreakpointsState;
 use crate::states::cpu::CpuState;
 use crate::states::mmu::MmuState;

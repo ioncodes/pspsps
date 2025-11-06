@@ -1,12 +1,26 @@
-use crate::gpu::{cmd::tex::{TextureWindowSettingCommand}, VRAM_HEIGHT, VRAM_WIDTH};
+use crate::gpu::cmd::tex::TextureWindowSettingCommand;
+use crate::gpu::{VRAM_HEIGHT, VRAM_WIDTH};
 
-pub fn rasterize_polygon(vertices: &[(i16, i16)], colors: &[u32], uvs: &[u32], texture_window: TextureWindowSettingCommand, vram: &mut [u8]) {
+pub fn rasterize_polygon(
+    vertices: &[(i16, i16)], colors: &[u32], uvs: &[u32],
+    texture_window: TextureWindowSettingCommand, vram: &mut [u8],
+) {
     // Quads must be split into two triangles
     // Vertices received: V0, V1, V2, V3
     // Triangle 1: [V0, V1, V2] (vertices 1, 2, 3)
     // Triangle 2: [V1, V2, V3] (vertices 2, 3, 4)
 
     let textured = uvs.len() != 0;
+
+    // We need to extract CLUT and texpage here since inside of rasterize_triangle
+    // uvs[0] is uvs[1] and uvs[1] is uvs[2] for the second triangle of a quad
+    let (clut, texpage) = if textured {
+        let clut = ((uvs[0] >> 16) & 0xFFFF) as u16;
+        let texpage = ((uvs[1] >> 16) & 0xFFFF) as u16;
+        (clut, texpage)
+    } else {
+        (0, 0)
+    };
 
     if vertices.len() == 4 {
         rasterize_triangle(
@@ -18,6 +32,8 @@ pub fn rasterize_polygon(vertices: &[(i16, i16)], colors: &[u32], uvs: &[u32], t
                 [0, 0, 0]
             },
             textured,
+            clut,
+            texpage,
             texture_window,
             vram,
         );
@@ -30,6 +46,8 @@ pub fn rasterize_polygon(vertices: &[(i16, i16)], colors: &[u32], uvs: &[u32], t
                 [0, 0, 0]
             },
             textured,
+            clut,
+            texpage,
             texture_window,
             vram,
         );
@@ -43,6 +61,8 @@ pub fn rasterize_polygon(vertices: &[(i16, i16)], colors: &[u32], uvs: &[u32], t
                 [0, 0, 0]
             },
             textured,
+            clut,
+            texpage,
             texture_window,
             vram,
         );
@@ -50,7 +70,8 @@ pub fn rasterize_polygon(vertices: &[(i16, i16)], colors: &[u32], uvs: &[u32], t
 }
 
 fn rasterize_triangle(
-    vertices: [(i16, i16); 3], colors: [u32; 3], uvs: [u32; 3], textured: bool, texture_window: TextureWindowSettingCommand, vram: &mut [u8],
+    vertices: [(i16, i16); 3], colors: [u32; 3], uvs: [u32; 3], textured: bool, clut: u16,
+    texpage: u16, texture_window: TextureWindowSettingCommand, vram: &mut [u8],
 ) {
     // Vertex coordinates
     let (x0, y0) = (vertices[0].0 as i32, vertices[0].1 as i32);
@@ -94,7 +115,7 @@ fn rasterize_triangle(
                 let pixel = if !textured {
                     gouraud_shading(colors, w0, w1, w2, area)
                 } else {
-                    textured_render(uvs, w0, w1, w2, area, texture_window, vram)
+                    textured_render(uvs, w0, w1, w2, area, clut, texpage, texture_window, vram)
                 };
 
                 // Push to VRAM
@@ -139,7 +160,10 @@ fn gouraud_shading(colors: [u32; 3], w0: i32, w1: i32, w2: i32, area: i32) -> u1
     (b5 << 10) | (g5 << 5) | r5
 }
 
-fn textured_render(uvs: [u32; 3], w0: i32, w1: i32, w2: i32, area: i32, texture_window: TextureWindowSettingCommand, vram: &mut [u8]) -> u16 {
+fn textured_render(
+    uvs: [u32; 3], w0: i32, w1: i32, w2: i32, area: i32, clut: u16, texpage: u16,
+    texture_window: TextureWindowSettingCommand, vram: &mut [u8],
+) -> u16 {
     // Clut Attribute (Color Lookup Table, aka Palette)
     // This attribute is used in all Textured Polygon/Rectangle commands. Of course, it's relevant only for 4bit/8bit textures (don't care for 15bit textures).
     //   0-5    X coordinate X/16  (ie. in 16-halfword steps)
@@ -167,8 +191,8 @@ fn textured_render(uvs: [u32; 3], w0: i32, w1: i32, w2: i32, area: i32, texture_
     //   14-23 Not used (should be 0)
     //   24-31 Command  (E1h)
 
-    let clut = ((uvs[0] >> 16) & 0xFFFF) as u16;
-    let texpage = ((uvs[1] >> 16) & 0xFFFF) as u16;
+    // CLUT and texpage are now passed as parameters from polygon level
+    // (previously extracted incorrectly from uvs array per-triangle)
 
     let texture_x_base = (texpage & 0b1111) as i32 * 64;
     let texture_y_base =
@@ -190,9 +214,13 @@ fn textured_render(uvs: [u32; 3], w0: i32, w1: i32, w2: i32, area: i32, texture_
     let v = ((v0 * w0) + (v1 * w1) + (v2 * w2)) / area;
 
     let u = (u & !(texture_window.texture_window_x_mask() as i32 * 8))
-        | ((texture_window.texture_window_x_offset() as i32 & texture_window.texture_window_x_mask() as i32) * 8);
+        | ((texture_window.texture_window_x_offset() as i32
+            & texture_window.texture_window_x_mask() as i32)
+            * 8);
     let v = (v & !(texture_window.texture_window_y_mask() as i32 * 8))
-        | ((texture_window.texture_window_y_offset() as i32 & texture_window.texture_window_y_mask() as i32) * 8);
+        | ((texture_window.texture_window_y_offset() as i32
+            & texture_window.texture_window_y_mask() as i32)
+            * 8);
 
     match color_depth {
         0 => {

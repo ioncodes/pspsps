@@ -1,4 +1,5 @@
 use super::joy::ControllerState;
+use crate::mmu::bus::{Bus8, Bus16, Bus32};
 use crate::sio::{SerialControl, SerialMode, SerialStatus};
 use std::collections::VecDeque;
 
@@ -162,8 +163,10 @@ impl Sio0 {
             );
         }
     }
+}
 
-    pub fn read_u8(&mut self, address: u32) -> u8 {
+impl Bus8 for Sio0 {
+    fn read_u8(&mut self, address: u32) -> u8 {
         match address {
             SIO0_RX_DATA_ADDR_START => {
                 let byte = self.rx_fifo.pop_front().unwrap_or(0xFF);
@@ -183,25 +186,13 @@ impl Sio0 {
         }
     }
 
-    pub fn write_u8(&mut self, address: u32, value: u8) {
-        match address {
-            SIO0_TX_DATA_ADDR_START => {
-                self.pending_tx = Some(value);
-                self.status.set_tx_ready_1(false);
-                self.status.set_tx_ready_2(false);
-            }
-            _ => {
-                tracing::warn!(
-                    target: "psx_core::sio",
-                    address = format!("{:08X}", address),
-                    value = format!("{:02X}", value),
-                    "SIO0 8-bit write to non-data register"
-                );
-            }
-        }
+    fn write_u8(&mut self, _address: u32, _value: u8) {
+        unreachable!();
     }
+}
 
-    pub fn read_u16(&mut self, address: u32) -> u16 {
+impl Bus16 for Sio0 {
+    fn read_u16(&mut self, address: u32) -> u16 {
         match address {
             SIO0_MODE_ADDR_START => self.mode.0,
             SIO0_CTRL_ADDR_START => self.control.0,
@@ -217,7 +208,7 @@ impl Sio0 {
         }
     }
 
-    pub fn write_u16(&mut self, address: u32, value: u16) {
+    fn write_u16(&mut self, address: u32, value: u16) {
         match address {
             SIO0_MODE_ADDR_START => {
                 self.mode.0 = value;
@@ -270,8 +261,10 @@ impl Sio0 {
             }
         }
     }
+}
 
-    pub fn read_u32(&mut self, address: u32) -> u32 {
+impl Bus32 for Sio0 {
+    fn read_u32(&mut self, address: u32) -> u32 {
         match address {
             SIO0_RX_DATA_ADDR_START => self.read_u8(address) as u32,
             SIO0_STATUS_ADDR_START => self.status.0,
@@ -286,20 +279,7 @@ impl Sio0 {
         }
     }
 
-    pub fn write_u32(&mut self, address: u32, value: u32) {
-        match address {
-            SIO0_TX_DATA_ADDR_START => {
-                self.write_u8(address, value as u8);
-            }
-            _ => {
-                tracing::warn!(
-                    target: "psx_core::sio",
-                    address = format!("{:08X}", address),
-                    value = format!("{:08X}", value),
-                    "SIO0 32-bit write to non-data register"
-                );
-                self.write_u16(address, value as u16);
-            }
-        }
+    fn write_u32(&mut self, _address: u32, _value: u32) {
+        unreachable!();
     }
 }

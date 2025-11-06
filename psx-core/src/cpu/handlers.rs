@@ -526,5 +526,4 @@ pub fn debug_break(instr: &Instruction, cpu: &mut Cpu) {
 
 pub fn gte_dispatch(instr: &Instruction, cpu: &mut Cpu) {
     println!("GTE instruction dispatched: {}", instr);
-    todo!("Implement GTE instruction: {:08X}", instr.raw);
 }

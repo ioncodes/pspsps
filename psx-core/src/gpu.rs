@@ -213,6 +213,30 @@ impl Gpu {
             for idx in 0..cmd.vertex_count() {
                 uvs.push(parsed_cmd.data[cmd.uv_idx(idx)]);
             }
+
+            // Update global texpage state from polygon's embedded texpage
+            // Texpage is in uvs[1] upper 16 bits (same location as for triangles/quads)
+            if uvs.len() > 1 {
+                let texpage = ((uvs[1] >> 16) & 0xFFFF) as u16;
+
+                // Extract texpage components (bits 0-8, 11 update global state)
+                let texture_page_x_base = (texpage & 0xF) as u32;
+                let texture_page_y_base_1 = ((texpage >> 4) & 0x1) != 0;
+                let texture_page_colors = ((texpage >> 7) & 0x3) as u32;
+                let texture_page_y_base_2 = ((texpage >> 11) & 0x1) != 0;
+
+                // Update global GPU state (same as GP0(E1h) command)
+                self.gp.gp1_status.set_texture_page_x_base(texture_page_x_base);
+                self.gp.gp1_status.set_texture_page_y_base_1(texture_page_y_base_1);
+                self.gp.gp1_status.set_texture_page_colors(texture_page_colors);
+                self.gp.gp1_status.set_texture_page_y_base_2(texture_page_y_base_2);
+
+                tracing::trace!(
+                    target: "psx_core::gpu",
+                    texpage = format!("{:04X}", texpage),
+                    "Updated global texpage from polygon"
+                );
+            }
         }
 
         tracing::debug!(

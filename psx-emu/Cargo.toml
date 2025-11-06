@@ -1,0 +1,18 @@
+[package]
+name = "psx-emu"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "pspsps"
+path = "src/main.rs"
+
+[dependencies]
+psx-core = { path = "../psx-core" }
+winit = "0.30"
+wgpu = "23.0"
+pollster = "0.4"
+bytemuck = { version = "1.14", features = ["derive"] }
+image = "0.25"
+clap = { version = "4.0", features = ["derive"] }
+chrono = "0.4"

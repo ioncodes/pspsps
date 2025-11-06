@@ -76,11 +76,9 @@ impl Psx {
         }
 
         self.cpu.mmu.cdrom.tick(cycles);
-        self.cpu
-            .mmu
-            .irq
-            .status
-            .set_cdrom(self.cpu.mmu.cdrom.check_and_clear_irq());
+        if self.cpu.mmu.cdrom.check_and_clear_irq() {
+            self.cpu.mmu.irq.status.set_cdrom(true);
+        }
 
         self.cpu.mmu.sio.tick(cycles);
         if self.cpu.mmu.sio.should_trigger_irq() {
@@ -107,7 +105,6 @@ impl Psx {
         self.cpu.mmu.perform_dma_transfers();
 
         if self.cycles >= NTSC_VBLANK_DURATION {
-            self.cpu.mmu.irq.status.set_vblank(false);
             self.cpu
                 .mmu
                 .gpu

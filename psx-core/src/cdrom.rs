@@ -264,8 +264,8 @@ impl Cdrom {
         // PSX-SPX: "Bit 5: Sector Size (0=800h=DataOnly, 1=924h=WholeSectorExceptSyncBytes)"
         let whole_sector = self.mode.sector_size();
 
-        // PSX-SPX: "Mode 2 sectors: Data starts at 018h (24 bytes) after Sync(12) + Header(4) + Sub-Header(8)"
-        let data_offset = SECTOR_DATA_OFFSET_MODE2; // Always 24 for Mode 2
+        // PSX-SPX: Whole-sector mode returns 0x924 bytes starting at +0x0C; otherwise 2048/2324 bytes at +0x18
+        let data_offset = if whole_sector { 0x0C } else { SECTOR_DATA_OFFSET_MODE2 };
 
         // PSX-SPX: "Sub-Header Submode Byte 012h, Bit 5: Form indicator - 0=Form1/800h-byte data, 1=Form2, 914h-byte data"
         let submode = self.subheader[2];
@@ -340,7 +340,8 @@ impl Cdrom {
             "Queueing INT1 for next sector",
         );
 
-        self.queue_interrupt(DiskIrq::DataReady, vec![status.0], sector_delay, true);
+        // INT1 response must reflect Data Request in status byte (bit5)
+        self.queue_interrupt(DiskIrq::DataReady, vec![status.0 | 0x20], sector_delay, true);
 
         self.hchpctl.set_request_sector_buffer_read(false);
     }
@@ -434,6 +435,10 @@ impl Cdrom {
             0x13 => {
                 self.execute_get_tn();
             }
+            // 0x14 GetTD - Get absolute/relative time for track
+            0x14 => {
+                self.execute_get_td();
+            }
             // 0x1a 	GetID * 		INT3: status 	INT2/INT5: status, flag, type, atip, "SCEx"
             0x1A => {
                 self.execute_get_id();
@@ -510,6 +515,31 @@ impl Cdrom {
             first = format!("{:02X}", first_track),
             last = format!("{:02X}", last_track),
             "GetTN"
+        );
+    }
+
+    fn execute_get_td(&mut self) {
+        let track = self.parameter_fifo.pop_front().unwrap_or(0);
+        let status = self.status();
+
+        let (mm_bcd, ss_bcd) = match track {
+            1 => (0x00, 0x02),
+            _ => (0x00, 0x00),
+        };
+
+        self.queue_interrupt(
+            DiskIrq::CommandAcknowledged,
+            vec![status.0, mm_bcd, ss_bcd],
+            FIRST_RESP_GENERIC_DELAY,
+            false,
+        );
+
+        tracing::debug!(
+            target: "psx_core::cdrom",
+            track = format!("{:02X}", track),
+            mm = format!("{:02X}", mm_bcd),
+            ss = format!("{:02X}", ss_bcd),
+            "GetTD"
         );
     }
 
@@ -944,12 +974,20 @@ impl Bus8 for Cdrom {
                 );
             }
             REG_HCLRCTL_ADDR if self.address.current_bank() == 1 => {
+                // Store register value first
+                self.hclrctl = HClrCtl(value);
+
                 // Clear specified IRQ flags
                 let old_flags: u8 = self.hintsts.irq_flags().into();
                 self.hintsts.set_irq_flags((old_flags & !value).into());
 
-                if self.hclrctl.ack_bfwrdy_interrupt() || self.hclrctl.ack_bfempt_interrupt() {
-                    tracing::error!(target: "psx_core::cdrom", "Unimplemented ACK for CDROM IRQ");
+                // Acknowledge buffer-related interrupts per HCLRCTL
+                if self.hclrctl.ack_bfwrdy_interrupt() {
+                    self.hintsts.set_sound_map_buffer_write_ready(false);
+                }
+                
+                if self.hclrctl.ack_bfempt_interrupt() {
+                    self.hintsts.set_sound_map_buffer_empty(false);
                 }
             }
             REG_HINTMSK_ADDR_W if self.address.current_bank() == 1 => {

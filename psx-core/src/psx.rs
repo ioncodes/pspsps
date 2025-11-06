@@ -1,5 +1,4 @@
 use crate::cpu::Cpu;
-use crate::cpu::decoder::Instruction;
 use crate::mmu::Mmu;
 
 const PSX_RESET_ADDRESS: u32 = 0xBFC0_0000;
@@ -21,10 +20,6 @@ impl Psx {
     }
 
     pub fn step(&mut self) {
-        let instr_raw = self.mmu.read_u32(self.cpu.pc);
-        let instr = Instruction::decode(instr_raw);
-        tracing::debug!(target: "psx_core::cpu", "{:08X}: [{:08X}] {: <30} {{ {:?} }}", self.cpu.pc, instr_raw, format!("{}", instr), instr);
-        self.cpu.pc += 4;
-        (instr.handler)(&instr, &mut self.cpu, &mut self.mmu);
+        self.cpu.tick(&mut self.mmu);
     }
 }

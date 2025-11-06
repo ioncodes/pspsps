@@ -97,7 +97,7 @@ pub enum InstructionType {
 #[derive(Clone, Copy)]
 pub struct Instruction {
     pub opcode: Opcode,
-    pub opcode_raw: u32,
+    pub raw: u32,
     pub opcode_type: InstructionType,
     pub handler: InstructionHandler,
 }
@@ -110,17 +110,32 @@ impl Instruction {
 
         Instruction {
             opcode: Opcode::Invalid,
-            opcode_raw: 0,
+            raw: 0,
             opcode_type: InstructionType::Invalid,
             handler: NOOP,
         }
+    }
+
+    #[inline(always)]
+    pub fn is_branch(&self) -> bool {
+        matches!(
+            self.opcode,
+            Opcode::BranchEqual
+                | Opcode::BranchNotEqual
+                | Opcode::BranchGreaterThanZero
+                | Opcode::BranchLessEqualZero
+                | Opcode::BranchGreaterEqualZero
+                | Opcode::BranchLessThanZero
+                | Opcode::BranchLessThanZeroAndLink
+                | Opcode::BranchGreaterEqualZeroAndLink
+        )
     }
 }
 
 impl PartialEq for Instruction {
     fn eq(&self, other: &Self) -> bool {
         self.opcode == other.opcode
-            && self.opcode_raw == other.opcode_raw
+            && self.raw == other.raw
             && self.opcode_type == other.opcode_type
     }
 }
@@ -133,6 +148,7 @@ pub enum Operand {
     Register(Register),
     Immediate(u32),
     Address(u32),
+    Offset(i32),
     MemoryAddress { offset: i16, base: Register },
 }
 
@@ -153,6 +169,7 @@ impl std::fmt::Display for Operand {
             Operand::Register(reg) => write!(f, "{}", reg),
             Operand::Immediate(imm) => write!(f, "0x{:X}", imm),
             Operand::Address(addr) => write!(f, "0x{:08X}", addr),
+            Operand::Offset(offset) => write!(f, "{}", offset),
             Operand::MemoryAddress { offset, base } => {
                 write!(f, "0x{:X}({})", offset, base)
             }
@@ -184,31 +201,31 @@ impl Instruction {
                 match fmt {
                     0b00000 => Instruction {
                         opcode: Opcode::MoveFromCoprocessor(cop_num),
-                        opcode_raw: opcode,
+                        raw: opcode,
                         opcode_type: InstructionType::Cop,
                         handler: handlers::cop::<{ handlers::CopOperation::MoveFrom }>,
                     },
                     0b00010 => Instruction {
                         opcode: Opcode::MoveControlFromCoprocessor(cop_num),
-                        opcode_raw: opcode,
+                        raw: opcode,
                         opcode_type: InstructionType::Cop,
                         handler: handlers::cop::<{ handlers::CopOperation::MoveControlFrom }>,
                     },
                     0b00100 => Instruction {
                         opcode: Opcode::MoveToCoprocessor(cop_num),
-                        opcode_raw: opcode,
+                        raw: opcode,
                         opcode_type: InstructionType::Cop,
                         handler: handlers::cop::<{ handlers::CopOperation::MoveTo }>,
                     },
                     0b00110 => Instruction {
                         opcode: Opcode::MoveControlToCoprocessor(cop_num),
-                        opcode_raw: opcode,
+                        raw: opcode,
                         opcode_type: InstructionType::Cop,
                         handler: handlers::cop::<{ handlers::CopOperation::MoveControlTo }>,
                     },
                     16 if cop_num == 0 => Instruction {
                         opcode: Opcode::ReturnFromException,
-                        opcode_raw: opcode,
+                        raw: opcode,
                         opcode_type: InstructionType::Cop,
                         handler: handlers::cop::<{ handlers::CopOperation::ReturnFromException }>,
                     },
@@ -225,19 +242,19 @@ impl Instruction {
         };
 
         Instruction {
-            opcode_raw: opcode,
+            raw: opcode,
             ..instruction
         }
     }
 
     #[inline(always)]
     pub fn op(&self) -> u8 {
-        ((self.opcode_raw >> 26) & 0x3F) as u8
+        ((self.raw >> 26) & 0x3F) as u8
     }
 
     #[inline(always)]
     pub fn rs(&self) -> u8 {
-        ((self.opcode_raw >> 21) & 0x1F) as u8
+        ((self.raw >> 21) & 0x1F) as u8
     }
 
     #[inline(always)]
@@ -252,27 +269,27 @@ impl Instruction {
 
     #[inline(always)]
     pub fn rt(&self) -> u8 {
-        ((self.opcode_raw >> 16) & 0x1F) as u8
+        ((self.raw >> 16) & 0x1F) as u8
     }
 
     #[inline(always)]
     pub fn rd(&self) -> u8 {
-        ((self.opcode_raw >> 11) & 0x1F) as u8
+        ((self.raw >> 11) & 0x1F) as u8
     }
 
     #[inline(always)]
     pub fn shamt(&self) -> u8 {
-        ((self.opcode_raw >> 6) & 0x1F) as u8
+        ((self.raw >> 6) & 0x1F) as u8
     }
 
     #[inline(always)]
     pub fn funct(&self) -> u8 {
-        (self.opcode_raw & 0x3F) as u8
+        (self.raw & 0x3F) as u8
     }
 
     #[inline(always)]
     pub fn immediate(&self) -> u16 {
-        (self.opcode_raw & 0xFFFF) as u16
+        (self.raw & 0xFFFF) as u16
     }
 
     #[inline(always)]
@@ -282,7 +299,7 @@ impl Instruction {
 
     #[inline(always)]
     pub fn address(&self) -> u32 {
-        self.opcode_raw & 0x03FFFFFF
+        self.raw & 0x03FFFFFF
     }
 
     #[inline(always)]
@@ -431,7 +448,7 @@ impl Instruction {
                 | Opcode::BranchLessThanZeroAndLink
                 | Opcode::BranchGreaterEqualZeroAndLink => None,
                 Opcode::BranchEqual | Opcode::BranchNotEqual => {
-                    Some(Operand::Immediate((self.immediate() as i16) as u32))
+                    Some(Operand::Offset((self.immediate() as i16) as i32))
                 }
                 Opcode::LoadByte
                 | Opcode::LoadByteUnsigned

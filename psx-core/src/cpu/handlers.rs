@@ -110,16 +110,27 @@ pub fn branch<const LINK: bool, const REGISTER: bool, const TYPE: BranchType>(
         cpu.registers[31] = cpu.pc; // PC is the address of the next instruction
     }
 
-    match TYPE {
-        BranchType::Unconditional => {
-            cpu.pc = instr.jump_target(cpu.pc);
-        }
-        _ => todo!(
-            "Implement branch operation with link: {}, register: {}, type: {:?}",
-            LINK,
-            REGISTER,
-            TYPE
-        ),
+    if REGISTER {
+        todo!("Implement branch with register comparison");
+    }
+
+    let compare = |x: u32, y: u32| match TYPE {
+        BranchType::Equal => x == y,
+        BranchType::NotEqual => x != y,
+        BranchType::LessThanZero => (x as i32) < 0,
+        BranchType::LessEqualZero => (x as i32) <= 0,
+        BranchType::BranchGreaterEqualZero => (x as i32) >= 0,
+        BranchType::BranchGreaterThanZero => (x as i32) > 0,
+        _ => true, // Unconditional branches do not require comparison
+    };
+
+    let perform_branch = compare(
+        cpu.registers[instr.rs() as usize],
+        cpu.registers[instr.rt() as usize],
+    );
+
+    if perform_branch {
+        cpu.pc = cpu.pc.wrapping_add_signed((instr.offset() as i32) << 2)
     }
 }
 

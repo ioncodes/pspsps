@@ -2,7 +2,8 @@ pub mod cmd;
 pub mod gp;
 pub mod status;
 
-use crate::gpu::cmd::{DrawRectangleCommand, Gp0Command};
+use crate::gpu::cmd::Gp0Command;
+use crate::gpu::cmd::rect::DrawRectangleCommand;
 use crate::gpu::gp::{Gp, ParsedCommand};
 use crate::mmu::bus::Bus32;
 

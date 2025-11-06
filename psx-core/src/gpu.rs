@@ -1,9 +1,10 @@
 pub mod cmd;
 pub mod gp;
 pub mod status;
+pub mod rasterizer;
 
-use crate::gpu::cmd::poly::DrawPolygonCommand;
 use crate::gpu::cmd::Gp0Command;
+use crate::gpu::cmd::poly::DrawPolygonCommand;
 use crate::gpu::cmd::rect::DrawRectangleCommand;
 use crate::gpu::gp::{Gp, ParsedCommand};
 use crate::mmu::bus::Bus32;
@@ -147,8 +148,33 @@ impl Gpu {
         }
     }
 
-    fn process_polygon_primitive_cmd(&mut self, parsed_cmd: ParsedCommand, cmd: DrawPolygonCommand) {
+    fn process_polygon_primitive_cmd(
+        &mut self, parsed_cmd: ParsedCommand, cmd: DrawPolygonCommand,
+    ) {
+        // extract vertex coordinates for all vertices
+        let vertices: Vec<(i16, i16)> = (0..cmd.vertex_count())
+            .map(|i| {
+                let data = parsed_cmd.data[cmd.vertex_idx(i)];
+                let x = (data & 0xFFFF) as i16;
+                let y = ((data >> 16) & 0xFFFF) as i16;
+                (x, y)
+            })
+            .collect();
         
+        // extract colors for all vertices
+        let mut colors: Vec<u32> = vec![cmd.color()]; // color for vertex 0
+        for idx in 1..cmd.vertex_count() {
+            if cmd.gouraud() {
+                // additional colors for vertices 1..n
+                colors.push(parsed_cmd.data[cmd.color_idx(idx)]);
+            } else {
+                // flat shading, use command color
+                colors.push(cmd.color());
+            }
+        }
+
+        // TODO: rasterize the polygon using the extracted vertices and colors
+        rasterizer::rasterize_triangle();
     }
 
     fn process_cpu_to_vram_blit_cmd(&mut self, parsed_cmd: ParsedCommand) {

@@ -5,6 +5,7 @@ pub mod breakpoints;
 pub mod cpu;
 pub mod display;
 pub mod gpu;
+pub mod instruction_renderer;
 pub mod mmu;
 pub mod trace;
 pub mod tty;

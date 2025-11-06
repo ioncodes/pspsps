@@ -64,6 +64,9 @@ impl Widget for MmuWidget {
 
         let start_addr = self.memory_address & !0xF;
 
+        // Reduce vertical spacing between memory rows
+        ui.spacing_mut().item_spacing.y = 0.0;
+
         for row in 0..ROWS_TO_DISPLAY {
             let addr = start_addr + (row * 16);
 

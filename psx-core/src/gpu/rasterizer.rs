@@ -91,7 +91,7 @@ fn rasterize_triangle(
                 let pixel = if !textured {
                     gouraud_shading(colors, w0, w1, w2, area)
                 } else {
-                    textured_render(uvs)
+                    textured_render(uvs, w0, w1, w2, area, vram)
                 };
 
                 // Push to VRAM
@@ -136,7 +136,7 @@ fn gouraud_shading(colors: [u32; 3], w0: i32, w1: i32, w2: i32, area: i32) -> u1
     (b5 << 10) | (g5 << 5) | r5
 }
 
-fn textured_render(uvs: [u32; 3]) -> u16 {
+fn textured_render(uvs: [u32; 3], w0: i32, w1: i32, w2: i32, area: i32, vram: &mut [u8]) -> u16 {
     // Clut Attribute (Color Lookup Table, aka Palette)
     // This attribute is used in all Textured Polygon/Rectangle commands. Of course, it's relevant only for 4bit/8bit textures (don't care for 15bit textures).
     //   0-5    X coordinate X/16  (ie. in 16-halfword steps)
@@ -167,12 +167,25 @@ fn textured_render(uvs: [u32; 3]) -> u16 {
     let clut = ((uvs[0] >> 16) & 0xFFFF) as u16;
     let texpage = ((uvs[1] >> 16) & 0xFFFF) as u16;
 
-    let u0 = (uvs[0] & 0xFF) as u8;
-    let v0 = ((uvs[0] >> 8) & 0xFF) as u8;
-    let u1 = (uvs[1] & 0xFF) as u8;
-    let v1 = ((uvs[1] >> 8) & 0xFF) as u8;
-    let u2 = (uvs[2] & 0xFF) as u8;
-    let v2 = ((uvs[2] >> 8) & 0xFF) as u8;
+    let texture_x_base = (texpage & 0b1111) as i32 * 64;
+    let texture_y_base =
+        (((texpage >> 4) & 0x1) as i32 * 256) + (((texpage >> 11) & 0x1) as i32 * 512);
 
-    0
+    let u0 = (uvs[0] & 0xFF) as i32;
+    let v0 = ((uvs[0] >> 8) & 0xFF) as i32;
+    let u1 = (uvs[1] & 0xFF) as i32;
+    let v1 = ((uvs[1] >> 8) & 0xFF) as i32;
+    let u2 = (uvs[2] & 0xFF) as i32;
+    let v2 = ((uvs[2] >> 8) & 0xFF) as i32;
+
+    let u = ((u0 * w0) + (u1 * w1) + (u2 * w2)) / area;
+    let v = ((v0 * w0) + (v1 * w1) + (v2 * w2)) / area;
+
+    let tex_x = (texture_x_base + u) & (VRAM_WIDTH as i32 - 1);
+    let tex_y = (texture_y_base + v) & (VRAM_HEIGHT as i32 - 1);
+
+    let vram_idx = ((tex_y as usize) * 1024 + (tex_x as usize)) * 2;
+    let pixel = u16::from_le_bytes([vram[vram_idx], vram[vram_idx + 1]]);
+
+    pixel
 }

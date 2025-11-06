@@ -18,6 +18,14 @@ impl Psx {
         let mut cpu = Cpu::new();
         cpu.pc = PSX_RESET_ADDRESS;
 
+        mmu.load(
+            &[
+                0x21, 0x08, 0x00, 0x01, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00, 0x00,
+            ],
+            0,
+        );
+        cpu.pc = 0;
+
         Self { cpu, mmu }
     }
 

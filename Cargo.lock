@@ -2478,6 +2478,7 @@ name = "psx-dbg"
 version = "0.1.0"
 dependencies = [
  "iced",
+ "lazy_static",
  "psx-core",
  "tokio",
  "tracing",

@@ -1,5 +1,7 @@
+use iced::theme::Palette;
 use iced::widget::{button, column, container, row, scrollable, text};
-use iced::{Element, Task, Theme};
+use iced::{Color, Element, Task, Theme};
+use lazy_static::lazy_static;
 use psx_core::cpu::decoder::Instruction;
 use psx_core::psx::Psx;
 use std::time::Duration;
@@ -8,6 +10,22 @@ use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 
 static BIOS: &[u8] = include_bytes!("../../bios/SCPH1000.BIN");
+
+lazy_static! {
+    static ref THEME_PRIMARY_TEXT: Color = Color::from_rgb8(232, 227, 240);
+    static ref THEME_MUTED_TEXT: Color = Color::from_rgb8(128, 115, 153);
+    static ref THEME_VIOLET: Color = Color::from_rgb8(159, 122, 234);
+    static ref THEME_PINK: Color = Color::from_rgb8(245, 179, 217);
+    static ref THEME_MINT: Color = Color::from_rgb8(179, 227, 209);
+    static ref THEME_LAVENDER: Color = Color::from_rgb8(183, 148, 212);
+    static ref THEME_PURPLE: Color = Color::from_rgb8(200, 168, 233);
+    static ref THEME_BACKGROUND: Color = Color::from_rgb8(26, 22, 37);
+    static ref THEME_BACKGROUND2: Color = Color::from_rgb8(30, 27, 46);
+    static ref THEME_SUCCESS: Color = Color::from_rgb8(141, 217, 173);
+    static ref THEME_ERROR: Color = Color::from_rgb8(242, 166, 192);
+    static ref THEME_WARNING: Color = Color::from_rgb8(250, 207, 176);
+    static ref THEME_INFO: Color = Color::from_rgb8(166, 209, 242);
+}
 
 macro_rules! monospace_text {
     ($text:expr) => {
@@ -216,6 +234,17 @@ fn main() -> iced::Result {
         PsxDebugger::update,
         PsxDebugger::view,
     )
-    .theme(|_| Theme::Dark)
+    .theme(|_| {
+        Theme::custom(
+            "psx".into(),
+            Palette {
+                background: *THEME_BACKGROUND,
+                text: *THEME_PRIMARY_TEXT,
+                primary: *THEME_VIOLET,
+                success: *THEME_SUCCESS,
+                danger: *THEME_ERROR,
+            },
+        )
+    })
     .run()
 }

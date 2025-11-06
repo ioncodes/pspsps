@@ -95,7 +95,9 @@ impl Gpu {
                 Gp0Command::RectanglePrimitive(cmd) => self.process_rectangle_primitive_cmd(parsed_cmd, cmd),
                 Gp0Command::PolygonPrimitive(cmd) => self.process_polygon_primitive_cmd(parsed_cmd, cmd),
                 Gp0Command::CpuToVramBlit => self.process_cpu_to_vram_blit_cmd(parsed_cmd),
+                Gp0Command::VramToCpuBlit => self.process_vram_to_cpu_blit_cmd(parsed_cmd),
                 Gp0Command::Environment(cmd) => self.process_environment_cmd(parsed_cmd, cmd),
+                Gp0Command::Misc(cmd) => self.process_misc_cmd(parsed_cmd, cmd),
                 _ => {
                     tracing::error!(target: "psx_core::gpu", cmd = %parsed_cmd.cmd, raw = %format!("{:032b} / {:08X}", parsed_cmd.raw, parsed_cmd.raw), "Unimplemented GP0 command");
                 }
@@ -266,6 +268,44 @@ impl Gpu {
         }
     }
 
+    fn process_vram_to_cpu_blit_cmd(&mut self, parsed_cmd: ParsedCommand) {
+        let src_x = (parsed_cmd.data[0] & 0xFFFF) as u16;
+        let src_y = ((parsed_cmd.data[0] >> 16) & 0xFFFF) as u16;
+        let width = (parsed_cmd.data[1] & 0xFFFF) as usize;
+        let height = ((parsed_cmd.data[1] >> 16) & 0xFFFF) as usize;
+
+        let total_pixels = width * height;
+        let mut pixel_data: Vec<u16> = Vec::with_capacity(total_pixels);
+
+        tracing::debug!(
+            target: "psx_core::gpu",
+            src_x, src_y, width, height,
+            "VRAM to CPU blit"
+        );
+
+        for row in 0..height {
+            for col in 0..width {
+                let vram_x = src_x as usize + col;
+                let vram_y = src_y as usize + row;
+
+                if vram_x < VRAM_WIDTH && vram_y < VRAM_HEIGHT {
+                    let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
+                    let byte0 = self.gp.vram[vram_idx];
+                    let byte1 = self.gp.vram[vram_idx + 1];
+                    let pixel = u16::from_le_bytes([byte0, byte1]);
+                    pixel_data.push(pixel);
+                }
+            }
+        }
+
+        // Here you would typically store or process the pixel_data as needed
+        tracing::debug!(
+            target: "psx_core::gpu",
+            pixels_retrieved = pixel_data.len(),
+            "Retrieved pixel data from VRAM"
+        );
+    }
+
     fn process_environment_cmd(&mut self, parsed_cmd: ParsedCommand, cmd: u8) {
         tracing::debug!(
             target: "psx_core::gpu",
@@ -318,7 +358,70 @@ impl Gpu {
                 );
             }
             _ => {
-                tracing::error!(target: "psx_core::gpu", cmd, "Unimplemented environment command");
+                tracing::error!(target: "psx_core::gpu", cmd = format!("{:02X}", cmd), "Unimplemented environment command");
+            }
+        }
+    }
+
+    fn process_misc_cmd(&mut self, parsed_cmd: ParsedCommand, cmd: u8) {
+        tracing::debug!(
+            target: "psx_core::gpu",
+            cmd,
+            raw = %format!("{:032b} / {:08X}", parsed_cmd.raw, parsed_cmd.raw),
+            "Processing misc command"
+        );
+
+        match cmd {
+            0x02 => {
+                // Quick Rectangle Fill
+                let color = parsed_cmd.raw & 0x00FF_FFFF;
+                let x = (parsed_cmd.data[0] & 0xFFFF) as i16;
+                let y = ((parsed_cmd.data[0] >> 16) & 0xFFFF) as i16;
+                let width = (parsed_cmd.data[1] & 0xFFFF) as u16;
+                let height = ((parsed_cmd.data[1] >> 16) & 0xFFFF) as u16;
+
+                tracing::debug!(
+                    target: "psx_core::gpu",
+                    x, y, width, height, color = format!("{:08X}", color),
+                    "Quick rectangle fill"
+                );
+
+                // extract RGB565 color components
+                let r = (color & 0xFF) as u8;
+                let g = ((color >> 8) & 0xFF) as u8;
+                let b = ((color >> 16) & 0xFF) as u8;
+
+                // Convert RGB888 to RGB555
+                let r5 = (r >> 3) & 0x1F;
+                let g5 = (g >> 3) & 0x1F;
+                let b5 = (b >> 3) & 0x1F;
+                let pixel_value = (b5 as u16) << 10 | (g5 as u16) << 5 | (r5 as u16);
+
+                for row in 0..height {
+                    for col in 0..width {
+                        let vram_x = x as usize + col as usize;
+                        let vram_y = y as usize + row as usize;
+
+                        // within drawing area?
+                        if vram_x < self.drawing_area_x1 as usize
+                            || vram_x >= self.drawing_area_x2 as usize
+                            || vram_y < self.drawing_area_y1 as usize
+                            || vram_y >= self.drawing_area_y2 as usize
+                        {
+                            continue;
+                        }
+
+                        if vram_x < VRAM_WIDTH && vram_y < VRAM_HEIGHT {
+                            let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
+                            let bytes = pixel_value.to_le_bytes();
+                            self.gp.vram[vram_idx] = bytes[0];
+                            self.gp.vram[vram_idx + 1] = bytes[1];
+                        }
+                    }
+                }
+            }
+            _ => {
+                tracing::error!(target: "psx_core::gpu", cmd = format!("{:02X}", cmd), "Unimplemented misc command");
             }
         }
     }

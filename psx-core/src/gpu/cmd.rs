@@ -6,7 +6,7 @@ use crate::gpu::cmd::{poly::DrawPolygonCommand, rect::DrawRectangleCommand};
 
 #[derive(PartialEq, Eq)]
 pub enum Gp0Command {
-    Misc,
+    Misc(u8), // u8 = real command
     PolygonPrimitive(DrawPolygonCommand),
     LinePrimitive,
     RectanglePrimitive(DrawRectangleCommand),
@@ -19,7 +19,7 @@ pub enum Gp0Command {
 impl From<u32> for Gp0Command {
     fn from(value: u32) -> Self {
         match (value >> 29) & 0b111 {
-            0b000 => Gp0Command::Misc,
+            0b000 => Gp0Command::Misc(((value >> 24) & 0xFF) as u8),
             0b001 => Gp0Command::PolygonPrimitive(DrawPolygonCommand(value)),
             0b010 => Gp0Command::LinePrimitive,
             0b011 => Gp0Command::RectanglePrimitive(DrawRectangleCommand(value)),
@@ -35,7 +35,7 @@ impl From<u32> for Gp0Command {
 impl std::fmt::Display for Gp0Command {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name = match self {
-            Gp0Command::Misc => "Misc. Command",
+            Gp0Command::Misc(cmd) => &format!("Misc. Command {:02X}", cmd),
             Gp0Command::PolygonPrimitive(_) => "Polygon Primitive",
             Gp0Command::LinePrimitive => "Line Primitive",
             Gp0Command::RectanglePrimitive(_) => "Rectangle Primitive",
@@ -85,6 +85,11 @@ impl Gp0Command {
             Gp0Command::VramToVramBlit => 3,
             Gp0Command::CpuToVramBlit => 2,
             Gp0Command::VramToCpuBlit => 2,
+            Gp0Command::Misc(cmd) => match cmd {
+                0x01 => 0, // Clear Cache
+                0x02 => 2, // Quick Rectangle Fill
+                _ => 0,
+            },
             _ => 0,
         }
     }

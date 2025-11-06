@@ -74,6 +74,8 @@ impl Debugger {
                         self.cycle_counter = 0;
 
                         let (display_width, display_height) = self.psx.cpu.mmu.gpu.gp.resolution();
+                        let gp1_status = self.psx.cpu.mmu.gpu.gp.status();
+                        let fifo_len = self.psx.cpu.mmu.gpu.gp.fifo_len();
 
                         self.channel_send
                             .send(DebuggerEvent::GpuUpdated(GpuState {
@@ -83,6 +85,10 @@ impl Debugger {
                                 display_frame: self.psx.cpu.mmu.gpu.display_frame(),
                                 display_width,
                                 display_height,
+                                horizontal_resolution: display_width,
+                                vertical_resolution: display_height,
+                                gp1_status,
+                                fifo_len,
                             }))
                             .expect("Failed to send GPU update event");
                     }

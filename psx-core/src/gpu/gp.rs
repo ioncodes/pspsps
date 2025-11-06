@@ -257,6 +257,14 @@ impl Gp {
         )
     }
 
+    pub fn status(&self) -> u32 {
+        self.gp1_status
+    }
+
+    pub fn fifo_len(&self) -> usize {
+        self.fifo.len()
+    }
+
     /// Generate a frame buffer from VRAM
     /// Converts entire VRAM to RGB888 format
     pub fn generate_frame(&self, buffer: &mut [(u8, u8, u8)]) {

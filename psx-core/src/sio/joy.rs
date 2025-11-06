@@ -1,6 +1,6 @@
 use super::sio0::SioDevice;
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Default)]
 pub struct ControllerState {
     // D-Pad
     pub d_up: bool,
@@ -51,6 +51,29 @@ impl ControllerState {
     }
 }
 
+impl std::fmt::Debug for ControllerState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "[DPad: {}{}{}{} | Buttons: {}{}{}{} | Shoulders: {}{}{}{} | System: {}{}]",
+            if self.d_up { "U" } else { "" },
+            if self.d_down { "D" } else { "" },
+            if self.d_left { "L" } else { "" },
+            if self.d_right { "R" } else { "" },
+            if self.cross { "X" } else { "" },
+            if self.circle { "O" } else { "" },
+            if self.square { "[]" } else { "" },
+            if self.triangle { "Δ" } else { "" },
+            if self.l1 { "L1" } else { "" },
+            if self.l2 { "L2" } else { "" },
+            if self.r1 { "R1" } else { "" },
+            if self.r2 { "R2" } else { "" },
+            if self.start { "Start" } else { "" },
+            if self.select { "Select" } else { "" },
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ControllerTransferState {
     Idle,
@@ -79,6 +102,8 @@ impl ControllerDevice {
 
 impl SioDevice for ControllerDevice {
     fn process_byte(&mut self, tx_byte: u8) -> u8 {
+        tracing::trace!(target: "psx_core::joy", tx = format!("{:02X}", tx_byte), "Processing byte");
+
         match self.transfer_state {
             ControllerTransferState::Idle => {
                 debug_assert!(tx_byte == 0x01, "Unexpected byte in Idle state");
@@ -100,24 +125,30 @@ impl SioDevice for ControllerDevice {
                 }
             }
             ControllerTransferState::CommandReceived => {
+                tracing::trace!(target: "psx_core::joy", "Sending controller ID high byte");
                 // TAP  idhi  Receive ID bit8..15 (usually/always 5Ah)
                 self.transfer_state = ControllerTransferState::SendingData(0);
                 0x5A
             }
-            ControllerTransferState::SendingData(index) => {
+            ControllerTransferState::SendingData(index) => {                
                 let (byte1, byte2) = self.state.to_button_bytes();
+                tracing::trace!(target: "psx_core::joy", state = ?self.state, "Sending controller data");
+
                 match index {
                     0 => {
                         self.transfer_state = ControllerTransferState::SendingData(1);
+                        tracing::trace!(target: "psx_core::joy", btn = format!("{:02X}", byte1), "Sending controller button data 1");
                         byte1 // First button byte
                     }
                     1 => {
                         // Last byte - transfer complete
                         self.transfer_state = ControllerTransferState::Idle;
+                        tracing::trace!(target: "psx_core::joy", btn = format!("{:02X}", byte2), "Sending controller button data 2");
                         byte2 // Second button byte
                     }
                     _ => {
                         self.transfer_state = ControllerTransferState::Idle;
+                        tracing::error!(target: "psx_core::joy", index, "Controller sending data index out of range");
                         0xFF
                     }
                 }

@@ -30,9 +30,12 @@ pub struct Sio0 {
     pub control: SerialControl,
     pub status: SerialStatus,
     pub mode: SerialMode,
+    baud: u16,
     rx_fifo: VecDeque<u8>,
     cycles: usize,
-    target_cycles: usize, // 0 = idle, >0 = waiting for IRQ
+    target_cycles: usize, // IRQ delay in cycles (baud * 8)
+    irq_trigger_counter: usize, // Number of pending IRQs (0 = idle)
+
     // Devices
     controller: ControllerDevice,
     memory_card: MemoryCardDevice,
@@ -45,9 +48,11 @@ impl Default for Sio0 {
             control: SerialControl::default(),
             status: SerialStatus::default(),
             mode: SerialMode::default(),
+            baud: 0,
             rx_fifo: VecDeque::new(),
             cycles: 0,
-            target_cycles: 0, // 0 = idle, will be set to 1088 when waiting for IRQ
+            target_cycles: 0, // Will be set to baud*8 when TX is written
+            irq_trigger_counter: 0, // 0 = idle
             controller: ControllerDevice::new(),
             memory_card: MemoryCardDevice::new(),
             active_device: ActiveDevice::None,
@@ -68,17 +73,16 @@ impl Sio0 {
         self.cycles += cycles;
 
         // Check if we're waiting for IRQ
-        if self.cycles >= self.target_cycles {
-            // IRQ delay complete: trigger IRQ and return to idle
+        if self.cycles >= self.target_cycles && self.irq_trigger_counter > 0 {
+            // IRQ delay complete: trigger IRQ
             self.cycles = 0;
-            self.target_cycles = 0; // Back to idle
             self.trigger_irq();
 
             // TX is ready again
             self.status.set_tx_ready_1(true);
             self.status.set_tx_ready_2(true);
 
-            self.cycles -= self.target_cycles;
+            self.irq_trigger_counter -= 1;
         }
 
         // Check if devices were deselected (DTR went low)
@@ -144,10 +148,17 @@ impl Bus8 for Sio0 {
     fn read_u8(&mut self, address: u32) -> u8 {
         match address {
             SIO0_RX_DATA_ADDR_START => {
-                let byte = self.rx_fifo.pop_front().unwrap_or(0xFF);
+                let byte = self.rx_fifo.pop_front().unwrap_or_else(|| {
+                    tracing::warn!(target: "psx_core::sio", "RX FIFO underflow on SIO0 read");
+                    0xFF
+                });
+
                 if self.rx_fifo.is_empty() {
                     self.status.set_rx_fifo_not_empty(false);
                 }
+
+                tracing::trace!(target: "psx_core::sio", byte = format!("{:02X}", byte), "RX read");
+
                 byte
             }
             _ => {
@@ -169,11 +180,11 @@ impl Bus8 for Sio0 {
 impl Bus16 for Sio0 {
     fn read_u16(&mut self, address: u32) -> u16 {
         match address {
-            SIO0_TX_DATA_ADDR_START => self.read_u8(address) as u16,
+            SIO0_RX_DATA_ADDR_START => self.read_u8(address) as u16,
             SIO0_STATUS_ADDR_START => self.status.0 as u16,
             SIO0_MODE_ADDR_START => self.mode.0,
             SIO0_CTRL_ADDR_START => self.control.0,
-            SIO0_BAUD_ADDR_START => self.target_cycles as u16 / 8,
+            SIO0_BAUD_ADDR_START => self.baud,
             _ => {
                 tracing::error!(
                     target: "psx_core::sio",
@@ -201,8 +212,10 @@ impl Bus16 for Sio0 {
                 self.status.set_tx_ready_1(false);
                 self.status.set_tx_ready_2(false);
 
-                // Start 1088 cycle countdown to IRQ
+                // Start IRQ countdown (baud * 8 cycles)
                 self.cycles = 0;
+                self.target_cycles = self.baud as usize * 8;
+                self.irq_trigger_counter += 1;
 
                 tracing::trace!(
                     target: "psx_core::sio",
@@ -229,7 +242,7 @@ impl Bus16 for Sio0 {
                     self.memory_card.reset();
                     self.active_device = ActiveDevice::None;
                     self.cycles = 0;
-                    self.target_cycles = 0; // Back to idle
+                    self.irq_trigger_counter = 0; // Cancel any pending IRQs
                     self.status.set_rx_fifo_not_empty(false);
                     self.status.set_tx_ready_1(true);
                     self.status.set_tx_ready_2(true);
@@ -242,7 +255,7 @@ impl Bus16 for Sio0 {
                 tracing::trace!(target: "psx_core::sio", dtr, "CTRL");
             }
             SIO0_BAUD_ADDR_START => {
-                self.target_cycles = value as usize * 8;
+                self.baud = value;
                 tracing::debug!(target: "psx_core::sio", baud = value, "BAUD");
             }
             _ => {

@@ -1,31 +1,46 @@
 pub mod bus;
 pub mod dma;
 
+use crate::cdrom::{CDROM_ADDR_END, CDROM_ADDR_START, Cdrom};
 use crate::gpu::status::DmaDirection;
 use crate::gpu::{GP0_ADDRESS_END, GP0_ADDRESS_START, GP1_ADDRESS_END, GP1_ADDRESS_START, Gpu};
 use crate::irq::{I_MASK_ADDR_END, I_MASK_ADDR_START, I_STAT_ADDR_END, I_STAT_ADDR_START, Irq};
 use crate::mmu::bus::{Bus8 as _, Bus32};
-use crate::mmu::dma::{
-    Channel, DMA_INTERRUPT_REGISTER_ADDRESS_END, DMA0_ADDRESS_START, Dma, TransferMode,
-};
+use crate::mmu::dma::{Channel, DMA_INTERRUPT_REGISTER_ADDRESS_END, DMA0_ADDRESS_START, Dma, TransferMode};
 use crate::spu::Spu;
 
 pub struct Mmu {
     pub memory: Box<[u8; 0xFFFF_FFFF]>, // 512 KB BIOS
+    pub cdrom: Cdrom,
     pub spu: Spu,
     pub gpu: Gpu,
     pub dma: Dma,
     pub irq: Irq,
+    random_timer: u32,
 }
 
 impl Mmu {
     pub fn new() -> Self {
         Self {
             memory: vec![0xFF; 0xFFFF_FFFF].try_into().unwrap(),
+            cdrom: Cdrom::new(),
             spu: Spu::new(),
             gpu: Gpu::new(),
             dma: Dma::new(),
             irq: Irq::new(),
+            random_timer: 0,
+        }
+    }
+
+    pub fn update_cdrom(&mut self, cycles: i32) {
+        self.cdrom.update(cycles);
+
+        if self.cdrom.check_and_clear_irq() {
+            tracing::debug!(
+                target: "psx_core::cdrom",
+                "CDROM IRQ triggered"
+            );
+            self.irq.status.set_cdrom(true);
         }
     }
 
@@ -91,6 +106,7 @@ impl Mmu {
 
         match CHANNEL_ID {
             2 => self.perform_gpu_dma(),
+            3 => self.perform_cdrom_dma(),
             6 => self.perform_otc_dma(),
             _ => {
                 tracing::error!(target: "psx_core::dma", channel_id = CHANNEL_ID, "DMA transfer not implemented for this channel")
@@ -199,6 +215,45 @@ impl Mmu {
         }
     }
 
+    pub fn perform_cdrom_dma(&mut self) {
+        let channel = self.dma.channels.3;
+
+        let dest_addr = channel.base_address();
+        let madr_step = channel.channel_control.madr_step();
+
+        tracing::debug!(
+            target: "psx_core::dma",
+            dest_addr = %format!("{:08X}", dest_addr),
+            "CDROM DMA transfer starting"
+        );
+
+        match channel.channel_control.transfer_mode() {
+            TransferMode::Burst => {
+                let total_words = channel.bcr_word_count();
+
+                for idx in 0..total_words {
+                    let word = self.read_u32(CDROM_ADDR_START);
+                    let addr = dest_addr.wrapping_add_signed(idx as i32 * madr_step);
+                    self.write_u32(addr, word);
+
+                    tracing::trace!(
+                        target: "psx_core::dma",
+                        address = format!("{:08X}", addr),
+                        word = format!("{:08X}", word),
+                        "CDROM DMA word transferred to RAM"
+                    );
+                }
+            }
+            _ => {
+                tracing::error!(
+                    target: "psx_core::dma",
+                    transfer_mode = %channel.channel_control.transfer_mode(),
+                    "CDROM DMA only supports Burst mode"
+                );
+            }
+        }
+    }
+
     pub fn load(&mut self, address: u32, data: &[u8]) {
         for (i, &byte) in data.iter().enumerate() {
             self.write_u8(address + i as u32, byte);
@@ -229,6 +284,7 @@ impl bus::Bus8 for Mmu {
         let address = Self::canonicalize_virtual_address(address);
 
         match address {
+            CDROM_ADDR_START..=CDROM_ADDR_END => self.cdrom.read_u8(address),
             DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.read_u8(address),
             I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.read_u8(address),
             I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.read_u8(address),
@@ -245,9 +301,8 @@ impl bus::Bus8 for Mmu {
     fn write_u8(&mut self, address: u32, value: u8) {
         let address = Self::canonicalize_virtual_address(address);
         match address {
-            DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => {
-                self.dma.write_u8(address, value)
-            }
+            CDROM_ADDR_START..=CDROM_ADDR_END => self.cdrom.write_u8(address, value),
+            DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.write_u8(address, value),
             I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.write_u8(address, value),
             I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.write_u8(address, value),
             0x1F80_1D80..=0x1F80_1DBB => self.spu.write(address, value),
@@ -275,9 +330,7 @@ impl bus::Bus16 for Mmu {
     fn write_u16(&mut self, address: u32, value: u16) {
         let address = Self::canonicalize_virtual_address(address);
         match address {
-            DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => {
-                self.dma.write_u16(address, value)
-            }
+            DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.write_u16(address, value),
             I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.write_u16(address, value),
             I_STAT_ADDR_START..=I_STAT_ADDR_END => self.irq.write_u16(address, value),
             _ => {
@@ -293,6 +346,10 @@ impl bus::Bus32 for Mmu {
     fn read_u32(&mut self, address: u32) -> u32 {
         let address = Self::canonicalize_virtual_address(address);
         match address {
+            0x1F801100..=0x1F80112F => {
+                self.random_timer = self.random_timer.wrapping_add(1);
+                self.random_timer
+            }
             DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.read_u32(address),
             GP0_ADDRESS_START..=GP0_ADDRESS_END => self.gpu.read_u32(address),
             GP1_ADDRESS_START..=GP1_ADDRESS_END => self.gpu.read_u32(address),
@@ -311,9 +368,7 @@ impl bus::Bus32 for Mmu {
     fn write_u32(&mut self, address: u32, value: u32) {
         let address = Self::canonicalize_virtual_address(address);
         match address {
-            DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => {
-                self.dma.write_u32(address, value)
-            }
+            DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.write_u32(address, value),
             GP0_ADDRESS_START..=GP0_ADDRESS_END => self.gpu.write_u32(address, value),
             GP1_ADDRESS_START..=GP1_ADDRESS_END => self.gpu.write_u32(address, value),
             I_MASK_ADDR_START..=I_MASK_ADDR_END => self.irq.write_u32(address, value),

@@ -28,8 +28,8 @@ pub struct Debugger {
 
 impl Debugger {
     pub fn new(bios_path: String, channel_send: Sender<DebuggerEvent>, channel_recv: Receiver<DebuggerEvent>) -> Self {
-        let bios = std::fs::read(&bios_path)
-            .unwrap_or_else(|e| panic!("Failed to read BIOS file '{}': {}", bios_path, e));
+        let bios =
+            std::fs::read(&bios_path).unwrap_or_else(|e| panic!("Failed to read BIOS file '{}': {}", bios_path, e));
 
         Self {
             psx: Psx::new(&bios),
@@ -194,14 +194,8 @@ impl Debugger {
                     self.is_running = false;
                     self.trace.clear();
 
-                    psx_core::cpu::internal::tty_buffer()
-                        .lock()
-                        .unwrap()
-                        .clear();
-                    psx_core::cpu::internal::tty_buffer()
-                        .lock()
-                        .unwrap()
-                        .clear();
+                    psx_core::cpu::internal::tty_buffer().lock().unwrap().clear();
+                    psx_core::cpu::internal::tty_buffer().lock().unwrap().clear();
 
                     self.channel_send
                         .send(DebuggerEvent::CpuUpdated(CpuState {

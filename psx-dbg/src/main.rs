@@ -139,13 +139,16 @@ impl eframe::App for PsxDebugger {
                 }
 
                 let pc_before = self.psx.cpu.pc;
-                let instruction = self.psx.step();
-
-                // Add to trace buffer with limit of 1000
-                if self.trace_buffer.len() >= 1000 {
-                    self.trace_buffer.pop_front();
+                if let Ok(instruction) = self.psx.step() {
+                    // Add to trace buffer with limit of 1000
+                    if self.trace_buffer.len() >= 1000 {
+                        self.trace_buffer.pop_front();
+                    }
+                    self.trace_buffer.push_back((pc_before, instruction));
+                } else {
+                    self.is_running = false;
+                    break;
                 }
-                self.trace_buffer.push_back((pc_before, instruction));
             }
 
             ctx.request_repaint();

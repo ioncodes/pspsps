@@ -19,6 +19,7 @@ impl Widget for TraceWidget {
 
         ScrollArea::vertical()
             .auto_shrink([false, false])
+            .stick_to_bottom(true)
             .show(ui, |ui| {
                 for (address, instruction) in context.trace_buffer.iter().rev() {
                     ui.monospace(format!("{:08X}: {}", address, instruction));

@@ -43,14 +43,15 @@ impl Widget for CpuWidget {
 
             if ui.button("Step").clicked() {
                 let pc_before = context.psx.cpu.pc;
-                let instruction = context.psx.step();
-                *context.breakpoint_hit = false;
+                if let Ok(instruction) = context.psx.step() {
+                    *context.breakpoint_hit = false;
 
-                // Add to trace buffer with limit of 1000
-                if context.trace_buffer.len() >= 1000 {
-                    context.trace_buffer.pop_front();
+                    // Add to trace buffer with limit of 1000
+                    if context.trace_buffer.len() >= 1000 {
+                        context.trace_buffer.pop_front();
+                    }
+                    context.trace_buffer.push_back((pc_before, instruction));
                 }
-                context.trace_buffer.push_back((pc_before, instruction));
             }
 
             if ui.button("Reset").clicked() {

@@ -3,12 +3,12 @@ pub mod gp;
 pub mod rasterizer;
 pub mod status;
 
+use crate::gpu::cmd::Gp0Command;
 use crate::gpu::cmd::poly::DrawPolygonCommand;
 use crate::gpu::cmd::rect::DrawRectangleCommand;
 use crate::gpu::cmd::tex::{
     DrawModeSettingCommand, DrawingAreaBottomRightCommand, DrawingAreaTopLeftCommand, TextureWindowSettingCommand,
 };
-use crate::gpu::cmd::Gp0Command;
 use crate::gpu::gp::{Gp, ParsedCommand};
 use crate::mmu::bus::Bus32;
 
@@ -136,7 +136,27 @@ impl Gpu {
 
         if cmd.textured() {
             let uv = outer_cmd.data[cmd.uv_idx()];
-            rasterizer::rasterize_rectangle();
+
+            // reconstruct texpage from GPU state (set by GP0(E1) command)
+            let texpage = ((self.gp.gp1_status.texture_page_x_base() & 0xF) as u16)
+                | ((self.gp.gp1_status.texture_page_y_base_1() as u16) << 4)
+                | (((self.gp.gp1_status.texture_page_colors() & 0x3) as u16) << 7)
+                | ((self.gp.gp1_status.texture_page_y_base_2() as u16) << 11);
+
+            rasterizer::rasterize_rectangle(
+                x,
+                y,
+                width,
+                height,
+                uv,
+                texpage,
+                self.texture_window_setting,
+                self.drawing_area_x1,
+                self.drawing_area_y1,
+                self.drawing_area_x2,
+                self.drawing_area_y2,
+                &mut self.gp.vram,
+            );
         } else {
             // extract RGB565 color components
             let r = (cmd.color() & 0xFF) as u8;

@@ -54,7 +54,7 @@ fn bios_putchar(cpu: &mut Cpu) {
 
     tty_buffer().lock().unwrap().push(value);
 
-    if value == '\n' {
+    if value == '\n' || value == '\r' {
         let mut line_buffer = tty_line_buffer().lock().unwrap();
         tracing::info!(target: "psx_core::tty", "{}", line_buffer);
         line_buffer.clear();

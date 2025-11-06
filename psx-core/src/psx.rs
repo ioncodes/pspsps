@@ -11,7 +11,7 @@ pub struct Psx {
 impl Psx {
     pub fn new(bios: &[u8]) -> Self {
         let mut mmu = Mmu::new();
-        mmu.load(&bios, PSX_RESET_ADDRESS);
+        mmu.load(PSX_RESET_ADDRESS, &bios);
 
         let mut cpu = Cpu::new();
         cpu.pc = PSX_RESET_ADDRESS;

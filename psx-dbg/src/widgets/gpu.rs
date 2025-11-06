@@ -60,6 +60,51 @@ impl Widget for GpuWidget {
 
         ui.separator();
 
+        // Dump buttons
+        ui.horizontal(|ui| {
+            if ui.button("Dump VRAM to PNG").clicked() {
+                if let Err(e) = Self::save_vram_to_png(gpu_state) {
+                    shared_context.toasts.add(egui_toast::Toast {
+                        text: format!("Failed to save VRAM: {}", e).into(),
+                        kind: egui_toast::ToastKind::Error,
+                        options: egui_toast::ToastOptions::default()
+                            .duration(Some(std::time::Duration::from_secs(3))),
+                        style: Default::default(),
+                    });
+                } else {
+                    shared_context.toasts.add(egui_toast::Toast {
+                        text: "VRAM saved to vram_dump.png".into(),
+                        kind: egui_toast::ToastKind::Success,
+                        options: egui_toast::ToastOptions::default()
+                            .duration(Some(std::time::Duration::from_secs(3))),
+                        style: Default::default(),
+                    });
+                }
+            }
+
+            if ui.button("Dump Display to PNG").clicked() {
+                if let Err(e) = Self::save_display_to_png(gpu_state) {
+                    shared_context.toasts.add(egui_toast::Toast {
+                        text: format!("Failed to save display: {}", e).into(),
+                        kind: egui_toast::ToastKind::Error,
+                        options: egui_toast::ToastOptions::default()
+                            .duration(Some(std::time::Duration::from_secs(3))),
+                        style: Default::default(),
+                    });
+                } else {
+                    shared_context.toasts.add(egui_toast::Toast {
+                        text: "Display saved to display_dump.png".into(),
+                        kind: egui_toast::ToastKind::Success,
+                        options: egui_toast::ToastOptions::default()
+                            .duration(Some(std::time::Duration::from_secs(3))),
+                        style: Default::default(),
+                    });
+                }
+            }
+        });
+
+        ui.separator();
+
         // Display VRAM texture
         ui.heading("VRAM");
         if gpu_state.vram_frame.len() == VRAM_WIDTH * VRAM_HEIGHT
@@ -180,5 +225,51 @@ impl Widget for GpuWidget {
         } else {
             ui.label("Waiting for frame...");
         }
+    }
+}
+
+impl GpuWidget {
+    fn save_vram_to_png(gpu_state: &crate::states::gpu::GpuState) -> Result<(), String> {
+        use image::{RgbImage, Rgb};
+
+        if gpu_state.vram_frame.is_empty() || gpu_state.vram_width == 0 || gpu_state.vram_height == 0 {
+            return Err("No VRAM frame available".to_string());
+        }
+
+        let mut img = RgbImage::new(gpu_state.vram_width as u32, gpu_state.vram_height as u32);
+
+        for y in 0..gpu_state.vram_height {
+            for x in 0..gpu_state.vram_width {
+                let idx = y * VRAM_WIDTH + x;
+                if idx < gpu_state.vram_frame.len() {
+                    let (r, g, b) = gpu_state.vram_frame[idx];
+                    img.put_pixel(x as u32, y as u32, Rgb([r, g, b]));
+                }
+            }
+        }
+
+        img.save("vram_dump.png").map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    fn save_display_to_png(gpu_state: &crate::states::gpu::GpuState) -> Result<(), String> {
+        use image::{RgbImage, Rgb};
+
+        if gpu_state.display_frame.is_empty() || gpu_state.display_width == 0 || gpu_state.display_height == 0 {
+            return Err("No display frame available".to_string());
+        }
+
+        let mut img = RgbImage::new(gpu_state.display_width as u32, gpu_state.display_height as u32);
+
+        for y in 0..gpu_state.display_height {
+            for x in 0..gpu_state.display_width {
+                let idx = y * gpu_state.display_width + x;
+                let (r, g, b) = gpu_state.display_frame[idx];
+                img.put_pixel(x as u32, y as u32, Rgb([r, g, b]));
+            }
+        }
+
+        img.save("display_dump.png").map_err(|e| e.to_string())?;
+        Ok(())
     }
 }

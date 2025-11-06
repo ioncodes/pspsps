@@ -194,11 +194,22 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
             cpu.registers[dst] = x.wrapping_sub_signed(y as i16 as i32)
         }
         AluOperation::Sub if !IMMEDIATE => cpu.registers[dst] = x.wrapping_sub(y),
-        AluOperation::SetLessThan => cpu.registers[dst] = if x < y { 1 } else { 0 },
         AluOperation::Multiply => {
             let result = (x as i32).wrapping_mul(y as i32) as i64;
             cpu.hi = (result >> 32) as u32;
             cpu.lo = (result & 0xFFFFFFFF) as u32;
+        }
+        AluOperation::Divide => {
+            if y == 0 {
+                cpu.hi = 0;
+                cpu.lo = 0;
+            } else {
+                cpu.lo = x.wrapping_div(y);
+                cpu.hi = x.wrapping_rem(y);
+            }
+        }
+        AluOperation::SetLessThan => {
+            cpu.registers[dst] = if (x as i32) < (y as i32) { 1 } else { 0 }
         }
         _ => todo!(
             "Implement ALU operation: {:?}, unsigned: {}, immediate: {}",
@@ -261,18 +272,14 @@ pub fn move_multiply<
 >(
     instr: &Instruction, cpu: &mut Cpu, _mmu: &mut Mmu,
 ) {
-    let value = match REGISTER {
-        MultiplyMoveRegister::Hi => cpu.hi,
-        MultiplyMoveRegister::Lo => cpu.lo,
-    };
-
     match DIRECTION {
-        MultiplyMoveDirection::ToRegister => {
-            cpu.registers[instr.rd() as usize] = value;
-        }
-        MultiplyMoveDirection::FromRegister => match REGISTER {
+        MultiplyMoveDirection::ToRegister => match REGISTER {
             MultiplyMoveRegister::Hi => cpu.hi = cpu.registers[instr.rs() as usize],
             MultiplyMoveRegister::Lo => cpu.lo = cpu.registers[instr.rs() as usize],
+        },
+        MultiplyMoveDirection::FromRegister => match REGISTER {
+            MultiplyMoveRegister::Hi => cpu.registers[instr.rd() as usize] = cpu.hi,
+            MultiplyMoveRegister::Lo => cpu.registers[instr.rd() as usize] = cpu.lo,
         },
     }
 }

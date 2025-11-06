@@ -2,6 +2,7 @@ use iced::widget::{button, column, container, row, scrollable, text};
 use iced::{Element, Task, Theme};
 use psx_core::cpu::decoder::Instruction;
 use psx_core::psx::Psx;
+use std::time::Duration;
 use tracing_subscriber::Layer as _;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
@@ -23,8 +24,10 @@ macro_rules! monospace_text {
 #[derive(Debug, Clone)]
 pub enum Message {
     Run,
+    Pause,
     Step,
     Reset,
+    Tick,
 }
 
 pub struct PsxDebugger {
@@ -43,17 +46,34 @@ impl Default for PsxDebugger {
 
 impl PsxDebugger {
     fn update(&mut self, message: Message) -> Task<Message> {
-        if self.is_running {
-            self.psx.step();
-        }
-
         match message {
             Message::Run => {
                 self.is_running = true;
+                return Task::perform(async {}, |_| Message::Tick);
             }
-            Message::Step => self.psx.step(),
+            Message::Pause => {
+                self.is_running = false;
+            }
+            Message::Step => {
+                self.psx.step();
+            }
             Message::Reset => {
                 self.psx = Psx::new(BIOS);
+                self.is_running = false;
+            }
+            Message::Tick => {
+                if self.is_running {
+                    for _ in 0..100 {
+                        self.psx.step();
+                    }
+
+                    return Task::perform(
+                        async {
+                            tokio::time::sleep(Duration::from_millis(16)).await;
+                        },
+                        |_| Message::Tick,
+                    );
+                }
             }
         }
 
@@ -62,7 +82,11 @@ impl PsxDebugger {
 
     fn view(&self) -> Element<'_, Message> {
         let controls = row![
-            button("Run").on_press(Message::Run),
+            if self.is_running {
+                button("Pause").on_press(Message::Pause)
+            } else {
+                button("Run").on_press(Message::Run)
+            },
             button("Step").on_press(Message::Step),
             button("Reset").on_press(Message::Reset),
         ]
@@ -193,6 +217,5 @@ fn main() -> iced::Result {
         PsxDebugger::view,
     )
     .theme(|_| Theme::Dark)
-    .centered()
     .run()
 }

@@ -24,6 +24,6 @@ impl Psx {
         let instr = Instruction::decode(instr_raw);
         tracing::debug!(target: "psx_core::cpu", "{:08X}: {}", self.cpu.pc, instr);
         self.cpu.pc += 4;
-        (instr.handler)(&instr, &mut self.cpu);
+        (instr.handler)(&instr, &mut self.cpu, &mut self.mmu);
     }
 }

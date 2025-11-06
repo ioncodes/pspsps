@@ -1,6 +1,6 @@
 use crate::cpu::Cpu;
 use crate::cpu::cop::Cop;
-use crate::cpu::cop::cop0::{COP0_EXCEPTION_CODE_OV, COP0_EXCEPTION_CODE_SYSCALL};
+use crate::cpu::cop::cop0::Exception;
 use crate::cpu::decoder::Instruction;
 use std::marker::ConstParamTy;
 
@@ -196,7 +196,7 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
             } else {
                 match (x as i32).checked_add(y as i16 as i32) {
                     Some(result) => cpu.write_register(dst, result as u32),
-                    None => cpu.cause_exception(COP0_EXCEPTION_CODE_OV, instr.is_delay_slot),
+                    None => cpu.cause_exception(Exception::ArithmeticOverflow, instr.is_delay_slot),
                 }
             }
         }
@@ -206,7 +206,7 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
             } else {
                 match (x as i32).checked_add(y as i32) {
                     Some(result) => cpu.write_register(dst, result as u32),
-                    None => cpu.cause_exception(COP0_EXCEPTION_CODE_OV, instr.is_delay_slot),
+                    None => cpu.cause_exception(Exception::ArithmeticOverflow, instr.is_delay_slot),
                 }
             }
         }
@@ -216,7 +216,7 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
             } else {
                 match (x as i32).checked_sub(y as i16 as i32) {
                     Some(result) => cpu.write_register(dst, result as u32),
-                    None => cpu.cause_exception(COP0_EXCEPTION_CODE_OV, instr.is_delay_slot),
+                    None => cpu.cause_exception(Exception::ArithmeticOverflow, instr.is_delay_slot),
                 }
             }
         }
@@ -226,7 +226,7 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
             } else {
                 match (x as i32).checked_sub(y as i32) {
                     Some(result) => cpu.write_register(dst, result as u32),
-                    None => cpu.cause_exception(COP0_EXCEPTION_CODE_OV, instr.is_delay_slot),
+                    None => cpu.cause_exception(Exception::ArithmeticOverflow, instr.is_delay_slot),
                 }
             }
         }
@@ -344,7 +344,7 @@ pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu) {
 pub fn system_call(instr: &Instruction, cpu: &mut Cpu) {
     let function_number = cpu.read_register(4); // BIOS function number is in $a0 (reg 4)
     tracing::debug!(target: "psx_core::cpu", "syscall({:08X})", function_number);
-    cpu.cause_exception(COP0_EXCEPTION_CODE_SYSCALL, instr.is_delay_slot);
+    cpu.cause_exception(Exception::Syscall, instr.is_delay_slot);
 }
 
 pub fn debug_break(_instr: &Instruction, _cpu: &mut Cpu) {

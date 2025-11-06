@@ -4,7 +4,7 @@ pub mod handlers;
 pub mod internal;
 pub mod lut;
 
-use crate::cpu::cop::cop0::Cop0;
+use crate::cpu::cop::cop0::{Cop0, Exception};
 use crate::cpu::decoder::Instruction;
 use crate::mmu::{Addressable, Mmu};
 use colored::Colorize;
@@ -83,8 +83,8 @@ impl Cpu {
         Ok(instr)
     }
 
-    pub fn cause_exception(&mut self, exception_code: u32, is_delay_slot: bool) {
-        tracing::debug!(target: "psx_core::cpu", "Exception occurred: {:02X}", exception_code);
+    pub fn cause_exception(&mut self, exception: Exception, is_delay_slot: bool) {
+        tracing::debug!(target: "psx_core::cpu", "Exception occurred: {}", &exception);
 
         self.exception_raised = true;
 
@@ -93,7 +93,7 @@ impl Cpu {
         self.cop0.cause.set_branch_taken(false); // TODO: do we have to emulate this? it's easy we can just set a flag in handlers
 
         self.cop0.epc = if !is_delay_slot { self.pc } else { self.pc - 4 };
-        self.cop0.cause.set_exception_code(exception_code); // Set the exception code
+        self.cop0.cause.set_exception_code(exception as u32); // Set the exception code
         self.cop0.sr.set_current_interrupt_enable(false); // Disable interrupts
 
         //   Exception     BEV=0         BEV=1

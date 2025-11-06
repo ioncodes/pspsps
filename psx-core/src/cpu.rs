@@ -40,8 +40,7 @@ impl Cpu {
     }
 
     pub fn tick(&mut self) -> Result<Instruction, ()> {
-        if internal::HOOKS.contains_key(&self.pc) {
-            let handler = internal::HOOKS.get(&self.pc).unwrap();
+        if let Some(handler) = internal::cpu_hooks().get(&self.pc) {
             handler(self);
         }
 

@@ -5,6 +5,5 @@ edition = "2024"
 
 [dependencies]
 colored = "3.0.0"
-lazy_static = "1.5.0"
 proc-bitfield = "0.5.2"
 tracing = "0.1.41"

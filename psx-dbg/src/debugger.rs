@@ -126,7 +126,7 @@ impl Debugger {
                 DebuggerEvent::UpdateTty => {
                     self.channel_send
                         .send(DebuggerEvent::TtyUpdated(TtyState {
-                            buffer: internal::TTY_BUFFER.lock().unwrap().clone(),
+                            buffer: internal::tty_buffer().lock().unwrap().clone(),
                         }))
                         .unwrap();
                 }
@@ -165,8 +165,11 @@ impl Debugger {
                     self.is_running = false;
                     self.trace.clear();
 
-                    psx_core::cpu::internal::TTY_BUFFER.lock().unwrap().clear();
-                    psx_core::cpu::internal::TTY_LINE_BUFFER
+                    psx_core::cpu::internal::tty_buffer()
+                        .lock()
+                        .unwrap()
+                        .clear();
+                    psx_core::cpu::internal::tty_buffer()
                         .lock()
                         .unwrap()
                         .clear();
@@ -192,7 +195,7 @@ impl Debugger {
                         .unwrap();
                     self.channel_send
                         .send(DebuggerEvent::TtyUpdated(TtyState {
-                            buffer: internal::TTY_BUFFER.lock().unwrap().clone(),
+                            buffer: internal::tty_buffer().lock().unwrap().clone(),
                         }))
                         .unwrap();
                     self.channel_send

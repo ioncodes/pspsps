@@ -44,7 +44,7 @@ impl Cpu {
         }
 
         if let Some((delay_slot, branch_target)) = self.delay_slot.take() {
-            tracing::trace!(
+            tracing::debug!(
                 target: "psx_core::cpu", 
                 "{}", 
                 format!("Executing delay slot instruction: {}, with branch target: {:08X}", delay_slot, branch_target).yellow());

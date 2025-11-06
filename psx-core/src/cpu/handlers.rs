@@ -103,7 +103,11 @@ pub fn shift<const DIRECTION: ShiftDirection, const TYPE: ShiftType, const VARIA
         }
     };
 
-    let shift_amount = if VARIABLE { instr.rs() } else { instr.sa() } as u32;
+    let shift_amount = if VARIABLE {
+        cpu.registers[instr.rs() as usize] // TODO: is this correct?
+    } else {
+        instr.shamt() as u32
+    };
     let value = cpu.registers[instr.rt() as usize];
 
     let result = shift(value, shift_amount);
@@ -191,6 +195,11 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
         }
         AluOperation::Sub if !IMMEDIATE => cpu.registers[dst] = x.wrapping_sub(y),
         AluOperation::SetLessThan => cpu.registers[dst] = if x < y { 1 } else { 0 },
+        AluOperation::Multiply => {
+            let result = (x as i32).wrapping_mul(y as i32) as i64;
+            cpu.hi = (result >> 32) as u32;
+            cpu.lo = (result & 0xFFFFFFFF) as u32;
+        }
         _ => todo!(
             "Implement ALU operation: {:?}, unsigned: {}, immediate: {}",
             OPERATION,
@@ -250,13 +259,22 @@ pub fn move_multiply<
     const DIRECTION: MultiplyMoveDirection,
     const REGISTER: MultiplyMoveRegister,
 >(
-    _instr: &Instruction, _cpu: &mut Cpu, _mmu: &mut Mmu,
+    instr: &Instruction, cpu: &mut Cpu, _mmu: &mut Mmu,
 ) {
-    todo!(
-        "Implement move multiply operation with direction: {:?}, register: {:?}",
-        DIRECTION,
-        REGISTER
-    );
+    let value = match REGISTER {
+        MultiplyMoveRegister::Hi => cpu.hi,
+        MultiplyMoveRegister::Lo => cpu.lo,
+    };
+
+    match DIRECTION {
+        MultiplyMoveDirection::ToRegister => {
+            cpu.registers[instr.rd() as usize] = value;
+        }
+        MultiplyMoveDirection::FromRegister => match REGISTER {
+            MultiplyMoveRegister::Hi => cpu.hi = cpu.registers[instr.rs() as usize],
+            MultiplyMoveRegister::Lo => cpu.lo = cpu.registers[instr.rs() as usize],
+        },
+    }
 }
 
 pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu, _mmu: &mut Mmu) {

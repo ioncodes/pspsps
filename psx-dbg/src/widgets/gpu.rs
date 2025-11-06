@@ -1,6 +1,6 @@
 use crate::widgets::{SharedContext, Widget};
 use egui::Ui;
-use psx_core::gpu::{SCREEN_HEIGHT, SCREEN_WIDTH};
+use psx_core::gpu::{MAX_SCREEN_WIDTH, MAX_SCREEN_HEIGHT};
 
 pub struct GpuWidget {
     texture: Option<egui::TextureHandle>,
@@ -19,17 +19,24 @@ impl Widget for GpuWidget {
 
     fn ui(&mut self, ui: &mut Ui, shared_context: &mut SharedContext) {
         let frame = &shared_context.state.gpu.frame;
+        let width = shared_context.state.gpu.width;
+        let height = shared_context.state.gpu.height;
 
-        if frame.len() == SCREEN_WIDTH * SCREEN_HEIGHT {
-            let pixels: Vec<egui::Color32> = frame
-                .iter()
-                .map(|(r, g, b)| egui::Color32::from_rgb(*r, *g, *b))
-                .collect();
+        if frame.len() == MAX_SCREEN_WIDTH * MAX_SCREEN_HEIGHT && width > 0 && height > 0 {
+            // Crop the frame buffer to the actual display resolution
+            let mut cropped_pixels = Vec::with_capacity(width * height);
+            for y in 0..height {
+                for x in 0..width {
+                    let idx = y * MAX_SCREEN_WIDTH + x;
+                    let (r, g, b) = frame[idx];
+                    cropped_pixels.push(egui::Color32::from_rgb(r, g, b));
+                }
+            }
 
             let color_image = egui::ColorImage {
-                size: [SCREEN_WIDTH, SCREEN_HEIGHT],
-                pixels,
-                source_size: egui::Vec2::new(SCREEN_WIDTH as f32, SCREEN_HEIGHT as f32),
+                size: [width, height],
+                pixels: cropped_pixels,
+                source_size: egui::Vec2::new(width as f32, height as f32),
             };
 
             // Update or create texture with nearest neighbor filtering
@@ -44,10 +51,10 @@ impl Widget for GpuWidget {
             // Update the texture with new data
             texture.set(color_image, egui::TextureOptions::NEAREST);
 
-            // Display the image at 2x scale (512x480)
+            // Display the image at its actual resolution
             ui.image(egui::ImageSource::Texture(egui::load::SizedTexture::new(
                 texture.id(),
-                egui::vec2(SCREEN_WIDTH as f32, SCREEN_HEIGHT as f32) * 2.0,
+                egui::vec2(width as f32, height as f32),
             )));
         } else {
             ui.label("Waiting for GPU frame data...");

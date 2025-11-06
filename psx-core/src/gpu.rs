@@ -5,8 +5,8 @@ use crate::gpu::cmd::Gp0Command;
 use crate::gpu::gp::Gp;
 use crate::mmu::Addressable;
 
-pub const SCREEN_WIDTH: usize = 256;
-pub const SCREEN_HEIGHT: usize = 240;
+pub const MAX_SCREEN_WIDTH: usize = 640;
+pub const MAX_SCREEN_HEIGHT: usize = 480;
 
 pub const GP0_ADDRESS_START: u32 = 0x1F80_1810;
 pub const GP0_ADDRESS_END: u32 = 0x1F80_1813;
@@ -20,7 +20,7 @@ pub struct Gpu {
 
 impl Gpu {
     pub fn new() -> Self {
-        Self { gp: Gp::new(), internal_frame: vec![(0, 0, 0); SCREEN_WIDTH * SCREEN_HEIGHT] }
+        Self { gp: Gp::new(), internal_frame: vec![(0, 0, 0); MAX_SCREEN_WIDTH * MAX_SCREEN_HEIGHT] }
     }
 
     pub fn internal_frame(&self) -> &Vec<(u8, u8, u8)> {
@@ -31,8 +31,8 @@ impl Gpu {
         if let Some(parsed_cmd) = self.gp.pop_command() {
             match parsed_cmd.cmd {
                 Gp0Command::RectanglePrimitive(cmd) => {
-                    let x = parsed_cmd.data[cmd.vertex_idx()] & 0xFFFF;
-                    let y = (parsed_cmd.data[cmd.vertex_idx()] >> 16) & 0xFFFF;
+                    let x = (parsed_cmd.data[cmd.vertex_idx()] & 0xFFFF) as i16;
+                    let y = ((parsed_cmd.data[cmd.vertex_idx()] >> 16) & 0xFFFF) as i16;
 
                     let (width, height) = match cmd.size() {
                         0b00 => (
@@ -51,15 +51,29 @@ impl Gpu {
                         "Draw rectangle primitive"
                     );
 
-                    let idx = (y as usize * 256) + x as usize;
-                    for row in 0..height {
-                        for col in 0..width {
-                            let pixel_idx = idx + (row as usize * 256) + col as usize;
-                            if pixel_idx < self.internal_frame.len() {
-                                let r = (cmd.color() & 0xFF) as u8;
-                                let g = ((cmd.color() >> 8) & 0xFF) as u8;
-                                let b = ((cmd.color() >> 16) & 0xFF) as u8;
-                                self.internal_frame[pixel_idx] = (r, g, b);
+                    // coordinates can be negative, this is relative for primitives that go off-screen
+                    // but in case of 1x1 we can ignore them
+                    if x < 0 || y < 0 {
+                        return;
+                    }
+
+                    let (screen_width, screen_height) = self.gp.resolution();
+
+                    if (x as usize) < screen_width && (y as usize) < screen_height {
+                        // Use MAX_SCREEN_WIDTH for buffer indexing since internal_frame is always that size
+                        let idx = (y as usize * MAX_SCREEN_WIDTH) + x as usize;
+
+                        let r = (cmd.color() & 0xFF) as u8;
+                        let g = ((cmd.color() >> 8) & 0xFF) as u8;
+                        let b = ((cmd.color() >> 16) & 0xFF) as u8;
+
+                        for row in 0..height {
+                            for col in 0..width {
+                                let pixel_idx = idx + (row as usize * MAX_SCREEN_WIDTH) + col as usize;
+
+                                if pixel_idx < self.internal_frame.len() {
+                                    self.internal_frame[pixel_idx] = (r, g, b);
+                                }
                             }
                         }
                     }

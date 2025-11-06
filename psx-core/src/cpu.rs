@@ -1,7 +1,7 @@
 pub mod cop;
 pub mod decoder;
 pub mod handlers;
-mod internal;
+pub mod internal;
 pub mod lut;
 
 use colored::Colorize;

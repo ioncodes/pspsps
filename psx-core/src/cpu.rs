@@ -97,7 +97,20 @@ impl Cpu {
 
         self.cop0.epc = if !is_delay_slot { self.pc } else { self.pc - 4 };
         self.cop0.cause.set_exception_code(exception as u32); // Set the exception code
-        self.cop0.sr.set_current_interrupt_enable(false); // Disable interrupts
+
+        // Back up current state/bits
+        self.cop0
+            .sr
+            .set_old_interrupt_enable(self.cop0.sr.previous_interrupt_enable());
+        self.cop0.sr.set_old_mode(self.cop0.sr.previous_mode());
+        self.cop0
+            .sr
+            .set_previous_interrupt_enable(self.cop0.sr.current_interrupt_enable());
+        self.cop0.sr.set_previous_mode(self.cop0.sr.current_mode());
+
+        // Disable interrupts and enter kernel mode
+        self.cop0.sr.set_current_interrupt_enable(false);
+        self.cop0.sr.set_current_mode(false); // Enter kernel mode
 
         //   Exception     BEV=0         BEV=1
         //   Reset         BFC00000h     BFC00000h   (Reset)
@@ -114,10 +127,15 @@ impl Cpu {
     pub fn restore_from_exception(&mut self) {
         tracing::debug!(target: "psx_core::cpu", "Returning from exception");
 
+        // Restore pre-exception state
         self.cop0
             .sr
             .set_current_interrupt_enable(self.cop0.sr.previous_interrupt_enable());
         self.cop0.sr.set_current_mode(self.cop0.sr.previous_mode());
+        self.cop0
+            .sr
+            .set_previous_interrupt_enable(self.cop0.sr.old_interrupt_enable());
+        self.cop0.sr.set_previous_mode(self.cop0.sr.old_mode());
     }
 
     pub fn write_u8(&mut self, address: u32, value: u8) {

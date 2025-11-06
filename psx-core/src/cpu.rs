@@ -201,12 +201,15 @@ impl Cpu {
     #[inline(always)]
     pub fn schedule_load(&mut self, index: u8, value: u32) {
         if index != 0 {
-            // If there's a non-pending load delay, apply it now before scheduling the new one
-            // This handles back-to-back loads to different registers
+            // If there's a non-pending load to a DIFFERENT register, apply it now
+            // If it's to the SAME register, it gets cancelled (overwritten)
             if !self.load_delay_pending
                 && let Some((reg_idx, val)) = self.load_delay.take()
+                && reg_idx != index as usize
             {
-                self.registers[reg_idx] = val;
+                {
+                    self.registers[reg_idx] = val;
+                }
             }
 
             self.load_delay = Some((index as usize, value));

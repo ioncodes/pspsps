@@ -10,6 +10,7 @@ pub mod irq;
 pub mod mmu;
 pub mod psx;
 pub mod spu;
+pub mod sio;
 
 pub const fn regidx(register: &str) -> u8 {
     match register {
@@ -47,4 +48,10 @@ pub const fn regidx(register: &str) -> u8 {
         "$ra" => 31,
         _ => unreachable!(),
     }
+}
+
+pub(crate) const fn calc_addr(base: u32, n: u32, size: u32, boundary: u32) -> (u32, u32) {
+    let start = base + (n * boundary);
+    let end = start + size - 1;
+    (start, end)
 }

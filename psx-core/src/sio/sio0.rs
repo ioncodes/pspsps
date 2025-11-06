@@ -199,6 +199,8 @@ impl Bus16 for Sio0 {
     fn write_u16(&mut self, address: u32, value: u16) {
         match address {
             SIO0_TX_DATA_ADDR_START => {
+                // TODO: check DTR here too and do not send if not asserted?
+                
                 let tx_byte = value as u8;
 
                 // Immediately process TX and get RX response

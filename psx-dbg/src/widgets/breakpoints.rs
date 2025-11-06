@@ -68,9 +68,9 @@ impl Widget for BreakpointsWidget {
                         .expect("Failed to send remove breakpoint event");
                 }
 
-                // if ui.button("Show in Disassembly").clicked() {
-                //     *context.show_in_disassembly = Some(addr);
-                // }
+                if ui.button("Show in Disassembly").clicked() {
+                    *context.show_in_disassembly = Some(addr);
+                }
             });
         }
 

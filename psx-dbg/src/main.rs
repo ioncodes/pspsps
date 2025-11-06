@@ -64,6 +64,7 @@ pub struct PsxDebugger {
     dock_state: DockState<TabKind>,
     widgets: HashMap<TabKind, Box<dyn Widget>>,
     toasts: Toasts,
+    show_in_disassembly: Option<u32>,
 }
 
 impl Default for PsxDebugger {
@@ -124,6 +125,7 @@ impl PsxDebugger {
             toasts: Toasts::new()
                 .anchor(egui::Align2::RIGHT_BOTTOM, (-10.0, -10.0))
                 .direction(egui::Direction::BottomUp),
+            show_in_disassembly: None,
         }
     }
 }
@@ -197,6 +199,7 @@ impl eframe::App for PsxDebugger {
             widgets: &mut self.widgets,
             toasts: &mut self.toasts,
             state: &mut self.state,
+            show_in_disassembly: &mut self.show_in_disassembly,
         };
 
         DockArea::new(&mut self.dock_state).show(ctx, &mut tab_viewer);
@@ -212,6 +215,7 @@ struct TabViewer<'a> {
     widgets: &'a mut HashMap<TabKind, Box<dyn Widget>>,
     toasts: &'a mut Toasts,
     state: &'a mut states::State,
+    show_in_disassembly: &'a mut Option<u32>,
 }
 
 impl<'a> egui_dock::TabViewer for TabViewer<'a> {
@@ -231,6 +235,7 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
                 channel_send: self.channel_send,
                 state: self.state,
                 toasts: self.toasts,
+                show_in_disassembly: self.show_in_disassembly,
             };
             widget.ui(ui, &mut context);
         }

@@ -94,12 +94,12 @@ pub fn shift<const DIRECTION: ShiftDirection, const TYPE: ShiftType, const VARIA
     // TODO: op 0 technically is a NOP
 
     let shift = |x: u32, y: u32| match DIRECTION {
-        ShiftDirection::Left => x << y,
+        ShiftDirection::Left => x.wrapping_shl(y),
         ShiftDirection::Right => {
             if TYPE == ShiftType::Logical {
-                x >> y
+                x.wrapping_shr(y)
             } else {
-                (x as i32 >> y) as u32
+                (x as i32).wrapping_shr(y) as u32
             }
         }
     };

@@ -25,4 +25,5 @@ pub struct SharedContext<'a> {
     pub channel_send: &'a crossbeam_channel::Sender<DebuggerEvent>,
     pub state: &'a mut states::State,
     pub toasts: &'a mut Toasts,
+    pub show_in_disassembly: &'a mut Option<u32>,
 }

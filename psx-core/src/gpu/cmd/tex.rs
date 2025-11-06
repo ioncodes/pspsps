@@ -45,3 +45,32 @@ bitfield! {
     }
 }
 
+bitfield! {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub struct DrawingOffsetCommand(pub u32): Debug, FromStorage, IntoStorage, DerefStorage {
+        pub x_offset: u32 @ 0..=10,
+        pub y_offset: u32 @ 11..=21,
+        pub command: u32 @ 24..=31,
+    }
+}
+
+impl DrawingOffsetCommand {
+    pub fn x_offset_signed(&self) -> i32 {
+        let val = self.x_offset();
+        if val & 0x400 != 0 {
+            (val | 0xFFFFF800) as i32
+        } else {
+            val as i32
+        }
+    }
+
+    pub fn y_offset_signed(&self) -> i32 {
+        let val = self.y_offset();
+        if val & 0x400 != 0 {
+            (val | 0xFFFFF800) as i32
+        } else {
+            val as i32
+        }
+    }
+}
+

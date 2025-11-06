@@ -7,7 +7,8 @@ pub mod status;
 use crate::gpu::cmd::poly::DrawPolygonCommand;
 use crate::gpu::cmd::rect::DrawRectangleCommand;
 use crate::gpu::cmd::tex::{
-    DrawModeSettingCommand, DrawingAreaBottomRightCommand, DrawingAreaTopLeftCommand, TextureWindowSettingCommand,
+    DrawModeSettingCommand, DrawingAreaBottomRightCommand, DrawingAreaTopLeftCommand, 
+    DrawingOffsetCommand, TextureWindowSettingCommand,
 };
 use crate::gpu::cmd::Gp0Command;
 use crate::gpu::gp::{Gp, ParsedCommand};
@@ -26,6 +27,8 @@ pub struct Gpu {
     pub drawing_area_y1: u32,
     pub drawing_area_x2: u32,
     pub drawing_area_y2: u32,
+    pub drawing_offset_x: i32,
+    pub drawing_offset_y: i32,
 }
 
 impl Gpu {
@@ -37,6 +40,8 @@ impl Gpu {
             drawing_area_y1: 0,
             drawing_area_x2: VRAM_WIDTH as u32,
             drawing_area_y2: VRAM_HEIGHT as u32,
+            drawing_offset_x: 0,
+            drawing_offset_y: 0,
         }
     }
 
@@ -120,11 +125,9 @@ impl Gpu {
             "Draw rectangle primitive"
         );
 
-        // coordinates can be negative, this is relative for primitives that go off-screen
-        if x < 0 || y < 0 {
-            tracing::error!(target: "psx_core::gpu", "Negative coordinates found. Ignoring rectangle.");
-            return;
-        }
+        // Apply drawing offset
+        let x = x + self.drawing_offset_x as i16;
+        let y = y + self.drawing_offset_y as i16;
 
         if cmd.textured() {
             let uv = outer_cmd.data[cmd.uv_idx()];
@@ -156,36 +159,38 @@ impl Gpu {
 
             for row in 0..height {
                 for col in 0..width {
-                    let vram_x = x as usize + col as usize;
-                    let vram_y = y as usize + row as usize;
+                    let screen_x = x as i32 + col as i32;
+                    let screen_y = y as i32 + row as i32;
 
-                    // within drawing area?
-                    if vram_x < self.drawing_area_x1 as usize
-                        || vram_x >= self.drawing_area_x2 as usize
-                        || vram_y < self.drawing_area_y1 as usize
-                        || vram_y >= self.drawing_area_y2 as usize
+                    // Check drawing area bounds
+                    if screen_x < self.drawing_area_x1 as i32
+                        || screen_x >= self.drawing_area_x2 as i32
+                        || screen_y < self.drawing_area_y1 as i32
+                        || screen_y >= self.drawing_area_y2 as i32
                     {
                         continue;
                     }
 
-                    if vram_x < VRAM_WIDTH && vram_y < VRAM_HEIGHT {
-                        let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
-                        let bytes = pixel_value.to_le_bytes();
-                        self.gp.vram[vram_idx] = bytes[0];
-                        self.gp.vram[vram_idx + 1] = bytes[1];
-                    }
+                    // Wrap coordinates to VRAM dimensions
+                    let vram_x = (screen_x & (VRAM_WIDTH as i32 - 1)) as usize; // Wrap at 1024
+                    let vram_y = (screen_y & (VRAM_HEIGHT as i32 - 1)) as usize; // Wrap at 512
+
+                    let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
+                    let bytes = pixel_value.to_le_bytes();
+                    self.gp.vram[vram_idx] = bytes[0];
+                    self.gp.vram[vram_idx + 1] = bytes[1];
                 }
             }
         }
     }
 
     fn process_polygon_primitive_cmd(&mut self, parsed_cmd: ParsedCommand, cmd: DrawPolygonCommand) {
-        // extract vertex coordinates for all vertices
+        // extract vertex coordinates for all vertices and apply drawing offset
         let vertices: Vec<(i16, i16)> = (0..cmd.vertex_count())
             .map(|i| {
                 let data = parsed_cmd.data[cmd.vertex_idx(i)];
-                let x = (data & 0xFFFF) as i16;
-                let y = ((data >> 16) & 0xFFFF) as i16;
+                let x = (data & 0xFFFF) as i16 + self.drawing_offset_x as i16;
+                let y = ((data >> 16) & 0xFFFF) as i16 + self.drawing_offset_y as i16;
                 (x, y)
             })
             .collect();
@@ -261,13 +266,15 @@ impl Gpu {
             let x = dest_x as usize + (pixel_idx % width);
             let y = dest_y as usize + (pixel_idx / width);
 
-            if x < VRAM_WIDTH && y < VRAM_HEIGHT {
-                let vram_idx = (y * VRAM_WIDTH + x) * 2;
-                let bytes = pixel.to_le_bytes();
-                self.gp.vram[vram_idx] = bytes[0];
-                self.gp.vram[vram_idx + 1] = bytes[1];
-                pixel_idx += 1;
-            }
+            // Wrap coordinates to VRAM dimensions
+            let vram_x = x & (VRAM_WIDTH - 1);
+            let vram_y = y & (VRAM_HEIGHT - 1);
+
+            let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
+            let bytes = pixel.to_le_bytes();
+            self.gp.vram[vram_idx] = bytes[0];
+            self.gp.vram[vram_idx + 1] = bytes[1];
+            pixel_idx += 1;
         };
 
         for word_idx in 2..parsed_cmd.data.len() {
@@ -369,6 +376,17 @@ impl Gpu {
                     x2 = self.drawing_area_x2,
                     y2 = self.drawing_area_y2,
                     "Set drawing area"
+                );
+            }
+            0xE5 => {
+                let cmd = DrawingOffsetCommand(parsed_cmd.raw);
+                self.drawing_offset_x = cmd.x_offset_signed();
+                self.drawing_offset_y = cmd.y_offset_signed();
+                tracing::debug!(
+                    target: "psx_core::gpu",
+                    x_offset = self.drawing_offset_x,
+                    y_offset = self.drawing_offset_y,
+                    "Set drawing offset"
                 );
             }
             _ => {

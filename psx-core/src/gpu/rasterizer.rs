@@ -121,10 +121,9 @@ pub fn rasterize_rectangle(
                 continue;
             }
 
-            // Check VRAM bounds
-            if screen_x < 0 || screen_x >= VRAM_WIDTH as i32 || screen_y < 0 || screen_y >= VRAM_HEIGHT as i32 {
-                continue;
-            }
+            // Wrap coordinates to VRAM dimensions
+            let vram_x = (screen_x & (VRAM_WIDTH as i32 - 1)) as usize;
+            let vram_y = (screen_y & (VRAM_HEIGHT as i32 - 1)) as usize;
 
             // Calculate texture coordinates with wrapping
             let u = (u_base as i32 + col as i32) & 0xFF;
@@ -159,7 +158,7 @@ pub fn rasterize_rectangle(
             }
 
             // Write pixel to VRAM
-            let vram_idx = (screen_y as usize * VRAM_WIDTH + screen_x as usize) * 2;
+            let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
             let bytes = pixel.to_le_bytes();
             vram[vram_idx] = bytes[0];
             vram[vram_idx + 1] = bytes[1];
@@ -240,8 +239,12 @@ fn rasterize_triangle(
                     continue;
                 }
 
+                // Wrap coordinates to VRAM dimensions
+                let vram_x = (x & (VRAM_WIDTH as i32 - 1)) as usize;
+                let vram_y = (y & (VRAM_HEIGHT as i32 - 1)) as usize;
+
                 // Push to VRAM
-                let vram_idx = ((y as usize) * 1024 + (x as usize)) * 2;
+                let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
                 let bytes = pixel.to_le_bytes();
                 vram[vram_idx] = bytes[0];
                 vram[vram_idx + 1] = bytes[1];

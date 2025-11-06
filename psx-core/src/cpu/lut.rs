@@ -982,7 +982,7 @@ pub static COP_REGISTER_NAME_LUT: [&str; 16] = [
 
 // GTE Data Registers (cop2r0-31)
 pub static GTE_DATA_REGISTER_NAME_LUT: [&str; 32] = [
-    "vxy0", "vz0", "vxy1", "vz1", "vxy2", "vz2", "rgbc", "otz", "ir0", "ir1", "ir2", "ir3", "sxy0", "sxy1", "sxy2",
+    "v0_xy", "v0_z", "v1_xy", "v1_z", "v2_xy", "v2_z", "rgbc", "otz", "ir0", "ir1", "ir2", "ir3", "sxy0", "sxy1", "sxy2",
     "sxyp", "sz0", "sz1", "sz2", "sz3", "rgb0", "rgb1", "rgb2", "res1", "mac0", "mac1", "mac2", "mac3", "irgb", "orgb",
     "lzcs", "lzcr",
 ];

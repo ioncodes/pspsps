@@ -26,7 +26,7 @@ memory_address = { (hex_immediate | decimal_immediate | offset) ~ "(" ~ cpu_regi
 cpu_register = @{ "$" ~ (ASCII_ALPHA | ASCII_DIGIT)+ }
 
 // GTE/COP2 register: lowercase alphanumeric without $
-cop_register = @{ ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT)+ }
+cop_register = @{ ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT | "_")+ }
 
 // Hex immediate: 0xHEX
 hex_immediate = @{ "0x" ~ ASCII_HEX_DIGIT+ }

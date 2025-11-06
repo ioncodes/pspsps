@@ -13,7 +13,7 @@ impl Default for MmuState {
 }
 
 impl Addressable for MmuState {
-    fn read_u8(&self, address: u32) -> u8 {
+    fn read_u8(&mut self, address: u32) -> u8 {
         let address = Self::canonicalize_virtual_address(address);
         self.data[address as usize]
     }

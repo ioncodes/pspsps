@@ -25,7 +25,7 @@ impl Mmu {
 
 impl Addressable for Mmu {
     #[inline(always)]
-    fn read_u8(&self, address: u32) -> u8 {
+    fn read_u8(&mut self, address: u32) -> u8 {
         let address = Self::canonicalize_virtual_address(address);
 
         match address {
@@ -57,16 +57,16 @@ impl Addressable for Mmu {
 }
 
 pub trait Addressable {
-    fn read_u8(&self, address: u32) -> u8;
+    fn read_u8(&mut self, address: u32) -> u8;
     fn write_u8(&mut self, address: u32, value: u8);
 
     #[inline(always)]
-    fn read_u16(&self, address: u32) -> u16 {
+    fn read_u16(&mut self, address: u32) -> u16 {
         u16::from_le_bytes([self.read_u8(address), self.read_u8(address + 1)])
     }
 
     #[inline(always)]
-    fn read_u32(&self, address: u32) -> u32 {
+    fn read_u32(&mut self, address: u32) -> u32 {
         u32::from_le_bytes([
             self.read_u8(address),
             self.read_u8(address + 1),

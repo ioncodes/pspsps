@@ -6,7 +6,8 @@ pub mod lut;
 
 use crate::cpu::cop::cop0::{Cop0, Exception};
 use crate::cpu::decoder::Instruction;
-use crate::mmu::{Addressable, Mmu};
+use crate::mmu::Mmu;
+use crate::mmu::bus::{Bus8 as _, Bus16 as _, Bus32 as _};
 
 pub struct Cpu {
     pub pc: u32,

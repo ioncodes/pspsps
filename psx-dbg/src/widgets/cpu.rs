@@ -8,7 +8,7 @@ use egui_toast::{Toast, ToastKind};
 use psx_core::cpu::cop::Cop;
 use psx_core::cpu::cop::cop0::{COP0_SR, Exception};
 use psx_core::cpu::decoder::Instruction;
-use psx_core::mmu::Addressable;
+use psx_core::mmu::bus::Bus32 as _;
 use std::time::Duration;
 
 const INSTRUCTIONS_TO_DISPLAY: usize = 128;

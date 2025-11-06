@@ -1,6 +1,6 @@
 use super::{SharedContext, Widget};
 use egui::Ui;
-use psx_core::mmu::Addressable;
+use psx_core::mmu::bus::Bus8 as _;
 
 const ROWS_TO_DISPLAY: u32 = 128;
 

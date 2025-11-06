@@ -3,7 +3,7 @@ pub mod gp;
 
 use crate::gpu::cmd::{DrawRectangleCommand, Gp0Command};
 use crate::gpu::gp::{Gp, ParsedCommand};
-use crate::mmu::Addressable;
+use crate::mmu::bus::Bus32;
 
 pub const VRAM_WIDTH: usize = 1024;
 pub const VRAM_HEIGHT: usize = 512;
@@ -141,14 +141,14 @@ impl Gpu {
     }
 }
 
-impl Addressable for Gpu {
+impl Bus32 for Gpu {
     #[inline(always)]
-    fn read_u8(&mut self, address: u32) -> u8 {
-        self.gp.read_u8(address)
+    fn read_u32(&mut self, address: u32) -> u32 {
+        self.gp.read_u32(address)
     }
 
     #[inline(always)]
-    fn write_u8(&mut self, address: u32, value: u8) {
-        self.gp.write_u8(address, value);
+    fn write_u32(&mut self, address: u32, value: u32) {
+        self.gp.write_u32(address, value);
     }
 }

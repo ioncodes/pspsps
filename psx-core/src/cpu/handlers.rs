@@ -352,7 +352,7 @@ pub fn load_store<
             } else {
                 cpu.read_u8(vaddr) as u32 // Zero-extend
             };
-            cpu.write_register(instr.rt(), value);
+            cpu.schedule_load(instr.rt(), value);
             cpu.add_cycles(2);
         }
         MemoryTransferSize::Byte if TYPE == MemoryAccessType::Store => {
@@ -370,7 +370,7 @@ pub fn load_store<
             } else {
                 cpu.read_u16(vaddr) as u32 // Zero-extend
             };
-            cpu.write_register(instr.rt(), value);
+            cpu.schedule_load(instr.rt(), value);
             cpu.add_cycles(2);
         }
         MemoryTransferSize::HalfWord if TYPE == MemoryAccessType::Store => {
@@ -391,7 +391,7 @@ pub fn load_store<
             }
 
             let value = cpu.read_u32(vaddr);
-            cpu.write_register(instr.rt(), value);
+            cpu.schedule_load(instr.rt(), value);
             cpu.add_cycles(2);
         }
         MemoryTransferSize::Word
@@ -417,7 +417,7 @@ pub fn load_store<
                 MemoryAccessPortion::Right => 4 - Mmu::word_align(vaddr),
                 _ => unreachable!(),
             };
-            let mut register_value = cpu.read_register(instr.rt());
+            let mut register_value = cpu.read_register_with_pending_load(instr.rt()); // LWL/LWR can read from pending load delays
 
             for idx in 0..bytes_to_read {
                 let shift = match PORTION {
@@ -437,7 +437,7 @@ pub fn load_store<
                 register_value = (register_value & !mask) | ((value as u32) << shift);
             }
 
-            cpu.write_register(instr.rt(), register_value);
+            cpu.schedule_load(instr.rt(), register_value);
             cpu.add_cycles(2);
         }
         MemoryTransferSize::Word
@@ -503,7 +503,7 @@ pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu) {
             cpu.add_cycles(1);
         }
         CopOperation::MoveFrom | CopOperation::MoveControlFrom => {
-            cpu.write_register(instr.rt(), cpu.cop0.read_register(instr.rd() as u32));
+            cpu.schedule_load(instr.rt(), cpu.cop0.read_register(instr.rd() as u32));
             cpu.add_cycles(2);
         }
         CopOperation::ReturnFromException => {

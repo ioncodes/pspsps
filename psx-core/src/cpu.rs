@@ -8,17 +8,15 @@ use crate::cpu::cop::cop0::{Cop0, Exception};
 use crate::cpu::decoder::Instruction;
 use crate::mmu::{Addressable, Mmu};
 
-type RegisterValue = u32;
-type RegisterIndex = usize;
-
 pub struct Cpu {
     pub pc: u32,
-    pub registers: [RegisterValue; 32],
+    pub registers: [u32; 32],
     pub hi: u32,
     pub lo: u32,
-    pub load_delay: Option<(RegisterIndex, RegisterValue)>, // Loads are delayed by one instruction
+    pub load_delay: Option<(usize, u32)>, // Loads are delayed by one instruction
+    pub load_delay_pending: bool,         // True if load_delay was just scheduled this instruction
     pub delay_slot: Option<(Instruction, u32)>, // Delay slot (instruction, branch destination)
-    pub cop0: Cop0,                             // COP0 registers
+    pub cop0: Cop0,                       // COP0 registers
     pub mmu: Mmu,
     pub cycles: usize,      // Number of cycles executed
     exception_raised: bool, // Indicates if an exception has been raised
@@ -32,6 +30,7 @@ impl Cpu {
             hi: 0,
             lo: 0,
             load_delay: None,
+            load_delay_pending: false,
             delay_slot: None,
             cop0: Cop0::new(),
             mmu: Mmu::new(),
@@ -61,6 +60,9 @@ impl Cpu {
             delay_slot.is_delay_slot = true; // Mark as a delay slot instruction
             (delay_slot.handler)(&delay_slot, self);
 
+            // Process pending load, or mark it for the next instruction
+            self.process_pending_load();
+
             self.pc = branch_target; // Set PC to the scheduled branch address
 
             return Ok(delay_slot);
@@ -75,6 +77,9 @@ impl Cpu {
         tracing::trace!(target: "psx_core::cpu", "{:08X}: [{:08X}] {: <30}", self.pc, instr.raw, format!("{}", instr));
 
         (instr.handler)(&instr, self);
+
+        // Process pending load, or mark it for the next instruction
+        self.process_pending_load();
 
         // Do not progress PC if we just raised an exception
         if self.exception_raised {
@@ -175,14 +180,51 @@ impl Cpu {
     }
 
     #[inline(always)]
-    pub fn write_register(&mut self, index: u8, value: RegisterValue) {
+    pub fn write_register(&mut self, index: u8, value: u32) {
         if index != 0 {
+            if let Some((load_reg, _)) = self.load_delay
+                && load_reg == index as usize
+            {
+                self.load_delay = None;
+                self.load_delay_pending = false;
+            }
+
             self.registers[index as usize] = value;
         }
     }
 
     #[inline(always)]
-    pub fn read_register(&self, index: u8) -> RegisterValue {
+    pub fn read_register(&self, index: u8) -> u32 {
+        self.registers[index as usize]
+    }
+
+    #[inline(always)]
+    pub fn schedule_load(&mut self, index: u8, value: u32) {
+        if index != 0 {
+            // If there's a non-pending load delay, apply it now before scheduling the new one
+            // This handles back-to-back loads to different registers
+            if !self.load_delay_pending
+                && let Some((reg_idx, val)) = self.load_delay.take()
+            {
+                self.registers[reg_idx] = val;
+            }
+
+            self.load_delay = Some((index as usize, value));
+            self.load_delay_pending = true; // Mark as freshly scheduled
+        }
+    }
+
+    #[inline(always)]
+    pub fn read_register_with_pending_load(&self, index: u8) -> u32 {
+        // Read a register, including any pending load delay value
+        // This is used by LWL/LWR instructions which can read pending loads
+
+        if let Some((load_reg, load_value)) = self.load_delay
+            && load_reg == index as usize
+        {
+            return load_value;
+        }
+
         self.registers[index as usize]
     }
 
@@ -206,6 +248,17 @@ impl Cpu {
             Instruction::decode(self.mmu.read_u32(self.pc + 4)),
             branch_target,
         ));
+    }
+
+    #[inline(always)]
+    fn process_pending_load(&mut self) {
+        if !self.load_delay_pending
+            && let Some((reg_idx, value)) = self.load_delay.take()
+        {
+            self.registers[reg_idx] = value;
+        } else {
+            self.load_delay_pending = false;
+        }
     }
 }
 

@@ -12,7 +12,7 @@ pub struct Cpu {
 impl Cpu {
     pub fn new() -> Self {
         Self {
-            pc: 0x80000000,
+            pc: 0,
             registers: [0; 32],
             hi: 0,
             lo: 0,

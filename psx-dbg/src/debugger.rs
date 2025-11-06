@@ -22,21 +22,24 @@ pub struct Debugger {
     trace: VecDeque<(u32, Instruction)>,
     breakpoints: HashSet<u32>,
     sideload_exe: Option<Vec<u8>>,
+    bios: Vec<u8>,
     cycle_counter: u32,
 }
 
-static BIOS: &[u8] = include_bytes!("../../bios/SCPH1000.BIN");
-
 impl Debugger {
-    pub fn new(channel_send: Sender<DebuggerEvent>, channel_recv: Receiver<DebuggerEvent>) -> Self {
+    pub fn new(bios_path: String, channel_send: Sender<DebuggerEvent>, channel_recv: Receiver<DebuggerEvent>) -> Self {
+        let bios = std::fs::read(&bios_path)
+            .unwrap_or_else(|e| panic!("Failed to read BIOS file '{}': {}", bios_path, e));
+
         Self {
-            psx: Psx::new(BIOS),
+            psx: Psx::new(&bios),
             channel_send,
             channel_recv,
             is_running: false,
             trace: VecDeque::with_capacity(1000),
             breakpoints: HashSet::new(),
             sideload_exe: None,
+            bios,
             cycle_counter: 0,
         }
     }
@@ -181,7 +184,7 @@ impl Debugger {
                         .unwrap();
                 }
                 DebuggerEvent::Reset => {
-                    self.psx = Psx::new(BIOS);
+                    self.psx = Psx::new(&self.bios);
                     self.psx.sideload_exe(
                         self.sideload_exe
                             .take()

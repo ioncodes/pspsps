@@ -16,7 +16,6 @@ pub struct Mmu {
     pub gpu: Gpu,
     pub dma: Dma,
     pub irq: Irq,
-    random_timer: u32,
 }
 
 impl Mmu {
@@ -28,7 +27,6 @@ impl Mmu {
             gpu: Gpu::new(),
             dma: Dma::new(),
             irq: Irq::new(),
-            random_timer: 0,
         }
     }
 
@@ -333,10 +331,7 @@ impl bus::Bus32 for Mmu {
     fn read_u32(&mut self, address: u32) -> u32 {
         let address = Self::canonicalize_virtual_address(address);
         match address {
-            0x1F801100..=0x1F80112F => {
-                self.random_timer = self.random_timer.wrapping_add(1);
-                self.random_timer
-            }
+            0x1F801100..=0x1F80112F => 0xFF, // TODO: always return 0xFF for these (timers?). helps with getting to shell
             DMA0_ADDRESS_START..=DMA_INTERRUPT_REGISTER_ADDRESS_END => self.dma.read_u32(address),
             GP0_ADDRESS_START..=GP0_ADDRESS_END => self.gpu.read_u32(address),
             GP1_ADDRESS_START..=GP1_ADDRESS_END => self.gpu.read_u32(address),

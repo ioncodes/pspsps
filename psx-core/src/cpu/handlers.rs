@@ -183,7 +183,15 @@ pub fn alu<const OPERATION: AluOperation, const UNSIGNED: bool, const IMMEDIATE:
 
     let x = cpu.read_register(instr.rs());
     let y = if IMMEDIATE {
-        instr.immediate() as u32
+        // Sign-extend for arithmetic operations, zero-extend for logical
+        match OPERATION {
+            AluOperation::Add | AluOperation::Sub | AluOperation::SetLessThan => {
+                instr.immediate() as i16 as i32 as u32  // Sign-extend
+            }
+            _ => {
+                instr.immediate() as u32  // Zero-extend for logical ops
+            }
+        }
     } else {
         cpu.read_register(instr.rt())
     };

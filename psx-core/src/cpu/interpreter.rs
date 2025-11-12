@@ -86,5 +86,5 @@ pub enum CopOperation {
     MoveControlFrom,
     ReturnFromException,
     LoadWordTo,
-    StoreWordFrom,
+    StoreWordFrom
 }

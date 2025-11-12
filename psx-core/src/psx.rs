@@ -49,8 +49,15 @@ impl Psx {
         {
             self.cpu.mmu.load(exe.map_address, &exe.data);
             self.cpu.write_register(28, exe.initial_gp);
-            self.cpu.write_register(29, exe.sp());
-            self.cpu.write_register(30, exe.fp());
+            
+            if exe.initial_sp != 0 {
+                self.cpu.write_register(29, exe.sp());
+            }
+
+            if exe.initial_fp != 0 {
+                self.cpu.write_register(30, exe.fp());
+            }            
+
             self.cpu.pc = exe.entry_point;
 
             tracing::debug!(

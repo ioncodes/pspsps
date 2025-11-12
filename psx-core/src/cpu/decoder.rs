@@ -515,41 +515,24 @@ impl Instruction {
         }
     }
 
-    fn fmt_gte_sf(&self) -> &'static str {
-        if self.gte_sf() { "sf" } else { "" }
+    fn fmt_gte_sf(&self) -> String {
+        if self.gte_sf() { "sf".to_string() } else { "".to_string() }
     }
 
-    fn fmt_gte_lm(&self) -> &'static str {
-        if self.gte_lm() { "lm" } else { "" }
+    fn fmt_gte_lm(&self) -> String {
+        if self.gte_lm() { "lm".to_string() } else { "".to_string() }
     }
 
-    fn fmt_gte_mx(&self) -> &'static str {
-        match self.gte_mx() {
-            0 => "rt",
-            1 => "llm",
-            2 => "lcm",
-            _ => "???",
-        }
+    fn fmt_gte_mx(&self) -> String {
+        format!("m={}", self.gte_mx())
     }
 
-    fn fmt_gte_v(&self) -> &'static str {
-        match self.gte_v() {
-            0 => "v0",
-            1 => "v1",
-            2 => "v2",
-            3 => "ir",
-            _ => "???",
-        }
+    fn fmt_gte_v(&self) -> String {
+        format!("v={}", self.gte_v())
     }
 
-    fn fmt_gte_cv(&self) -> &'static str {
-        match self.gte_cv() {
-            0 => "tr",
-            1 => "bk",
-            2 => "fc",
-            3 => "none",
-            _ => "???",
-        }
+    fn fmt_gte_cv(&self) -> String {
+        format!("t={}", self.gte_cv())
     }
 
     fn fmt_gte_data(&self) -> String {
@@ -666,7 +649,7 @@ impl Instruction {
             Opcode::GteOp => "@sf @lm",
             Opcode::GteDpcs => "@sf @lm",
             Opcode::GteIntpl => "@sf @lm",
-            Opcode::GteMvmva => "@mx @v @cv @sf @lm",
+            Opcode::GteMvmva => "@sf @mx @v @cv",
             Opcode::GteNcds => "@sf @lm",
             Opcode::GteCdp => "@sf @lm",
             Opcode::GteNcdt => "@sf @lm",

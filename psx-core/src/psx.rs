@@ -47,7 +47,7 @@ impl Psx {
         if let Some(exe) = &self.sideload_exe
             && self.cpu.pc == PSX_SIDELOAD_EXE_ADDRESS
         {
-            self.cpu.mmu.load(exe.entry_point, &exe.data);
+            self.cpu.mmu.load(exe.map_address, &exe.data);
             self.cpu.write_register(28, exe.initial_gp);
             self.cpu.write_register(29, exe.sp());
             self.cpu.write_register(30, exe.fp());

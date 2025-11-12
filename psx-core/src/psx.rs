@@ -49,14 +49,14 @@ impl Psx {
         {
             self.cpu.mmu.load(exe.map_address, &exe.data);
             self.cpu.write_register(28, exe.initial_gp);
-            
+
             if exe.initial_sp != 0 {
                 self.cpu.write_register(29, exe.sp());
             }
 
             if exe.initial_fp != 0 {
                 self.cpu.write_register(30, exe.fp());
-            }            
+            }
 
             self.cpu.pc = exe.entry_point;
 
@@ -97,7 +97,7 @@ impl Psx {
         let scanline_position = self.cycles % CYCLES_PER_SCANLINE;
         let is_hblank = scanline_position >= (CYCLES_PER_SCANLINE - HBLANK_CYCLES);
         let is_vblank = self.cycles >= NTSC_VBLANK_DURATION;
-        
+
         let (tmr0_irq, tmr1_irq, tmr2_irq) = self.cpu.mmu.timers.tick(cycles, is_hblank, is_vblank);
         if tmr0_irq {
             self.cpu.mmu.irq.status.set_tmr0(true);

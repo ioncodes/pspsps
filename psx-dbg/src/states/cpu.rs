@@ -5,6 +5,7 @@ pub struct CpuState {
     pub hi: u32,
     pub lo: u32,
     pub cop0: psx_core::cpu::cop::cop0::Cop0,
+    pub cop2: psx_core::cpu::cop::cop2::Cop2,
 }
 
 impl Default for CpuState {
@@ -15,6 +16,7 @@ impl Default for CpuState {
             hi: 0,
             lo: 0,
             cop0: psx_core::cpu::cop::cop0::Cop0::new(),
+            cop2: psx_core::cpu::cop::cop2::Cop2::new(),
         }
     }
 }

@@ -1,16 +1,14 @@
-use super::{SharedContext, Widget};
 use super::instruction_renderer::render_instruction;
+use super::{SharedContext, Widget};
+use crate::colors::*;
 use crate::io::DebuggerEvent;
-use egui::{CollapsingHeader, RichText, Ui};
+use egui::{RichText, Ui};
 use egui_toast::{Toast, ToastKind};
-use psx_core::cpu::cop::Cop;
-use psx_core::cpu::cop::cop0::{COP0_SR, Exception};
 use psx_core::cpu::decoder::Instruction;
 use psx_core::mmu::bus::{Bus8, Bus32 as _};
 use rayon::prelude::*;
 use std::io::Write as _;
 use std::time::Duration;
-use crate::colors::*;
 
 const INSTRUCTIONS_TO_DISPLAY: usize = 128;
 
@@ -157,11 +155,14 @@ impl Widget for CpuWidget {
         // Helper closure to render a register with change highlighting
         let render_reg = |ui: &mut Ui, name: &str, idx: usize| {
             let changed = context.state.cpu.registers[idx] != context.state.previous_cpu.registers[idx];
-            let text = format!("{}: {:08X}", name, context.state.cpu.registers[idx]);
+            let name_text = RichText::new(format!("{}:", name)).strong().monospace();
+            let value_text = RichText::new(format!(" {:08X}", context.state.cpu.registers[idx])).monospace();
+
+            ui.label(name_text);
             if changed {
-                ui.colored_label(egui::Color32::from_rgb(255, 150, 150), RichText::new(text).monospace());
+                ui.colored_label(egui::Color32::from_rgb(255, 150, 150), value_text);
             } else {
-                ui.label(RichText::new(text).monospace());
+                ui.label(value_text);
             }
         };
 
@@ -243,65 +244,28 @@ impl Widget for CpuWidget {
             let hi_changed = context.state.cpu.hi != context.state.previous_cpu.hi;
             let lo_changed = context.state.cpu.lo != context.state.previous_cpu.lo;
 
+            let hi_name = RichText::new("$hi:").strong().monospace();
+            let hi_value = RichText::new(format!(" {:08X}", context.state.cpu.hi)).monospace();
+
+            ui.label(hi_name);
             if hi_changed {
-                ui.colored_label(
-                    COLOR_DIRTY,
-                    RichText::new(format!("$hi: {:08X}", context.state.cpu.hi)).monospace(),
-                );
+                ui.colored_label(COLOR_DIRTY, hi_value);
             } else {
-                ui.label(RichText::new(format!("$hi: {:08X}", context.state.cpu.hi)).monospace());
+                ui.label(hi_value);
             }
 
             ui.label("  ");
 
+            let lo_name = RichText::new("$lo:").strong().monospace();
+            let lo_value = RichText::new(format!(" {:08X}", context.state.cpu.lo)).monospace();
+
+            ui.label(lo_name);
             if lo_changed {
-                ui.colored_label(
-                    COLOR_DIRTY,
-                    RichText::new(format!("$lo: {:08X}", context.state.cpu.lo)).monospace(),
-                );
+                ui.colored_label(COLOR_DIRTY, lo_value);
             } else {
-                ui.label(RichText::new(format!("$lo: {:08X}", context.state.cpu.lo)).monospace());
+                ui.label(lo_value);
             }
         });
-
-        ui.separator();
-
-        CollapsingHeader::new("COP0 Registers")
-            .default_open(true)
-            .show(ui, |ui| {
-                CollapsingHeader::new("Status Register")
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        ui.monospace(format!("SR: {:08X}", context.state.cpu.cop0.read_register(COP0_SR as u8)));
-                        ui.monospace(format!(
-                            "Isolate Cache: {}",
-                            if context.state.cpu.cop0.sr.isolate_cache() {
-                                "Yes"
-                            } else {
-                                "No"
-                            }
-                        ));
-                        ui.monospace(format!("Exception PC: {:08X}", context.state.cpu.cop0.epc));
-                    });
-                CollapsingHeader::new("Cause Register")
-                    .default_open(true)
-                    .show(ui, |ui| {
-                        ui.monospace(format!("Cause: {:08X}", context.state.cpu.cop0.read_register(13)));
-                        ui.monospace(format!(
-                            "Exception Code: {} ({:08X})",
-                            Exception::from(context.state.cpu.cop0.cause.exception_code()),
-                            context.state.cpu.cop0.cause.exception_code()
-                        ));
-                        ui.monospace(format!(
-                            "Software Interrupts: {}",
-                            context.state.cpu.cop0.cause.software_interrupts()
-                        ));
-                        ui.monospace(format!(
-                            "Interrupt Pending: {}",
-                            context.state.cpu.cop0.cause.interrupt_pending()
-                        ));
-                    });
-            });
 
         ui.separator();
 
@@ -346,15 +310,21 @@ impl Widget for CpuWidget {
             let has_breakpoint = context.state.breakpoints.breakpoints.contains(&addr);
             let is_pc = addr == context.state.cpu.pc;
 
-            let response = ui
-                .horizontal(|ui| {
-                    // Render the colorized instruction
+            let (rect, response) = ui.allocate_exact_size(
+                egui::vec2(ui.available_width(), ui.spacing().interact_size.y),
+                egui::Sense::click(),
+            );
+
+            if ui.is_rect_visible(rect) {
+                let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+                child_ui.horizontal(|ui| {
                     render_instruction(ui, addr, &instr, is_pc, has_breakpoint);
-                })
-                .response
-                .on_hover_text(
-                    RichText::new(format!(
-                        "Raw: {:08X}\n\
+                });
+            }
+
+            let response = response.on_hover_text(
+                RichText::new(format!(
+                    "Raw: {:08X}\n\
                      Opcode: {}\n\
                      op: {:02X}\n\
                      rs: {:02X}\n\
@@ -364,22 +334,21 @@ impl Widget for CpuWidget {
                      funct: {:02X}\n\
                      imm: {:04X}\n\
                      offset: {}\n\
-                     address: {:08X}\n\
-                     Click to toggle breakpoint",
-                        instr.raw,
-                        instr.opcode,
-                        instr.op(),
-                        instr.rs(),
-                        instr.rt(),
-                        instr.rd(),
-                        instr.shamt(),
-                        instr.funct(),
-                        instr.immediate(),
-                        instr.offset(),
-                        instr.address()
-                    ))
-                    .monospace(),
-                );
+                     address: {:08X}\n",
+                    instr.raw,
+                    instr.opcode,
+                    instr.op(),
+                    instr.rs(),
+                    instr.rt(),
+                    instr.rd(),
+                    instr.shamt(),
+                    instr.funct(),
+                    instr.immediate(),
+                    instr.offset(),
+                    instr.address()
+                ))
+                .monospace(),
+            );
 
             if response.clicked() {
                 if has_breakpoint {

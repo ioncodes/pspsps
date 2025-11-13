@@ -1,8 +1,8 @@
+mod colors;
 mod debugger;
 mod io;
 mod states;
 mod widgets;
-mod colors;
 
 use clap::Parser;
 use eframe::egui;
@@ -15,7 +15,8 @@ use tracing_subscriber::Layer as _;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use widgets::{
-    BreakpointsWidget, CpuWidget, DisplayWidget, GpuWidget, MmuWidget, SharedContext, TraceWidget, TtyWidget, Widget,
+    BreakpointsWidget, CopWidget, CpuWidget, DisplayWidget, GpuWidget, MmuWidget, SharedContext, TraceWidget,
+    TtyWidget, Widget,
 };
 
 use crate::debugger::Debugger;
@@ -55,6 +56,7 @@ enum TabKind {
     Trace,
     Mmu,
     Breakpoints,
+    Cop,
     Tty,
     Gpu,
     Display,
@@ -67,6 +69,7 @@ impl std::fmt::Display for TabKind {
             TabKind::Trace => write!(f, "Trace"),
             TabKind::Mmu => write!(f, "MMU"),
             TabKind::Breakpoints => write!(f, "Breakpoints"),
+            TabKind::Cop => write!(f, "COP"),
             TabKind::Tty => write!(f, "TTY"),
             TabKind::Gpu => write!(f, "GPU"),
             TabKind::Display => write!(f, "Display"),
@@ -94,25 +97,33 @@ impl Default for PsxDebugger {
 impl PsxDebugger {
     fn new(bios_path: String, sideload_file: Option<String>, cdrom_file: Option<String>) -> Self {
         let mut dock_state = DockState::new(vec![TabKind::Cpu, TabKind::Trace]);
-        let [_left_node, right_node] =
+        let [left_node, right_node] =
             dock_state
                 .main_surface_mut()
                 .split_right(egui_dock::NodeIndex::root(), 0.33, vec![TabKind::Gpu]);
+
+        dock_state
+            .main_surface_mut()
+            .split_below(left_node, 0.8, vec![TabKind::Breakpoints]);
+
         let [gpu_node, mmu_node] = dock_state
             .main_surface_mut()
             .split_right(right_node, 0.5, vec![TabKind::Mmu]);
         dock_state
             .main_surface_mut()
             .split_below(gpu_node, 0.66, vec![TabKind::Display]);
-        dock_state
-            .main_surface_mut()
-            .split_below(mmu_node, 0.5, vec![TabKind::Breakpoints, TabKind::Tty]);
+        dock_state.main_surface_mut().split_below(
+            mmu_node,
+            0.5,
+            vec![TabKind::Cop, TabKind::Tty],
+        );
 
         let mut widgets: HashMap<TabKind, Box<dyn Widget>> = HashMap::new();
         widgets.insert(TabKind::Cpu, Box::new(CpuWidget::new()));
         widgets.insert(TabKind::Trace, Box::new(TraceWidget::new()));
         widgets.insert(TabKind::Mmu, Box::new(MmuWidget::new()));
         widgets.insert(TabKind::Breakpoints, Box::new(BreakpointsWidget::new()));
+        widgets.insert(TabKind::Cop, Box::new(CopWidget::new()));
         widgets.insert(TabKind::Tty, Box::new(TtyWidget::new()));
         widgets.insert(TabKind::Gpu, Box::new(GpuWidget::new()));
         widgets.insert(TabKind::Display, Box::new(DisplayWidget::new()));

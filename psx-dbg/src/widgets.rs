@@ -2,6 +2,7 @@ use egui::Ui;
 use egui_toast::Toasts;
 
 pub mod breakpoints;
+pub mod cop;
 pub mod cpu;
 pub mod display;
 pub mod gpu;
@@ -11,6 +12,7 @@ pub mod trace;
 pub mod tty;
 
 pub use breakpoints::BreakpointsWidget;
+pub use cop::CopWidget;
 pub use cpu::CpuWidget;
 pub use display::DisplayWidget;
 pub use gpu::GpuWidget;

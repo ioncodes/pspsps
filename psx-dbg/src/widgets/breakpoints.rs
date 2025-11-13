@@ -47,8 +47,6 @@ impl Widget for BreakpointsWidget {
 
         ui.separator();
 
-        ui.heading("Active Breakpoints");
-
         let breakpoints: Vec<u32> = context
             .state
             .breakpoints
@@ -56,6 +54,11 @@ impl Widget for BreakpointsWidget {
             .iter()
             .copied()
             .collect();
+
+        if breakpoints.is_empty() {
+            ui.label("No breakpoints set.");
+            return;
+        }
 
         for &addr in &breakpoints {
             ui.horizontal(|ui| {

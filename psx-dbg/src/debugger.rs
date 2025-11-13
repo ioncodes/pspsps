@@ -160,6 +160,7 @@ impl Debugger {
                             pc: self.psx.cpu.pc,
                             registers: self.psx.cpu.registers.clone(),
                             cop0: self.psx.cpu.cop0,
+                            cop2: self.psx.cpu.cop2,
                             hi: self.psx.cpu.hi,
                             lo: self.psx.cpu.lo,
                         }))
@@ -232,6 +233,7 @@ impl Debugger {
                             pc: self.psx.cpu.pc,
                             registers: self.psx.cpu.registers.clone(),
                             cop0: self.psx.cpu.cop0,
+                            cop2: self.psx.cpu.cop2,
                             hi: self.psx.cpu.hi,
                             lo: self.psx.cpu.lo,
                         }))

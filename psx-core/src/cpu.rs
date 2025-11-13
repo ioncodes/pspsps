@@ -54,7 +54,7 @@ impl Cpu {
 
         if let Some((mut delay_slot, branch_target)) = self.delay_slot.take() {
             if delay_slot.is_invalid() {
-                tracing::error!(target: "psx_core::cpu", pc = %format!("{:08X}", self.pc), "Invalid instruction in delay slot");
+                tracing::error!(target: "psx_core::cpu", pc = %format!("{:08X}", self.pc), %delay_slot, "Invalid instruction in delay slot");
                 delay_slot = Instruction::nop();
                 failed = true;
             }
@@ -83,7 +83,7 @@ impl Cpu {
 
         let mut instr = Instruction::decode(self.mmu.read_u32(self.pc));
         if instr.is_invalid() {
-            tracing::error!(target: "psx_core::cpu", pc = %format!("{:08X}", self.pc), "Invalid instruction");
+            tracing::error!(target: "psx_core::cpu", pc = %format!("{:08X}", self.pc), %instr, "Invalid instruction");
             instr = Instruction::nop();
             failed = true;
         }

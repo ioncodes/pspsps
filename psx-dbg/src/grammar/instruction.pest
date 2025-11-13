@@ -6,12 +6,13 @@ instruction = { opcode ~ operands? }
 // Opcode (instruction mnemonic) - starts with letter, can contain digits (e.g., lwc2, mtc2)
 opcode = @{ ASCII_ALPHA ~ (ASCII_ALPHA | ASCII_DIGIT)* }
 
-// Operands list
-operands = { operand ~ ("," ~ operand)* }
+// Operands list - comma is optional, whitespace consumed implicitly
+operands = { operand ~ (","? ~ operand)* }
 
 // Individual operand types
 operand = {
     memory_address |
+    gte_parameter |
     cpu_register |
     cop_register |
     hex_immediate |
@@ -19,13 +20,16 @@ operand = {
     offset
 }
 
+// GTE parameter: name=value (e.g., sf=0, lm=1, tx=2)
+gte_parameter = @{ ASCII_ALPHA_LOWER+ ~ "=" ~ ASCII_DIGIT+ }
+
 // Memory address: offset($register)
 memory_address = { (hex_immediate | decimal_immediate | offset) ~ "(" ~ cpu_register ~ ")" }
 
 // CPU register: starts with $
 cpu_register = @{ "$" ~ (ASCII_ALPHA | ASCII_DIGIT)+ }
 
-// GTE/COP2 register: lowercase alphanumeric without $
+// GTE/COP2 register: lowercase alphanumeric without $ (no = sign)
 cop_register = @{ ASCII_ALPHA_LOWER ~ (ASCII_ALPHA_LOWER | ASCII_DIGIT | "_")+ }
 
 // Hex immediate: 0xHEX

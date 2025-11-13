@@ -1,8 +1,8 @@
 use super::{SharedContext, Widget};
 use crate::colors::*;
 use egui::{CollapsingHeader, Grid, RichText, Ui};
+use psx_core::cpu::cop::cop0::{Exception, COP0_SR};
 use psx_core::cpu::cop::Cop;
-use psx_core::cpu::cop::cop0::{COP0_SR, Exception};
 use psx_core::cpu::lut::{GTE_CONTROL_REGISTER_NAME_LUT, GTE_DATA_REGISTER_NAME_LUT};
 
 pub struct CopWidget;
@@ -114,7 +114,9 @@ impl Widget for CopWidget {
                                     let changed = reg != reg_prev;
 
                                     let name_text =
-                                        RichText::new(format!("{}:", GTE_DATA_REGISTER_NAME_LUT[i as usize])).strong().monospace();
+                                        RichText::new(format!("{}:", GTE_DATA_REGISTER_NAME_LUT[i as usize]))
+                                            .strong()
+                                            .monospace();
                                     let value_text = RichText::new(format!("{:08X}", reg)).monospace();
 
                                     ui.label(name_text);
@@ -144,7 +146,8 @@ impl Widget for CopWidget {
 
                                     let name_text =
                                         RichText::new(format!("{}:", GTE_CONTROL_REGISTER_NAME_LUT[(i - 32) as usize]))
-                                            .strong().monospace();
+                                            .strong()
+                                            .monospace();
                                     let value_text = RichText::new(format!("{:08X}", reg)).monospace();
 
                                     ui.label(name_text);

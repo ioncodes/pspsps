@@ -96,7 +96,7 @@ fn render_operand(ui: &mut Ui, operand: Pair<Rule>) {
         Rule::cpu_register => {
             ui.colored_label(COLOR_REGISTER, RichText::new(operand.as_str()).monospace());
         }
-        Rule::cop_register => {
+        Rule::cop_register | Rule::gte_parameter => {
             ui.colored_label(COLOR_COP, RichText::new(operand.as_str()).monospace());
         }
         Rule::hex_immediate | Rule::decimal_immediate | Rule::offset => {

@@ -516,23 +516,23 @@ impl Instruction {
     }
 
     fn fmt_gte_sf(&self) -> String {
-        if self.gte_sf() { "sf".to_string() } else { "".to_string() }
+        format!("sf={}", if self.gte_sf() { 1 } else { 0 })
     }
 
     fn fmt_gte_lm(&self) -> String {
-        if self.gte_lm() { "lm".to_string() } else { "".to_string() }
+        format!("lm={}", if self.gte_lm() { 1 } else { 0 })
     }
 
     fn fmt_gte_mx(&self) -> String {
-        format!("m={}", self.gte_mx())
+        format!("mx={}", self.gte_mx())
     }
 
-    fn fmt_gte_v(&self) -> String {
-        format!("v={}", self.gte_v())
+    fn fmt_gte_vx(&self) -> String {
+        format!("vx={}", self.gte_v())
     }
 
-    fn fmt_gte_cv(&self) -> String {
-        format!("t={}", self.gte_cv())
+    fn fmt_gte_tx(&self) -> String {
+        format!("tx={}", self.gte_cv())
     }
 
     fn fmt_gte_data(&self) -> String {
@@ -643,28 +643,28 @@ impl Instruction {
             Opcode::ReturnFromException => "",
 
             // GTE Commands
-            Opcode::GteRtps => "@sf",
-            Opcode::GteRtpt => "@sf",
-            Opcode::GteNclip => "",
-            Opcode::GteOp => "@sf @lm",
-            Opcode::GteDpcs => "@sf @lm",
-            Opcode::GteIntpl => "@sf @lm",
-            Opcode::GteMvmva => "@sf @mx @v @cv",
-            Opcode::GteNcds => "@sf @lm",
-            Opcode::GteCdp => "@sf @lm",
-            Opcode::GteNcdt => "@sf @lm",
-            Opcode::GteNccs => "@sf @lm",
-            Opcode::GteCc => "@lm",
-            Opcode::GteNcs => "@sf @lm",
-            Opcode::GteNct => "@sf @lm",
-            Opcode::GteSqr => "@sf @lm",
-            Opcode::GteDcpl => "@sf @lm",
-            Opcode::GteDpct => "@sf @lm",
-            Opcode::GteAvsz3 => "",
-            Opcode::GteAvsz4 => "",
-            Opcode::GteGpf => "@sf @lm",
-            Opcode::GteGpl => "@sf @lm",
-            Opcode::GteNcct => "@sf @lm",
+            Opcode::GteRtps => "@sf @lm @tx @vx @mx",
+            Opcode::GteRtpt => "@sf @lm @tx @vx @mx",
+            Opcode::GteNclip => "@sf @lm @tx @vx @mx",
+            Opcode::GteOp => "@sf @lm @tx @vx @mx",
+            Opcode::GteDpcs => "@sf @lm @tx @vx @mx",
+            Opcode::GteIntpl => "@sf @lm @tx @vx @mx",
+            Opcode::GteMvmva => "@sf @lm @tx @vx @mx",
+            Opcode::GteNcds => "@sf @lm @tx @vx @mx",
+            Opcode::GteCdp => "@sf @lm @tx @vx @mx",
+            Opcode::GteNcdt => "@sf @lm @tx @vx @mx",
+            Opcode::GteNccs => "@sf @lm @tx @vx @mx",
+            Opcode::GteCc => "@sf @lm @tx @vx @mx",
+            Opcode::GteNcs => "@sf @lm @tx @vx @mx",
+            Opcode::GteNct => "@sf @lm @tx @vx @mx",
+            Opcode::GteSqr => "@sf @lm @tx @vx @mx",
+            Opcode::GteDcpl => "@sf @lm @tx @vx @mx",
+            Opcode::GteDpct => "@sf @lm @tx @vx @mx",
+            Opcode::GteAvsz3 => "@sf @lm @tx @vx @mx",
+            Opcode::GteAvsz4 => "@sf @lm @tx @vx @mx",
+            Opcode::GteGpf => "@sf @lm @tx @vx @mx",
+            Opcode::GteGpl => "@sf @lm @tx @vx @mx",
+            Opcode::GteNcct => "@sf @lm @tx @vx @mx",
 
             // Other
             _ => "???",
@@ -826,8 +826,8 @@ impl std::fmt::Display for Instruction {
             .replace("@sf", &self.fmt_gte_sf())
             .replace("@lm", &self.fmt_gte_lm())
             .replace("@mx", &self.fmt_gte_mx())
-            .replace("@v", &self.fmt_gte_v())
-            .replace("@cv", &self.fmt_gte_cv())
+            .replace("@vx", &self.fmt_gte_vx())
+            .replace("@tx", &self.fmt_gte_tx())
             .replace("@gte_data", &self.fmt_gte_data())
             .replace("@gte_control", &self.fmt_gte_control());
 

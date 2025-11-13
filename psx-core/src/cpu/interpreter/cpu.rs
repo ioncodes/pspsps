@@ -405,13 +405,15 @@ pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu) {
         | Opcode::StoreWordFromCoprocessor(n) => *n,
         _ => 0, // Default to COP0
     };
+    let is_control = matches!(OPERATION, CopOperation::MoveControlFrom | CopOperation::MoveControlTo);
 
     match OPERATION {
         CopOperation::MoveTo | CopOperation::MoveControlTo => {
             let value = cpu.read_register(instr.rt());
             match cop_num {
                 0 => cpu.cop0.write_register(instr.rd(), value),
-                2 => cpu.cop2.write_register(instr.rd(), value),
+                2 if is_control => cpu.cop2.write_control_register(instr.rd(), value),
+                2 if !is_control => cpu.cop2.write_data_register(instr.rd(), value),
                 _ => panic!("Unsupported coprocessor number: {}", cop_num),
             }
             cpu.add_cycles(1);
@@ -419,7 +421,8 @@ pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu) {
         CopOperation::MoveFrom | CopOperation::MoveControlFrom => {
             let value = match cop_num {
                 0 => cpu.cop0.read_register(instr.rd()),
-                2 => cpu.cop2.read_register(instr.rd()),
+                2 if is_control => cpu.cop2.read_control_register(instr.rd()),
+                2 if !is_control => cpu.cop2.read_data_register(instr.rd()),
                 _ => panic!("Unsupported coprocessor number: {}", cop_num),
             };
             cpu.schedule_load(instr.rt(), value);
@@ -433,23 +436,41 @@ pub fn cop<const OPERATION: CopOperation>(instr: &Instruction, cpu: &mut Cpu) {
             let offset = instr.offset();
             let base = cpu.read_register(instr.base());
             let vaddr = base.wrapping_add_signed(offset as i32);
+
+            if !Mmu::is_word_aligned(vaddr) {
+                cpu.cause_exception(Exception::AddressErrorLoad, instr.is_delay_slot);
+                cpu.add_cycles(1);
+                return;
+            }
+
             let value = cpu.read_u32(vaddr);
             match cop_num {
                 0 => cpu.cop0.write_register(instr.rt(), value),
-                2 => cpu.cop2.write_register(instr.rt(), value),
+                2 => cpu.cop2.write_data_register(instr.rt(), value),
                 _ => panic!("Unsupported coprocessor number: {}", cop_num),
             }
+
+            cpu.add_cycles(2);
         }
         CopOperation::StoreWordFrom => {
             let offset = instr.offset();
             let base = cpu.read_register(instr.base());
             let vaddr = base.wrapping_add_signed(offset as i32);
+
+            if !Mmu::is_word_aligned(vaddr) {
+                cpu.cause_exception(Exception::AddressErrorStore, instr.is_delay_slot);
+                cpu.add_cycles(1);
+                return;
+            }
+
             let value = match cop_num {
                 0 => cpu.cop0.read_register(instr.rt()),
-                2 => cpu.cop2.read_register(instr.rt()),
+                2 => cpu.cop2.read_data_register(instr.rt()),
                 _ => panic!("Unsupported coprocessor number: {}", cop_num),
             };
             cpu.write_u32(vaddr, value);
+
+            cpu.add_cycles(2);
         }
     }
 }

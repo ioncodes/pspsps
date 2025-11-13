@@ -1,8 +1,8 @@
 pub mod bus;
 pub mod dma;
 
-use crate::cdrom::{CDROM_ADDR_END, CDROM_ADDR_START, Cdrom};
 use crate::cdrom::reg::REG_RDDATA_ADDR;
+use crate::cdrom::{CDROM_ADDR_END, CDROM_ADDR_START, Cdrom};
 use crate::gpu::status::DmaDirection;
 use crate::gpu::{GP0_ADDRESS_END, GP0_ADDRESS_START, GP1_ADDRESS_END, GP1_ADDRESS_START, Gpu};
 use crate::irq::{I_MASK_ADDR_END, I_MASK_ADDR_START, I_STAT_ADDR_END, I_STAT_ADDR_START, Irq};
@@ -376,7 +376,6 @@ impl bus::Bus8 for Mmu {
     #[inline(always)]
     fn read_u8(&mut self, address: u32) -> u8 {
         let address = Self::canonicalize_virtual_address(address);
-
         match address {
             TIMER0_COUNTER_ADDR_START..=TIMER2_TARGET_ADDR_END => self.timers.read_u8(address),
             SIO_ADDR_START..=SIO_ADDR_END => self.sio.read_u8(address),

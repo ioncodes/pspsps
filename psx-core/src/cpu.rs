@@ -46,6 +46,7 @@ impl Cpu {
     pub fn tick(&mut self) -> Result<Instruction, ()> {
         self.check_interrupts();
 
+        // TODO: make this additive feature
         if let Some(handler) = internal::cpu_hooks().get(&self.pc) {
             handler(self);
         }

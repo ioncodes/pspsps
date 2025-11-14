@@ -25,7 +25,7 @@ fn main() {
     let mut last_report = Instant::now();
 
     loop {
-        let _ = psx.step().unwrap_or_else(|_| {
+        let _ = psx.step().map(|(instr, _)| instr).unwrap_or_else(|_| {
             println!("Registers: {:08X?}", psx.cpu.registers);
             let pc = psx.cpu.pc - 4;
             println!("PC: {:08X}", pc);

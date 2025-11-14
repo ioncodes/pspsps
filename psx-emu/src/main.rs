@@ -30,6 +30,9 @@ struct App {
     renderer: Option<renderer::Renderer>,
     psx: Option<Psx>,
     input_state: input::InputState,
+    frame_count: usize,
+    fps_timer: std::time::Instant,
+    current_fps: f64,
 }
 
 impl ApplicationHandler for App {
@@ -79,11 +82,33 @@ impl ApplicationHandler for App {
                     let controller_state = self.input_state.get_controller_state();
                     psx.set_controller_state(controller_state);
 
-                    // Run emulation for one frame
-                    const VBLANK_CYCLES: usize = 564_480;
+                    // Run emulation until frame completes
+                    loop {
+                        match psx.step() {
+                            Ok((_, frame_complete)) => {
+                                if frame_complete {
+                                    break;
+                                }
+                            }
+                            Err(_) => {
+                                eprintln!("Error during emulation step");
+                                break;
+                            }
+                        }
+                    }
 
-                    for _ in 0..VBLANK_CYCLES {
-                        let _ = psx.step();
+                    // Update FPS tracking
+                    self.frame_count += 1;
+                    let elapsed = self.fps_timer.elapsed().as_secs_f64();
+                    if elapsed >= 1.0 {
+                        self.current_fps = self.frame_count as f64 / elapsed;
+                        self.frame_count = 0;
+                        self.fps_timer = std::time::Instant::now();
+
+                        // Update window title with FPS
+                        if let Some(window) = &self.window {
+                            window.set_title(&format!("pspsps - a cute psx emulator - {:.2} FPS", self.current_fps));
+                        }
                     }
 
                     // Get frame from GPU
@@ -135,6 +160,9 @@ impl App {
             renderer: None,
             psx: Some(psx),
             input_state: input::InputState::new(),
+            frame_count: 0,
+            fps_timer: std::time::Instant::now(),
+            current_fps: 0.0,
         }
     }
 

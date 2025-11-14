@@ -26,6 +26,9 @@ pub struct Debugger {
     bin_file: Option<Vec<u8>>,
     bios: Vec<u8>,
     cycle_counter: u32,
+    frame_count: usize,
+    fps_timer: std::time::Instant,
+    current_fps: f64,
 }
 
 impl Debugger {
@@ -45,6 +48,9 @@ impl Debugger {
             bin_file: None,
             bios,
             cycle_counter: 0,
+            frame_count: 0,
+            fps_timer: std::time::Instant::now(),
+            current_fps: 0.0,
         }
     }
 
@@ -87,11 +93,22 @@ impl Debugger {
                 let old_pc = self.psx.cpu.pc;
 
                 match self.psx.step() {
-                    Ok(instr) => {
+                    Ok((instr, frame_complete)) => {
                         // Push to trace
                         self.trace.push_back((old_pc, instr));
                         if self.trace.len() > 1000 {
                             self.trace.pop_front();
+                        }
+
+                        // Update FPS tracking
+                        if frame_complete {
+                            self.frame_count += 1;
+                            let elapsed = self.fps_timer.elapsed().as_secs_f64();
+                            if elapsed >= 1.0 {
+                                self.current_fps = self.frame_count as f64 / elapsed;
+                                self.frame_count = 0;
+                                self.fps_timer = std::time::Instant::now();
+                            }
                         }
 
                         self.cycle_counter += 1;
@@ -110,6 +127,7 @@ impl Debugger {
                                     display_width,
                                     display_height,
                                     gp1_status,
+                                    fps: self.current_fps,
                                 }))
                                 .expect("Failed to send GPU update event");
                         }
@@ -224,6 +242,9 @@ impl Debugger {
 
                     self.is_running = false;
                     self.trace.clear();
+                    self.frame_count = 0;
+                    self.fps_timer = std::time::Instant::now();
+                    self.current_fps = 0.0;
 
                     psx_core::cpu::internal::tty_buffer().lock().unwrap().clear();
                     psx_core::cpu::internal::tty_buffer().lock().unwrap().clear();

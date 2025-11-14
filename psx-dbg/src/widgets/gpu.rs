@@ -26,6 +26,10 @@ impl Widget for GpuWidget {
 
         ui.heading("GPU Status");
         ui.horizontal(|ui| {
+            ui.label("FPS:");
+            ui.monospace(format!("{:.2}", gpu_state.fps));
+        });
+        ui.horizontal(|ui| {
             ui.label("GPUSTAT:");
             ui.monospace(format!("{:08X}", gpu_state.gp1_status.0));
         });

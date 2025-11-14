@@ -43,7 +43,7 @@ impl Psx {
         self.cpu.mmu.sio.set_controller_state(state);
     }
 
-    pub fn step(&mut self) -> Result<Instruction, ()> {
+    pub fn step(&mut self) -> Result<(Instruction, bool), ()> {
         if let Some(exe) = &self.sideload_exe
             && self.cpu.pc == PSX_SIDELOAD_EXE_ADDRESS
         {
@@ -120,7 +120,8 @@ impl Psx {
                 .set_drawing_even_odd_lines_in_interlace_mode(false);
         }
 
-        if self.cycles >= NTSC_VBLANK_CYCLES {
+        let frame_complete = self.cycles >= NTSC_VBLANK_CYCLES;
+        if frame_complete {
             self.cycles = 0;
 
             self.cpu.mmu.irq.status.set_vblank(true);
@@ -134,6 +135,6 @@ impl Psx {
             tracing::trace!(target: "psx_core::psx", "VBLANK period reached, setting I_STAT bit");
         }
 
-        instr
+        Ok((instr?, frame_complete))
     }
 }

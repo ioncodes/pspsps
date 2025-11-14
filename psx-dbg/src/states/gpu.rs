@@ -9,4 +9,5 @@ pub struct GpuState {
     pub display_width: usize,
     pub display_height: usize,
     pub gp1_status: StatusRegister,
+    pub fps: f64,
 }

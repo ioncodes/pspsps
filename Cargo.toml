@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["psx-bench", "psx-core", "psx-dbg", "psx-emu"]
+members = ["psx-bench", "psx-core", "psx-dbg", "psx-emu", "rom-db"]
 
 [profile.release]
 lto = "fat"

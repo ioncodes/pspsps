@@ -1,0 +1,10 @@
+[package]
+name = "rom-db"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+image = "0.25.8"
+image_hasher = "2.0"
+psx-core = { path = "../psx-core" }
+zip = "2.1"

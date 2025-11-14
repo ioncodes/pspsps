@@ -137,4 +137,9 @@ impl Psx {
 
         Ok((instr?, frame_complete))
     }
+
+    pub fn frame(&self) -> (Vec<(u8, u8, u8)>, usize, usize) {
+        let (width, height) = self.cpu.mmu.gpu.gp.resolution();
+        (self.cpu.mmu.gpu.display_frame(), width, height)
+    }
 }

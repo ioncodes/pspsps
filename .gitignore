@@ -6,3 +6,6 @@ target/
 *.bin
 *.dump
 games/
+screenshots/
+.vscode/
+resume.txt

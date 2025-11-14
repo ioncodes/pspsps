@@ -4,12 +4,58 @@ mod renderer;
 use clap::Parser;
 use psx_core::psx::Psx;
 use std::fs;
+use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Arc;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
+
+fn load_rom(rom_path: &PathBuf) -> Result<Vec<u8>, String> {
+    let path = rom_path.as_path();
+
+    // Check if it's a zip file
+    if path.extension().and_then(|s| s.to_str()) == Some("zip") {
+        println!("Detected ZIP file, extracting first .bin file...");
+
+        let file = std::fs::File::open(path).map_err(|e| format!("Failed to open ZIP file: {}", e))?;
+
+        let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Failed to read ZIP archive: {}", e))?;
+
+        // Get all .bin files and sort them
+        let mut bin_files: Vec<String> = archive
+            .file_names()
+            .filter(|name| name.to_lowercase().ends_with(".bin"))
+            .map(|s| s.to_string())
+            .collect();
+
+        bin_files.sort();
+
+        if bin_files.is_empty() {
+            return Err("No .bin files found in ZIP archive".to_string());
+        }
+
+        let first_bin = &bin_files[0];
+        println!("Extracting: {}", first_bin);
+
+        let mut bin_file = archive
+            .by_name(first_bin)
+            .map_err(|e| format!("Failed to extract {}: {}", first_bin, e))?;
+
+        let mut rom_data = Vec::new();
+        bin_file
+            .read_to_end(&mut rom_data)
+            .map_err(|e| format!("Failed to read {}: {}", first_bin, e))?;
+
+        println!("Extracted {} bytes from {}", rom_data.len(), first_bin);
+
+        Ok(rom_data)
+    } else {
+        // Not a zip, read directly
+        fs::read(path).map_err(|e| format!("Failed to read ROM file: {}", e))
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "pspsps")]
@@ -143,7 +189,7 @@ impl App {
 
         // Load CD-ROM if provided
         if let Some(cdrom_path) = &args.cdrom {
-            let cdrom_data = fs::read(cdrom_path).expect("Failed to read CD-ROM file");
+            let cdrom_data = load_rom(cdrom_path).expect("Failed to load CD-ROM file");
             psx.load_cdrom(cdrom_data);
             println!("Loaded CD-ROM: {:?}", cdrom_path);
         }

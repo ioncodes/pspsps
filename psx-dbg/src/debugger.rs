@@ -11,8 +11,54 @@ use psx_core::cpu::internal;
 use psx_core::gpu::{VRAM_HEIGHT, VRAM_WIDTH};
 use psx_core::psx::Psx;
 use std::collections::{HashSet, VecDeque};
+use std::io::Read;
 
 const GPU_UPDATE_INTERVAL: u32 = 100_000;
+
+fn load_rom(rom_path: &str) -> Result<Vec<u8>, String> {
+    let path = std::path::Path::new(rom_path);
+
+    // Check if it's a zip file
+    if path.extension().and_then(|s| s.to_str()) == Some("zip") {
+        tracing::info!("Detected ZIP file, extracting first .bin file...");
+
+        let file = std::fs::File::open(rom_path).map_err(|e| format!("Failed to open ZIP file: {}", e))?;
+
+        let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Failed to read ZIP archive: {}", e))?;
+
+        // Get all .bin files and sort them
+        let mut bin_files: Vec<String> = archive
+            .file_names()
+            .filter(|name| name.to_lowercase().ends_with(".bin"))
+            .map(|s| s.to_string())
+            .collect();
+
+        bin_files.sort();
+
+        if bin_files.is_empty() {
+            return Err("No .bin files found in ZIP archive".to_string());
+        }
+
+        let first_bin = &bin_files[0];
+        tracing::info!("Extracting: {}", first_bin);
+
+        let mut bin_file = archive
+            .by_name(first_bin)
+            .map_err(|e| format!("Failed to extract {}: {}", first_bin, e))?;
+
+        let mut rom_data = Vec::new();
+        bin_file
+            .read_to_end(&mut rom_data)
+            .map_err(|e| format!("Failed to read {}: {}", first_bin, e))?;
+
+        tracing::info!("Extracted {} bytes from {}", rom_data.len(), first_bin);
+
+        Ok(rom_data)
+    } else {
+        // Not a zip, read directly
+        std::fs::read(rom_path).map_err(|e| format!("Failed to read ROM file: {}", e))
+    }
+}
 
 pub struct Debugger {
     pub psx: Psx,
@@ -67,8 +113,8 @@ impl Debugger {
 
     pub fn with_cdrom_image(mut self, path: Option<String>) -> Self {
         if let Some(cdrom_path) = path {
-            let bin = std::fs::read(&cdrom_path)
-                .unwrap_or_else(|e| panic!("Failed to read CD-ROM image file '{}': {}", cdrom_path, e));
+            let bin = load_rom(&cdrom_path)
+                .unwrap_or_else(|e| panic!("Failed to load CD-ROM image file '{}': {}", cdrom_path, e));
             self.bin_file = Some(bin.clone());
             self.psx.load_cdrom(bin);
         }

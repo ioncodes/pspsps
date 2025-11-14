@@ -3221,6 +3221,7 @@ dependencies = [
  "rayon",
  "tracing",
  "tracing-subscriber",
+ "zip",
 ]
 
 [[package]]
@@ -3235,6 +3236,7 @@ dependencies = [
  "psx-core",
  "wgpu 23.0.1",
  "winit",
+ "zip",
 ]
 
 [[package]]

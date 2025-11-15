@@ -364,6 +364,17 @@ impl Cdrom {
         self.last_command = command;
 
         match command {
+            // 0x00 	Sync        INTx(stat+1,40h) (?)
+            0x00 => {
+                // TODO: verify LoM calls this
+                let status = self.status();
+                self.queue_interrupt(
+                    DiskIrq::CommandAcknowledged,
+                    vec![status.0],
+                    FIRST_RESP_GENERIC_DELAY,
+                    false,
+                );
+            }
             // 0x01 	GetStat 	INT3: status
             0x01 => {
                 let status = self.status();
@@ -656,6 +667,7 @@ impl Cdrom {
         );
 
         // Stop any ongoing reads and clear queued read-related interrupts
+        self.address.set_data_request(self.read_in_progress); // TODO: wtf fixes LoM?
         self.state = DriveState::Idle;
         self.read_in_progress = false;
         self.sector_offset = 0;

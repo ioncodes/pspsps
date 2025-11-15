@@ -117,8 +117,6 @@ impl Mmu {
             _ => unreachable!(),
         }
 
-        let old_master_flag = self.dma.interrupt.master_interrupt();
-
         let channel_mask_bit = (self.dma.interrupt.interrupt_mask() >> CHANNEL_ID) & 1;
         if channel_mask_bit == 1 {
             // Set the completion flag for this channel
@@ -140,15 +138,7 @@ impl Mmu {
 
         let new_master_flag = bus_error || (master_enable && masked_flags != 0);
         self.dma.interrupt.set_master_interrupt(new_master_flag);
-
-        if !old_master_flag && new_master_flag {
-            self.irq.status.set_dma(true);
-            tracing::debug!(
-                target: "psx_core::dma",
-                channel_id = CHANNEL_ID,
-                "DMA IRQ raised"
-            );
-        }
+        self.irq.status.set_dma(new_master_flag);
     }
 
     /// Perform a DMA transfer for channel 6 (OTC)

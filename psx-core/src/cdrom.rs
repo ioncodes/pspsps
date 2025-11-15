@@ -660,7 +660,8 @@ impl Cdrom {
         self.read_in_progress = false;
         self.sector_offset = 0;
         self.data_ready = false;
-        self.address.set_data_request(false);
+        self.address.set_result_read_ready(false);
+
         // Drop any pending DataReady interrupts
         self.interrupt_queue.retain(|p| !p.is_read);
 

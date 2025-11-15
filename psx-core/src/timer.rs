@@ -105,12 +105,12 @@ impl<const TIMER_ID: u8> Timer<TIMER_ID> {
         match TIMER_ID {
             0 => match mode.clock_source() {
                 0 | 2 => 1,
-                1 | 3 => 1, // TODO: dotclock
+                1 | 3 => 100, // TODO: dotclock
                 _ => 1,
             },
             1 => match mode.clock_source() {
                 0 | 2 => 1,
-                1 | 3 => 1, // TODO: hblank
+                1 | 3 => 100_000, // TODO: hblank
                 _ => 1,
             },
             2 => match mode.clock_source() {

@@ -92,6 +92,11 @@ impl Psx {
             self.cpu.mmu.irq.status.set_controller_and_memory_card(true);
         }
 
+        self.cpu.mmu.spu.tick(cycles);
+        if self.cpu.mmu.spu.irq_pending() {
+            self.cpu.mmu.irq.status.set_spu(true);
+        }
+
         const CYCLES_PER_SCANLINE: usize = NTSC_VBLANK_CYCLES / 525;
         const HBLANK_CYCLES: usize = CYCLES_PER_SCANLINE * 16 / 100;
         let scanline_position = self.cycles % CYCLES_PER_SCANLINE;

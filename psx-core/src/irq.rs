@@ -16,7 +16,8 @@ bitfield! {
         pub tmr2: bool @ 6,
         pub controller_and_memory_card: bool @ 7,
         pub sio: bool @ 8,
-        pub lightpen: bool @ 9,
+        pub spu: bool @ 9,
+        pub lightpen: bool @ 10,
     }
 }
 

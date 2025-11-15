@@ -124,11 +124,11 @@ impl Sio0 {
             ActiveDevice::Controller => self.controller.process_byte(tx_byte),
             ActiveDevice::MemoryCard => {
                 // Memory card is stubbed - always return 0xFF (no device present)
-                tracing::trace!(target: "psx_core::sio", tx = format!("{:02X}", tx_byte), "Memory card stubbed");
+                tracing::warn!(target: "psx_core::sio", tx = format!("{:02X}", tx_byte), "Memory card stubbed");
                 0xFF
             }
             ActiveDevice::None => {
-                tracing::trace!(target: "psx_core::sio", tx = format!("{:02X}", tx_byte), "No device selected");
+                tracing::warn!(target: "psx_core::sio", tx = format!("{:02X}", tx_byte), "No device selected");
                 0xFF
             }
         }

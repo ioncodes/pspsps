@@ -1,8 +1,11 @@
 use crate::io::DebuggerEvent;
 use crate::states::breakpoints::BreakpointsState;
+use crate::states::cdrom::CdromState;
 use crate::states::cpu::CpuState;
+use crate::states::dma::{DmaChannelState, DmaState};
 use crate::states::gpu::GpuState;
 use crate::states::mmu::MmuState;
+use crate::states::timers::TimersState;
 use crate::states::trace::TraceState;
 use crate::states::tty::TtyState;
 use crossbeam_channel::{Receiver, Sender};
@@ -329,6 +332,130 @@ impl Debugger {
                 }
                 DebuggerEvent::SetIgnoreErrors(ignore) => {
                     self.ignore_errors = ignore;
+                }
+                DebuggerEvent::UpdateTimers => {
+                    self.channel_send
+                        .send(DebuggerEvent::TimersUpdated(TimersState {
+                            timer0_counter: self.psx.cpu.mmu.timers.timer0.counter,
+                            timer0_target: self.psx.cpu.mmu.timers.timer0.target,
+                            timer0_mode: self.psx.cpu.mmu.timers.timer0.mode.0,
+                            timer1_counter: self.psx.cpu.mmu.timers.timer1.counter,
+                            timer1_target: self.psx.cpu.mmu.timers.timer1.target,
+                            timer1_mode: self.psx.cpu.mmu.timers.timer1.mode.0,
+                            timer2_counter: self.psx.cpu.mmu.timers.timer2.counter,
+                            timer2_target: self.psx.cpu.mmu.timers.timer2.target,
+                            timer2_mode: self.psx.cpu.mmu.timers.timer2.mode.0,
+                        }))
+                        .unwrap();
+                }
+                DebuggerEvent::UpdateCdrom => {
+                    let drive_state = format!("{:?}", self.psx.cpu.mmu.cdrom.state);
+                    self.channel_send
+                        .send(DebuggerEvent::CdromUpdated(CdromState {
+                            drive_state,
+                            sector_lba: self.psx.cpu.mmu.cdrom.sector_lba,
+                            sector_lba_current: self.psx.cpu.mmu.cdrom.sector_lba_current,
+                            last_command: self.psx.cpu.mmu.cdrom.last_command,
+                            read_in_progress: self.psx.cpu.mmu.cdrom.read_in_progress,
+                        }))
+                        .unwrap();
+                }
+                DebuggerEvent::UpdateDma => {
+                    self.channel_send
+                        .send(DebuggerEvent::DmaUpdated(DmaState {
+                            channel0: DmaChannelState {
+                                active: self.psx.cpu.mmu.dma.channels.0.channel_control.start_transfer(),
+                                transfer_direction: self
+                                    .psx
+                                    .cpu
+                                    .mmu
+                                    .dma
+                                    .channels
+                                    .0
+                                    .channel_control
+                                    .transfer_direction(),
+                                transfer_mode: self.psx.cpu.mmu.dma.channels.0.channel_control.transfer_mode(),
+                            },
+                            channel1: DmaChannelState {
+                                active: self.psx.cpu.mmu.dma.channels.1.channel_control.start_transfer(),
+                                transfer_direction: self
+                                    .psx
+                                    .cpu
+                                    .mmu
+                                    .dma
+                                    .channels
+                                    .1
+                                    .channel_control
+                                    .transfer_direction(),
+                                transfer_mode: self.psx.cpu.mmu.dma.channels.1.channel_control.transfer_mode(),
+                            },
+                            channel2: DmaChannelState {
+                                active: self.psx.cpu.mmu.dma.channels.2.channel_control.start_transfer(),
+                                transfer_direction: self
+                                    .psx
+                                    .cpu
+                                    .mmu
+                                    .dma
+                                    .channels
+                                    .2
+                                    .channel_control
+                                    .transfer_direction(),
+                                transfer_mode: self.psx.cpu.mmu.dma.channels.2.channel_control.transfer_mode(),
+                            },
+                            channel3: DmaChannelState {
+                                active: self.psx.cpu.mmu.dma.channels.3.channel_control.start_transfer(),
+                                transfer_direction: self
+                                    .psx
+                                    .cpu
+                                    .mmu
+                                    .dma
+                                    .channels
+                                    .3
+                                    .channel_control
+                                    .transfer_direction(),
+                                transfer_mode: self.psx.cpu.mmu.dma.channels.3.channel_control.transfer_mode(),
+                            },
+                            channel4: DmaChannelState {
+                                active: self.psx.cpu.mmu.dma.channels.4.channel_control.start_transfer(),
+                                transfer_direction: self
+                                    .psx
+                                    .cpu
+                                    .mmu
+                                    .dma
+                                    .channels
+                                    .4
+                                    .channel_control
+                                    .transfer_direction(),
+                                transfer_mode: self.psx.cpu.mmu.dma.channels.4.channel_control.transfer_mode(),
+                            },
+                            channel5: DmaChannelState {
+                                active: self.psx.cpu.mmu.dma.channels.5.channel_control.start_transfer(),
+                                transfer_direction: self
+                                    .psx
+                                    .cpu
+                                    .mmu
+                                    .dma
+                                    .channels
+                                    .5
+                                    .channel_control
+                                    .transfer_direction(),
+                                transfer_mode: self.psx.cpu.mmu.dma.channels.5.channel_control.transfer_mode(),
+                            },
+                            channel6: DmaChannelState {
+                                active: self.psx.cpu.mmu.dma.channels.6.channel_control.start_transfer(),
+                                transfer_direction: self
+                                    .psx
+                                    .cpu
+                                    .mmu
+                                    .dma
+                                    .channels
+                                    .6
+                                    .channel_control
+                                    .transfer_direction(),
+                                transfer_mode: self.psx.cpu.mmu.dma.channels.6.channel_control.transfer_mode(),
+                            },
+                        }))
+                        .unwrap();
                 }
                 _ => {}
             }

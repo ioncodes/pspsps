@@ -15,8 +15,8 @@ use tracing_subscriber::Layer as _;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use widgets::{
-    BreakpointsWidget, CopWidget, CpuWidget, DisplayWidget, GpuWidget, MmuWidget, SharedContext, TraceWidget,
-    TtyWidget, Widget,
+    BreakpointsWidget, CdromWidget, CopWidget, CpuWidget, DisplayWidget, DmaWidget, GpuWidget, MmuWidget,
+    SharedContext, TimersWidget, TraceWidget, TtyWidget, Widget,
 };
 
 use crate::debugger::Debugger;
@@ -60,6 +60,9 @@ enum TabKind {
     Tty,
     Gpu,
     Display,
+    Timers,
+    Cdrom,
+    Dma,
 }
 
 impl std::fmt::Display for TabKind {
@@ -73,6 +76,9 @@ impl std::fmt::Display for TabKind {
             TabKind::Tty => write!(f, "TTY"),
             TabKind::Gpu => write!(f, "GPU"),
             TabKind::Display => write!(f, "Display"),
+            TabKind::Timers => write!(f, "Timers"),
+            TabKind::Cdrom => write!(f, "CDROM"),
+            TabKind::Dma => write!(f, "DMA"),
         }
     }
 }
@@ -106,17 +112,17 @@ impl PsxDebugger {
             .main_surface_mut()
             .split_below(left_node, 0.8, vec![TabKind::Breakpoints]);
 
-        let [gpu_node, mmu_node] = dock_state
-            .main_surface_mut()
-            .split_right(right_node, 0.5, vec![TabKind::Mmu]);
+        let [gpu_node, mmu_node] = dock_state.main_surface_mut().split_right(
+            right_node,
+            0.5,
+            vec![TabKind::Mmu, TabKind::Timers, TabKind::Cdrom, TabKind::Dma],
+        );
         dock_state
             .main_surface_mut()
             .split_below(gpu_node, 0.66, vec![TabKind::Display]);
-        dock_state.main_surface_mut().split_below(
-            mmu_node,
-            0.5,
-            vec![TabKind::Cop, TabKind::Tty],
-        );
+        dock_state
+            .main_surface_mut()
+            .split_below(mmu_node, 0.5, vec![TabKind::Cop, TabKind::Tty]);
 
         let mut widgets: HashMap<TabKind, Box<dyn Widget>> = HashMap::new();
         widgets.insert(TabKind::Cpu, Box::new(CpuWidget::new()));
@@ -127,6 +133,9 @@ impl PsxDebugger {
         widgets.insert(TabKind::Tty, Box::new(TtyWidget::new()));
         widgets.insert(TabKind::Gpu, Box::new(GpuWidget::new()));
         widgets.insert(TabKind::Display, Box::new(DisplayWidget::new()));
+        widgets.insert(TabKind::Timers, Box::new(TimersWidget::new()));
+        widgets.insert(TabKind::Cdrom, Box::new(CdromWidget::new()));
+        widgets.insert(TabKind::Dma, Box::new(DmaWidget::new()));
 
         let (request_channel_send, request_channel_recv) = crossbeam_channel::unbounded();
         let (response_channel_send, response_channel_recv) = crossbeam_channel::unbounded();
@@ -223,6 +232,15 @@ impl eframe::App for PsxDebugger {
                 DebuggerEvent::GpuUpdated(state) => {
                     self.state.gpu = state;
                 }
+                DebuggerEvent::TimersUpdated(state) => {
+                    self.state.timers = state;
+                }
+                DebuggerEvent::CdromUpdated(state) => {
+                    self.state.cdrom = state;
+                }
+                DebuggerEvent::DmaUpdated(state) => {
+                    self.state.dma = state;
+                }
                 DebuggerEvent::Paused => {
                     self.state.is_running = false;
                     self.toasts.add(Toast {
@@ -259,6 +277,15 @@ impl eframe::App for PsxDebugger {
         self.channel_send
             .send(DebuggerEvent::UpdateTrace)
             .expect("Failed to send update Trace event");
+        self.channel_send
+            .send(DebuggerEvent::UpdateTimers)
+            .expect("Failed to send update Timers event");
+        self.channel_send
+            .send(DebuggerEvent::UpdateCdrom)
+            .expect("Failed to send update CDROM event");
+        self.channel_send
+            .send(DebuggerEvent::UpdateDma)
+            .expect("Failed to send update DMA event");
 
         let mut tab_viewer = TabViewer {
             channel_send: &self.channel_send,

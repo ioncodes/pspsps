@@ -51,7 +51,7 @@ struct PendingInterrupt {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DriveState {
+pub enum DriveState {
     Idle,
     Seeking { cycles_left: usize },
     Reading,
@@ -88,18 +88,18 @@ pub struct Cdrom {
     interrupt_queue: VecDeque<PendingInterrupt>,
 
     // Drive state
-    read_in_progress: bool,
-    state: DriveState,
+    pub read_in_progress: bool,
+    pub state: DriveState,
     mode: SetModeRegister,
 
     // Sector reading position tracking
     sector_offset: usize,      // Current byte offset within the sector being read
     subheader: [u8; 4],        // Current sector's subheader (file, channel, submode, coding)
-    sector_lba: usize,         // Target LBA set by SetLoc command
-    sector_lba_current: usize, // Current LBA being read (updated as sectors are consumed)
+    pub sector_lba: usize,         // Target LBA set by SetLoc command
+    pub sector_lba_current: usize, // Current LBA being read (updated as sectors are consumed)
     data_ready: bool,          // True when a sector has been fully read
 
-    last_command: u8, // Last executed command (0x06=ReadN, 0x1B=ReadS, etc.)
+    pub last_command: u8, // Last executed command (0x06=ReadN, 0x1B=ReadS, etc.)
 }
 
 impl Cdrom {

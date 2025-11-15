@@ -1,5 +1,5 @@
 use super::{SharedContext, Widget};
-use egui::Ui;
+use egui::{Grid, RichText, Ui};
 
 pub struct BreakpointsWidget {
     new_breakpoint_address: String,
@@ -60,22 +60,32 @@ impl Widget for BreakpointsWidget {
             return;
         }
 
-        for &addr in &breakpoints {
-            ui.horizontal(|ui| {
-                ui.monospace(format!("{:08X}", addr));
+        Grid::new("breakpoints_grid")
+            .striped(true)
+            .show(ui, |ui| {
+                // Header
+                ui.label(RichText::new("Address").strong());
+                ui.label(RichText::new("Actions").strong());
+                ui.end_row();
 
-                if ui.button("Remove").clicked() {
-                    context
-                        .channel_send
-                        .send(crate::io::DebuggerEvent::RemoveBreakpoint(addr))
-                        .expect("Failed to send remove breakpoint event");
-                }
+                for &addr in &breakpoints {
+                    ui.monospace(format!("{:08X}", addr));
 
-                if ui.button("Show in Disassembly").clicked() {
-                    *context.show_in_disassembly = Some(addr);
+                    ui.horizontal(|ui| {
+                        if ui.button("Remove").clicked() {
+                            context
+                                .channel_send
+                                .send(crate::io::DebuggerEvent::RemoveBreakpoint(addr))
+                                .expect("Failed to send remove breakpoint event");
+                        }
+
+                        if ui.button("Show in Disassembly").clicked() {
+                            *context.show_in_disassembly = Some(addr);
+                        }
+                    });
+                    ui.end_row();
                 }
             });
-        }
 
         ui.separator();
         ui.label(format!(

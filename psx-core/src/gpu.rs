@@ -50,8 +50,8 @@ impl Gpu {
 
         // Use display area from GP1(05h) command
         // X is in halfword units (multiply by 2 for pixel coordinates)
-        let display_x = (self.gp.display_area_x * 2) as usize;
-        let display_y = self.gp.display_area_y as usize;
+        let display_x = 0;
+        let display_y = 0;
 
         for y in 0..height {
             for x in 0..width {

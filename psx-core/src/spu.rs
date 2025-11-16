@@ -22,8 +22,8 @@ impl Spu {
     }
 
     pub fn irq_pending(&mut self) -> bool {
-        if self.cycles >= 75600 {
-            self.cycles -= 75600;
+        if self.cycles >= 400_000 {
+            self.cycles -= 400_000;
             true
         } else {
             false

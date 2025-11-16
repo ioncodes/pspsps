@@ -1,5 +1,10 @@
 use std::sync::Arc;
+
+use crate::overlay::PauseOverlay;
+
+pub use crate::overlay::PauseOverlayState;
 use wgpu::util::DeviceExt;
+use winit::dpi::PhysicalSize;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -55,6 +60,7 @@ pub struct Renderer {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
+    config: wgpu::SurfaceConfiguration,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
@@ -63,6 +69,7 @@ pub struct Renderer {
     render_pipeline: Option<wgpu::RenderPipeline>,
     bind_group_layout: wgpu::BindGroupLayout,
     last_frame_size: (usize, usize),
+    pause_overlay: PauseOverlay,
 }
 
 impl Renderer {
@@ -70,7 +77,7 @@ impl Renderer {
         let size = window.inner_size();
 
         // Create wgpu instance
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
         });
@@ -88,19 +95,17 @@ impl Renderer {
                 force_fallback_adapter: false,
             })
             .await
-            .ok_or("Failed to find an appropriate adapter")?;
+            .map_err(|e| format!("Failed to find an appropriate adapter: {e}"))?;
 
         // Request device and queue
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                    label: None,
-                    memory_hints: Default::default(),
-                },
-                None,
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                label: None,
+                memory_hints: Default::default(),
+                trace: wgpu::Trace::default(),
+            })
             .await
             .map_err(|e| format!("Failed to create device: {}", e))?;
 
@@ -166,11 +171,13 @@ impl Renderer {
 
         // Try to build initial pipeline
         let render_pipeline = Self::create_render_pipeline(&device, &config, &bind_group_layout);
+        let pause_overlay = PauseOverlay::new(&device, config.format);
 
         Ok(Self {
             surface,
             device,
             queue,
+            config,
             vertex_buffer,
             index_buffer,
             num_indices,
@@ -179,6 +186,7 @@ impl Renderer {
             render_pipeline,
             bind_group_layout,
             last_frame_size: (0, 0),
+            pause_overlay,
         })
     }
 
@@ -302,14 +310,14 @@ impl Renderer {
         // Write texture data
         if let Some(texture) = &self.diffuse_texture {
             self.queue.write_texture(
-                wgpu::ImageCopyTexture {
+                wgpu::TexelCopyTextureInfo {
                     texture,
                     mip_level: 0,
                     origin: wgpu::Origin3d::ZERO,
                     aspect: wgpu::TextureAspect::All,
                 },
                 &rgba_data,
-                wgpu::ImageDataLayout {
+                wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(4 * width as u32),
                     rows_per_image: Some(height as u32),
@@ -323,9 +331,30 @@ impl Renderer {
         }
     }
 
-    pub fn render(&mut self, width: usize, height: usize, frame: &[(u8, u8, u8)]) -> Result<(), wgpu::SurfaceError> {
+    pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
+        if new_size.width == 0 || new_size.height == 0 {
+            return;
+        }
+
+        self.config.width = new_size.width;
+        self.config.height = new_size.height;
+        self.surface.configure(&self.device, &self.config);
+    }
+
+    pub fn render(
+        &mut self, width: usize, height: usize, frame: &[(u8, u8, u8)], pause_overlay: Option<PauseOverlayState>,
+    ) -> Result<(), wgpu::SurfaceError> {
         // Update texture with new frame
         self.update_texture(width, height, frame);
+
+        let overlay_state = pause_overlay.and_then(|overlay| {
+            self.pause_overlay.prepare(
+                &self.device,
+                &self.queue,
+                (self.config.width, self.config.height),
+                overlay,
+            )
+        });
 
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -333,6 +362,13 @@ impl Renderer {
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
         });
+
+        let mut extra_cmd_bufs = Vec::new();
+        if let Some(state) = &overlay_state {
+            extra_cmd_bufs = self
+                .pause_overlay
+                .upload_buffers(&self.device, &self.queue, &mut encoder, state);
+        }
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -362,9 +398,20 @@ impl Renderer {
                 render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                 render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
             }
+
+            if let Some(egui_state) = &overlay_state {
+                let mut ui_pass = render_pass.forget_lifetime();
+                self.pause_overlay.render(&mut ui_pass, egui_state);
+            }
         }
 
-        self.queue.submit(std::iter::once(encoder.finish()));
+        if let Some(egui_state) = &overlay_state {
+            self.pause_overlay.free_textures(egui_state);
+        }
+
+        let commands = encoder.finish();
+        self.queue
+            .submit(extra_cmd_bufs.into_iter().chain(std::iter::once(commands)));
         output.present();
 
         Ok(())

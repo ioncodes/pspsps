@@ -1,8 +1,10 @@
 mod input;
+mod overlay;
 mod renderer;
 
 use clap::Parser;
 use psx_core::psx::Psx;
+use psx_core::sio::joy::ControllerState;
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
@@ -76,9 +78,12 @@ struct App {
     renderer: Option<renderer::Renderer>,
     psx: Option<Psx>,
     input_state: input::InputState,
+    controller_state: ControllerState,
     frame_count: usize,
     fps_timer: std::time::Instant,
     current_fps: f64,
+    paused: bool,
+    window_scale_factor: f32,
 }
 
 impl ApplicationHandler for App {
@@ -100,6 +105,10 @@ impl ApplicationHandler for App {
 
             self.window = Some(window);
             self.renderer = Some(renderer);
+
+            if let Some(window) = &self.window {
+                self.window_scale_factor = window.scale_factor() as f32;
+            }
         }
     }
 
@@ -108,8 +117,23 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
             }
+            WindowEvent::Resized(new_size) => {
+                if new_size.width > 0 && new_size.height > 0 {
+                    if let Some(renderer) = &mut self.renderer {
+                        renderer.resize(new_size);
+                    }
+                }
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 self.input_state.handle_keyboard_event(&event);
+                self.controller_state = self.input_state.get_controller_state();
+
+                // Handle F5 to toggle pause
+                if event.physical_key == winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::F5)
+                    && event.state == winit::event::ElementState::Pressed
+                {
+                    self.paused = !self.paused;
+                }
 
                 // Handle screenshot on F12
                 if event.physical_key == winit::keyboard::PhysicalKey::Code(winit::keyboard::KeyCode::F12)
@@ -123,50 +147,79 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
-                if let Some(psx) = &mut self.psx {
-                    // Update controller state
-                    let controller_state = self.input_state.get_controller_state();
-                    psx.set_controller_state(controller_state);
+                if let Some(window) = &self.window {
+                    self.window_scale_factor = window.scale_factor() as f32;
+                }
 
-                    // Run emulation until frame completes
-                    loop {
-                        match psx.step() {
-                            Ok((_, frame_complete)) => {
-                                if frame_complete {
+                let mut should_update_title = false;
+
+                if let Some(psx) = &mut self.psx {
+                    let controller_state = self.input_state.get_controller_state();
+                    self.controller_state = controller_state;
+
+                    // Only run emulation when not paused
+                    if !self.paused {
+                        // Update controller state
+                        psx.set_controller_state(controller_state);
+
+                        // Run emulation until frame completes
+                        loop {
+                            match psx.step() {
+                                Ok((_, frame_complete)) => {
+                                    if frame_complete {
+                                        break;
+                                    }
+                                }
+                                Err(_) => {
+                                    eprintln!("Error during emulation step");
                                     break;
                                 }
                             }
-                            Err(_) => {
-                                eprintln!("Error during emulation step");
-                                break;
-                            }
                         }
-                    }
 
-                    // Update FPS tracking
-                    self.frame_count += 1;
-                    let elapsed = self.fps_timer.elapsed().as_secs_f64();
-                    if elapsed >= 1.0 {
-                        self.current_fps = self.frame_count as f64 / elapsed;
-                        self.frame_count = 0;
-                        self.fps_timer = std::time::Instant::now();
-
-                        // Update window title with FPS
-                        if let Some(window) = &self.window {
-                            window.set_title(&format!("pspsps - a cute psx emulator - {:.2} FPS", self.current_fps));
+                        // Update FPS tracking
+                        self.frame_count += 1;
+                        let elapsed = self.fps_timer.elapsed().as_secs_f64();
+                        if elapsed >= 1.0 {
+                            self.current_fps = self.frame_count as f64 / elapsed;
+                            self.frame_count = 0;
+                            self.fps_timer = std::time::Instant::now();
+                            should_update_title = true;
                         }
                     }
 
                     // Get frame from GPU
                     let (width, height) = psx.cpu.mmu.gpu.gp.resolution();
-                    let frame = psx.cpu.mmu.gpu.display_frame();
+                    let mut frame = psx.cpu.mmu.gpu.display_frame();
+
+                    // Darken frame when paused to make it clear emulation is stopped
+                    if self.paused {
+                        for pixel in &mut frame {
+                            pixel.0 = pixel.0 / 3;
+                            pixel.1 = pixel.1 / 3;
+                            pixel.2 = pixel.2 / 3;
+                        }
+                    }
 
                     // Render
                     if let Some(renderer) = &mut self.renderer {
-                        if let Err(e) = renderer.render(width, height, &frame) {
+                        let overlay = if self.paused {
+                            Some(renderer::PauseOverlayState {
+                                controller_state: self.controller_state,
+                                scale_factor: self.window_scale_factor,
+                            })
+                        } else {
+                            None
+                        };
+
+                        if let Err(e) = renderer.render(width, height, &frame, overlay) {
                             eprintln!("Render error: {:?}", e);
                         }
                     }
+                }
+
+                if should_update_title {
+                    self.update_window_title();
                 }
 
                 // Request next frame
@@ -206,9 +259,19 @@ impl App {
             renderer: None,
             psx: Some(psx),
             input_state: input::InputState::new(),
+            controller_state: ControllerState::default(),
             frame_count: 0,
             fps_timer: std::time::Instant::now(),
             current_fps: 0.0,
+            paused: true, // Start paused
+            window_scale_factor: 1.0,
+        }
+    }
+
+    fn update_window_title(&self) {
+        if let Some(window) = &self.window {
+            let title = format!("pspsps - a cute psx emulator - {:.2} FPS", self.current_fps);
+            window.set_title(&title);
         }
     }
 

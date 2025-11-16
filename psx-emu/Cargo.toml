@@ -10,10 +10,12 @@ path = "src/main.rs"
 [dependencies]
 psx-core = { path = "../psx-core" }
 winit = "0.30"
-wgpu = "23.0"
+wgpu = "25.0"
 pollster = "0.4"
 bytemuck = { version = "1.14", features = ["derive"] }
 image = "0.25"
 clap = { version = "4.0", features = ["derive"] }
 chrono = "0.4"
 zip = "2.1"
+egui = "0.32.1"
+egui-wgpu = "0.32.1"

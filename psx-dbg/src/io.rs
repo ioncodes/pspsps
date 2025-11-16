@@ -3,6 +3,7 @@ use crate::states::cdrom::CdromState;
 use crate::states::cpu::CpuState;
 use crate::states::dma::DmaState;
 use crate::states::gpu::GpuState;
+use crate::states::irq::IrqState;
 use crate::states::mmu::MmuState;
 use crate::states::timers::TimersState;
 use crate::states::trace::TraceState;
@@ -26,6 +27,7 @@ pub enum DebuggerEvent {
     UpdateTimers,
     UpdateCdrom,
     UpdateDma,
+    UpdateIrq,
     UpdateController(ControllerState),
     SetIgnoreErrors(bool),
     BreakpointHit(u32),
@@ -38,4 +40,5 @@ pub enum DebuggerEvent {
     TimersUpdated(TimersState),
     CdromUpdated(CdromState),
     DmaUpdated(DmaState),
+    IrqUpdated(IrqState),
 }

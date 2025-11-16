@@ -4,6 +4,7 @@ use crate::states::cdrom::CdromState;
 use crate::states::cpu::CpuState;
 use crate::states::dma::{DmaChannelState, DmaState};
 use crate::states::gpu::GpuState;
+use crate::states::irq::IrqState;
 use crate::states::mmu::MmuState;
 use crate::states::timers::TimersState;
 use crate::states::trace::TraceState;
@@ -357,6 +358,14 @@ impl Debugger {
                             sector_lba_current: self.psx.cpu.mmu.cdrom.sector_lba_current,
                             last_command: self.psx.cpu.mmu.cdrom.last_command,
                             read_in_progress: self.psx.cpu.mmu.cdrom.read_in_progress,
+                        }))
+                        .unwrap();
+                }
+                DebuggerEvent::UpdateIrq => {
+                    self.channel_send
+                        .send(DebuggerEvent::IrqUpdated(IrqState {
+                            i_stat: self.psx.cpu.mmu.irq.status.0,
+                            i_mask: self.psx.cpu.mmu.irq.mask.0,
                         }))
                         .unwrap();
                 }

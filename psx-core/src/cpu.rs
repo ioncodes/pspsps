@@ -168,15 +168,30 @@ impl Cpu {
     }
 
     fn check_interrupts(&mut self) {
-        if !self.cop0.sr.current_interrupt_enable() || self.exception_raised {
-            return;
-        }
-
         let i_stat = self.mmu.irq.status.0;
         let i_mask = self.mmu.irq.mask.0;
         let pending = i_stat & i_mask;
 
+        // Set cop0r13.bit10 (IP.bit2 - hardware interrupt) when (I_STAT & I_MASK) is nonzero
+        let mut ip = self.cop0.cause.interrupt_pending();
         if pending != 0 {
+            ip |= 1 << 2; // Set bit 2 of IP field (which is bit 10 of the register)
+        } else {
+            ip &= !(1 << 2); // Clear bit 2 of IP field
+        }
+        self.cop0.cause.set_interrupt_pending(ip);
+
+        // Check if interrupt should execute: cop0r13.bit10 && cop0r12.bit10 && cop0r12.bit0
+        if self.exception_raised {
+            return;
+        }
+
+        let ip2_set = (ip & (1 << 2)) != 0; // Check bit 2 of IP (bit 10 of register)
+        let iec = self.cop0.sr.current_interrupt_enable(); // cop0r12.bit0 (IEc)
+        let interrupt_mask = self.cop0.sr.interrupt_mask(); // cop0r12.bit10 (Im2)
+        let im2_enabled = (interrupt_mask & (1 << 2)) != 0;
+
+        if ip2_set && iec && im2_enabled {
             let in_delay_slot = self.delay_slot.is_some();
             self.cause_exception(Exception::External, in_delay_slot);
         }

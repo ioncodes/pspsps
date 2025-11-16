@@ -8,6 +8,7 @@ pub struct Spu {
     cycles: usize,
 }
 
+
 impl Spu {
     pub fn new() -> Self {
         Spu {
@@ -21,7 +22,12 @@ impl Spu {
     }
 
     pub fn irq_pending(&mut self) -> bool {
-        false
+        if self.cycles >= 75600 {
+            self.cycles -= 75600;
+            true
+        } else {
+            false
+        }
     }
 }
 

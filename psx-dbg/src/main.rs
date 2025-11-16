@@ -15,8 +15,8 @@ use tracing_subscriber::Layer as _;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use widgets::{
-    BreakpointsWidget, CdromWidget, CopWidget, CpuWidget, DisplayWidget, DmaWidget, GpuWidget, MmuWidget,
-    SharedContext, TimersWidget, TraceWidget, TtyWidget, Widget,
+    BreakpointsWidget, CdromWidget, CopWidget, CpuWidget, DisplayWidget, DmaWidget, GpuWidget, IrqWidget,
+    MmuWidget, SharedContext, TimersWidget, TraceWidget, TtyWidget, Widget,
 };
 
 use crate::debugger::Debugger;
@@ -63,6 +63,7 @@ enum TabKind {
     Timers,
     Cdrom,
     Dma,
+    Irq,
 }
 
 impl std::fmt::Display for TabKind {
@@ -79,6 +80,7 @@ impl std::fmt::Display for TabKind {
             TabKind::Timers => write!(f, "Timers"),
             TabKind::Cdrom => write!(f, "CDROM"),
             TabKind::Dma => write!(f, "DMA"),
+            TabKind::Irq => write!(f, "IRQ"),
         }
     }
 }
@@ -115,7 +117,7 @@ impl PsxDebugger {
         let [gpu_node, mmu_node] = dock_state.main_surface_mut().split_right(
             right_node,
             0.5,
-            vec![TabKind::Mmu, TabKind::Timers, TabKind::Cdrom, TabKind::Dma],
+            vec![TabKind::Mmu, TabKind::Timers, TabKind::Cdrom, TabKind::Dma, TabKind::Irq],
         );
         dock_state
             .main_surface_mut()
@@ -136,6 +138,7 @@ impl PsxDebugger {
         widgets.insert(TabKind::Timers, Box::new(TimersWidget::new()));
         widgets.insert(TabKind::Cdrom, Box::new(CdromWidget::new()));
         widgets.insert(TabKind::Dma, Box::new(DmaWidget::new()));
+        widgets.insert(TabKind::Irq, Box::new(IrqWidget::new()));
 
         let (request_channel_send, request_channel_recv) = crossbeam_channel::unbounded();
         let (response_channel_send, response_channel_recv) = crossbeam_channel::unbounded();
@@ -241,6 +244,9 @@ impl eframe::App for PsxDebugger {
                 DebuggerEvent::DmaUpdated(state) => {
                     self.state.dma = state;
                 }
+                DebuggerEvent::IrqUpdated(state) => {
+                    self.state.irq = state;
+                }
                 DebuggerEvent::Paused => {
                     self.state.is_running = false;
                     self.toasts.add(Toast {
@@ -286,6 +292,9 @@ impl eframe::App for PsxDebugger {
         self.channel_send
             .send(DebuggerEvent::UpdateDma)
             .expect("Failed to send update DMA event");
+        self.channel_send
+            .send(DebuggerEvent::UpdateIrq)
+            .expect("Failed to send update IRQ event");
 
         let mut tab_viewer = TabViewer {
             channel_send: &self.channel_send,

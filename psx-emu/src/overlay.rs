@@ -6,9 +6,11 @@ use egui_wgpu::{Renderer as EguiRenderer, ScreenDescriptor};
 use psx_core::sio::joy::ControllerState;
 use wgpu::{self, CommandBuffer, CommandEncoder, Device, Queue, TextureFormat};
 
+#[derive(Clone)]
 pub struct PauseOverlayState {
     pub controller_state: ControllerState,
     pub scale_factor: f32,
+    pub now_playing: Option<String>,
 }
 
 pub struct PreparedOverlay {
@@ -137,6 +139,24 @@ impl PauseOverlay {
                         });
                     });
             });
+
+        if let Some(now_playing) = overlay.now_playing.as_deref() {
+            Area::new(Id::new("psx_currently_playing_overlay"))
+                .anchor(Align2::CENTER_TOP, [0.0, 25.0])
+                .show(ctx, |ui| {
+                    Frame::new()
+                        .fill(Color32::from_black_alpha(220))
+                        .corner_radius(18.0)
+                        .inner_margin(Margin::symmetric(24, 16))
+                        .show(ui, |ui| {
+                            ui.label(
+                                RichText::new(format!("Currently playing: {}", now_playing))
+                                    .font(FontId::proportional(20.0))
+                                    .color(Color32::from_gray(230)),
+                            );
+                        });
+                });
+        }
     }
 
     fn render_binding_row(ui: &mut Ui, label: &str, key_hint: &str, active: bool) {

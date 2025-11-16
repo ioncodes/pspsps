@@ -7,7 +7,7 @@ use psx_core::psx::Psx;
 use psx_core::sio::joy::ControllerState;
 use std::fs;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -84,6 +84,7 @@ struct App {
     current_fps: f64,
     paused: bool,
     window_scale_factor: f32,
+    now_playing: Option<String>,
 }
 
 impl ApplicationHandler for App {
@@ -207,6 +208,7 @@ impl ApplicationHandler for App {
                             Some(renderer::PauseOverlayState {
                                 controller_state: self.controller_state,
                                 scale_factor: self.window_scale_factor,
+                                now_playing: self.now_playing.clone(),
                             })
                         } else {
                             None
@@ -234,7 +236,7 @@ impl ApplicationHandler for App {
 
 impl App {
     fn new(args: Args) -> Self {
-        // Load BIOS
+    // Load BIOS
         let bios = fs::read(&args.bios).expect("Failed to read BIOS file");
 
         // Create PSX instance
@@ -254,6 +256,12 @@ impl App {
             println!("Loaded sideload EXE: {:?}", sideload_path);
         }
 
+        let now_playing = args
+            .cdrom
+            .as_ref()
+            .and_then(|path| Self::media_display_name(path))
+            .or_else(|| args.sideload.as_ref().and_then(|path| Self::media_display_name(path)));
+
         Self {
             window: None,
             renderer: None,
@@ -265,6 +273,7 @@ impl App {
             current_fps: 0.0,
             paused: true, // Start paused
             window_scale_factor: 1.0,
+            now_playing,
         }
     }
 
@@ -299,6 +308,13 @@ impl App {
         } else {
             println!("Screenshot saved: {}", filename);
         }
+    }
+
+    fn media_display_name(path: &Path) -> Option<String> {
+        path.file_stem()
+            .or_else(|| path.file_name())
+            .map(|stem| stem.to_string_lossy().trim().to_string())
+            .filter(|s| !s.is_empty())
     }
 }
 

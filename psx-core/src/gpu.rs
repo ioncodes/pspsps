@@ -49,28 +49,25 @@ impl Gpu {
         let (width, height) = self.gp.resolution();
         let mut buffer = vec![(0, 0, 0); width * height];
 
-        // Use display area from GP1(05h) command
-        // X is in halfword units (multiply by 2 for pixel coordinates)
-        let display_x = 0;
-        let display_y = 0;
+        // Use display area from GP1(05h) command.
+        // The register encodes halfword addresses, which map 1:1 to 16-bit pixels in VRAM.
+        let display_x = (self.gp.display_area_x as usize) & (VRAM_WIDTH - 1);
+        let display_y = (self.gp.display_area_y as usize) & (VRAM_HEIGHT - 1);
 
         for y in 0..height {
+            let vram_y = (display_y + y) & (VRAM_HEIGHT - 1);
             for x in 0..width {
-                let vram_x = display_x + x;
-                let vram_y = display_y + y;
+                let vram_x = (display_x + x) & (VRAM_WIDTH - 1);
+                let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
 
-                if vram_x < VRAM_WIDTH && vram_y < VRAM_HEIGHT {
-                    let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
+                // Read RGB555 pixel from VRAM
+                let pixel_u16 = u16::from_le_bytes([self.gp.vram[vram_idx], self.gp.vram[vram_idx + 1]]);
 
-                    // Read RGB555 pixel from VRAM
-                    let pixel_u16 = u16::from_le_bytes([self.gp.vram[vram_idx], self.gp.vram[vram_idx + 1]]);
+                // Convert RGB555 to RGB888
+                let (r8, g8, b8) = rgb::rgb555_to_rgb888(pixel_u16);
 
-                    // Convert RGB555 to RGB888
-                    let (r8, g8, b8) = rgb::rgb555_to_rgb888(pixel_u16);
-
-                    let buffer_idx = y * width + x;
-                    buffer[buffer_idx] = (r8 as u8, g8 as u8, b8 as u8);
-                }
+                let buffer_idx = y * width + x;
+                buffer[buffer_idx] = (r8 as u8, g8 as u8, b8 as u8);
             }
         }
 

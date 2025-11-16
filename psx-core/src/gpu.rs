@@ -133,7 +133,6 @@ impl Gpu {
         if cmd.textured() {
             let uv = outer_cmd.data[cmd.uv_idx()];
 
-            // reconstruct texpage from GPU state (set by GP0(E1) command)
             let texpage = ((self.gp.gp1_status.texture_page_x_base() & 0xF) as u16)
                 | ((self.gp.gp1_status.texture_page_y_base_1() as u16) << 4)
                 | (((self.gp.gp1_status.texture_page_colors() & 0x3) as u16) << 7)
@@ -307,12 +306,14 @@ impl Gpu {
                 // Extract texpage components (bits 0-8, 11 update global state)
                 let texture_page_x_base = (texpage & 0xF) as u32;
                 let texture_page_y_base_1 = ((texpage >> 4) & 0x1) != 0;
+                let semi_transparency = ((texpage >> 5) & 0x3) as u32;
                 let texture_page_colors = ((texpage >> 7) & 0x3) as u32;
                 let texture_page_y_base_2 = ((texpage >> 11) & 0x1) != 0;
 
-                // Update global GPU state (same as GP0(E1h) command)
+                // Update global GPU state: (gpustat & 0xFFFFFE00) | (texpage & 0x1FF)
                 self.gp.gp1_status.set_texture_page_x_base(texture_page_x_base);
                 self.gp.gp1_status.set_texture_page_y_base_1(texture_page_y_base_1);
+                self.gp.gp1_status.set_semi_transparency(semi_transparency);
                 self.gp.gp1_status.set_texture_page_colors(texture_page_colors);
                 self.gp.gp1_status.set_texture_page_y_base_2(texture_page_y_base_2);
 

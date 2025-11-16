@@ -5,6 +5,7 @@ pub mod rgb;
 pub mod status;
 
 use crate::gpu::cmd::Gp0Command;
+use crate::gpu::cmd::line::DrawLineCommand;
 use crate::gpu::cmd::poly::DrawPolygonCommand;
 use crate::gpu::cmd::rect::DrawRectangleCommand;
 use crate::gpu::cmd::tex::{
@@ -47,10 +48,10 @@ impl Gpu {
         let (width, height) = self.gp.resolution();
         let mut buffer = vec![(0, 0, 0); width * height];
 
-        // TODO: respect display area X/Y position from GP1 commands
-        // For now, assume display starts at (0, 0) in VRAM
-        let display_x = 0;
-        let display_y = 0;
+        // Use display area from GP1(05h) command
+        // X is in halfword units (multiply by 2 for pixel coordinates)
+        let display_x = (self.gp.display_area_x * 2) as usize;
+        let display_y = self.gp.display_area_y as usize;
 
         for y in 0..height {
             for x in 0..width {
@@ -80,14 +81,12 @@ impl Gpu {
             match parsed_cmd.cmd {
                 Gp0Command::RectanglePrimitive(cmd) => self.process_rectangle_primitive_cmd(parsed_cmd, cmd),
                 Gp0Command::PolygonPrimitive(cmd) => self.process_polygon_primitive_cmd(parsed_cmd, cmd),
+                Gp0Command::LinePrimitive(cmd) => self.process_line_primitive_cmd(parsed_cmd, cmd),
                 Gp0Command::CpuToVramBlit => self.process_cpu_to_vram_blit_cmd(parsed_cmd),
                 Gp0Command::VramToCpuBlit => self.process_vram_to_cpu_blit_cmd(parsed_cmd),
                 Gp0Command::VramToVramBlit => self.process_vram_to_vram_blit_cmd(parsed_cmd),
                 Gp0Command::Environment(cmd) => self.process_environment_cmd(parsed_cmd, cmd),
                 Gp0Command::Misc(cmd) => self.process_misc_cmd(parsed_cmd, cmd),
-                _ => {
-                    tracing::error!(target: "psx_core::gpu", cmd = %parsed_cmd.cmd, raw = %format!("{:032b} / {:08X}", parsed_cmd.raw, parsed_cmd.raw), "Unimplemented GP0 command");
-                }
             }
         }
     }
@@ -140,6 +139,8 @@ impl Gpu {
                 self.gp.drawing_area_top_left.y1(),
                 self.gp.drawing_area_bottom_right.x2(),
                 self.gp.drawing_area_bottom_right.y2(),
+                cmd.semi_transparent(),
+                self.gp.gp1_status.semi_transparency(),
                 &mut self.gp.vram,
             );
         } else {
@@ -165,13 +166,93 @@ impl Gpu {
                     let vram_x = (screen_x & (VRAM_WIDTH as i32 - 1)) as usize; // Wrap at 1024
                     let vram_y = (screen_y & (VRAM_HEIGHT as i32 - 1)) as usize; // Wrap at 512
 
+                    // Apply semi-transparency blending if enabled
                     let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
-                    let bytes = pixel_value.to_le_bytes();
+                    let final_pixel = if cmd.semi_transparent() {
+                        // Read background pixel
+                        let background = u16::from_le_bytes([
+                            self.gp.vram[vram_idx],
+                            self.gp.vram[vram_idx + 1],
+                        ]);
+
+                        // Blend with background
+                        rgb::blend_semi_transparency(
+                            pixel_value,
+                            background,
+                            self.gp.gp1_status.semi_transparency(),
+                        )
+                    } else {
+                        pixel_value
+                    };
+
+                    let bytes = final_pixel.to_le_bytes();
                     self.gp.vram[vram_idx] = bytes[0];
                     self.gp.vram[vram_idx + 1] = bytes[1];
                 }
             }
         }
+    }
+
+    fn process_line_primitive_cmd(&mut self, parsed_cmd: ParsedCommand, cmd: DrawLineCommand) {
+        // For now, only handle single lines (not polylines)
+        // TODO: Implement polyline support
+        if cmd.polyline() {
+            tracing::warn!(
+                target: "psx_core::gpu",
+                "Polyline rendering not yet implemented"
+            );
+            return;
+        }
+
+        // Extract first vertex from command word (misusing color field)
+        let v0_data = cmd.color(); // First vertex position
+        let x0 = (v0_data & 0xFFFF) as i16 + self.gp.drawing_offset.x_offset_signed() as i16;
+        let y0 = ((v0_data >> 16) & 0xFFFF) as i16 + self.gp.drawing_offset.y_offset_signed() as i16;
+        let color0 = cmd.color(); // Use command color
+
+        // Extract second vertex and color
+        let color1 = if cmd.gouraud() {
+            parsed_cmd.data[cmd.color_idx(1)]
+        } else {
+            cmd.color()
+        };
+
+        let v1_data = if cmd.gouraud() {
+            parsed_cmd.data[cmd.vertex_idx(1)]
+        } else {
+            parsed_cmd.data[cmd.vertex_idx(1)]
+        };
+
+        let x1 = (v1_data & 0xFFFF) as i16 + self.gp.drawing_offset.x_offset_signed() as i16;
+        let y1 = ((v1_data >> 16) & 0xFFFF) as i16 + self.gp.drawing_offset.y_offset_signed() as i16;
+
+        tracing::debug!(
+            target: "psx_core::gpu",
+            x0, y0, x1, y1,
+            color0 = format!("{:06X}", color0),
+            color1 = format!("{:06X}", color1),
+            gouraud = cmd.gouraud(),
+            semi_transparent = cmd.semi_transparent(),
+            "Draw line primitive"
+        );
+
+        // Rasterize the line
+        rasterizer::rasterize_line(
+            x0,
+            y0,
+            x1,
+            y1,
+            color0,
+            color1,
+            cmd.gouraud(),
+            cmd.semi_transparent(),
+            self.gp.gp1_status.semi_transparency(),
+            self.gp.drawing_area_top_left.x1(),
+            self.gp.drawing_area_top_left.y1(),
+            self.gp.drawing_area_bottom_right.x2(),
+            self.gp.drawing_area_bottom_right.y2(),
+            &mut self.gp.vram,
+        );
     }
 
     fn process_polygon_primitive_cmd(&mut self, parsed_cmd: ParsedCommand, cmd: DrawPolygonCommand) {
@@ -251,6 +332,8 @@ impl Gpu {
             self.gp.drawing_area_bottom_right.x2(),
             self.gp.drawing_area_bottom_right.y2(),
             self.gp.gp1_status.dither(),
+            cmd.semi_transparent(),
+            self.gp.gp1_status.semi_transparency(),
             &mut self.gp.vram,
         );
     }

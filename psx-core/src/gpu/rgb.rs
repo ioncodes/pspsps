@@ -31,3 +31,47 @@ pub fn extract_rgb888(color: u32) -> (i32, i32, i32) {
     let b = ((color >> 16) & 0xFF) as i32;
     (r, g, b)
 }
+
+/// Apply semi-transparency blending between foreground and background pixels
+///
+/// Blend modes:
+/// - 0: B/2 + F/2 (50% back + 50% front)
+/// - 1: B + F (100% back + 100% front, additive with clamping)
+/// - 2: B - F (100% back - 100% front, subtractive with clamping)
+/// - 3: B + F/4 (100% back + 25% front)
+#[inline(always)]
+pub fn blend_semi_transparency(foreground: u16, background: u16, mode: u32) -> u16 {
+    // Convert both pixels to RGB888 for blending
+    let (fr, fg, fb) = rgb555_to_rgb888(foreground);
+    let (br, bg, bb) = rgb555_to_rgb888(background);
+
+    let (r, g, b) = match mode {
+        // Mode 0: B/2 + F/2
+        0 => (
+            (br / 2 + fr / 2),
+            (bg / 2 + fg / 2),
+            (bb / 2 + fb / 2),
+        ),
+        // Mode 1: B + F (additive, with clamping)
+        1 => (
+            (br + fr).min(255),
+            (bg + fg).min(255),
+            (bb + fb).min(255),
+        ),
+        // Mode 2: B - F (subtractive, with clamping)
+        2 => (
+            (br - fr).max(0),
+            (bg - fg).max(0),
+            (bb - fb).max(0),
+        ),
+        // Mode 3: B + F/4
+        3 => (
+            (br + fr / 4).min(255),
+            (bg + fg / 4).min(255),
+            (bb + fb / 4).min(255),
+        ),
+        _ => (fr, fg, fb), // Fallback to foreground (shouldn't happen)
+    };
+
+    rgb888_to_rgb555(r, g, b)
+}

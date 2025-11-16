@@ -29,6 +29,8 @@ pub struct Gp {
     pub drawing_area_top_left: DrawingAreaTopLeftCommand,
     pub drawing_area_bottom_right: DrawingAreaBottomRightCommand,
     pub drawing_offset: DrawingOffsetCommand,
+    pub display_area_x: u32,
+    pub display_area_y: u32,
     fifo: VecDeque<ParsedCommand>,
     expected_data: usize,
     state: State,
@@ -50,6 +52,8 @@ impl Gp {
             drawing_area_top_left: DrawingAreaTopLeftCommand(0),
             drawing_area_bottom_right: DrawingAreaBottomRightCommand(0),
             drawing_offset: DrawingOffsetCommand(0),
+            display_area_x: 0,
+            display_area_y: 0,
         }
     }
 
@@ -247,6 +251,18 @@ impl Gp {
                 self.gp1_status.set_dma_direction(dma_direction);
 
                 tracing::trace!(target: "psx_core::gpu", %dma_direction, "DMA Direction / Data Request via GP1 command");
+            }
+            // GP1(05h) - Start of Display Area (in VRAM)
+            0x05 => {
+                self.display_area_x = params & 0x3FF; // Bits 0-9: X (halfword address in VRAM)
+                self.display_area_y = (params >> 10) & 0x1FF; // Bits 10-18: Y (scanline in VRAM)
+
+                tracing::trace!(
+                    target: "psx_core::gpu",
+                    x = self.display_area_x,
+                    y = self.display_area_y,
+                    "Start of Display Area via GP1 command"
+                );
             }
             // Display Mode
             0x08 => {

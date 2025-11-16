@@ -1,14 +1,15 @@
 pub mod rect;
 pub mod poly;
 pub mod tex;
+pub mod line;
 
-use crate::gpu::cmd::{poly::DrawPolygonCommand, rect::DrawRectangleCommand};
+use crate::gpu::cmd::{poly::DrawPolygonCommand, rect::DrawRectangleCommand, line::DrawLineCommand};
 
 #[derive(PartialEq, Eq)]
 pub enum Gp0Command {
     Misc(u8), // u8 = real command
     PolygonPrimitive(DrawPolygonCommand),
-    LinePrimitive,
+    LinePrimitive(DrawLineCommand),
     RectanglePrimitive(DrawRectangleCommand),
     VramToVramBlit,
     CpuToVramBlit,
@@ -21,7 +22,7 @@ impl From<u32> for Gp0Command {
         match (value >> 29) & 0b111 {
             0b000 => Gp0Command::Misc(((value >> 24) & 0xFF) as u8),
             0b001 => Gp0Command::PolygonPrimitive(DrawPolygonCommand(value)),
-            0b010 => Gp0Command::LinePrimitive,
+            0b010 => Gp0Command::LinePrimitive(DrawLineCommand(value)),
             0b011 => Gp0Command::RectanglePrimitive(DrawRectangleCommand(value)),
             0b100 => Gp0Command::VramToVramBlit,
             0b101 => Gp0Command::CpuToVramBlit,
@@ -37,7 +38,7 @@ impl std::fmt::Display for Gp0Command {
         let name = match self {
             Gp0Command::Misc(cmd) => &format!("Misc. Command {:02X}", cmd),
             Gp0Command::PolygonPrimitive(_) => "Polygon Primitive",
-            Gp0Command::LinePrimitive => "Line Primitive",
+            Gp0Command::LinePrimitive(_) => "Line Primitive",
             Gp0Command::RectanglePrimitive(_) => "Rectangle Primitive",
             Gp0Command::VramToVramBlit => "VRAM to VRAM Blit",
             Gp0Command::CpuToVramBlit => "CPU to VRAM Blit",
@@ -81,6 +82,22 @@ impl Gp0Command {
                 }
 
                 base
+            }
+            Gp0Command::LinePrimitive(cmd) => {
+                // For single line: 1 vertex (or 2 words if Gouraud)
+                // For polyline: variable length, terminated by 0x5555_5555 or 0x5000_5000
+                // TODO: polylines need special handling with terminator detection
+                if cmd.polyline() {
+                    // Polylines are variable length - we'll handle this specially in the processor
+                    0
+                } else {
+                    // Single line: second vertex
+                    if cmd.gouraud() {
+                        2 // color + vertex for second vertex
+                    } else {
+                        1 // just vertex for second vertex
+                    }
+                }
             }
             Gp0Command::VramToVramBlit => 3,
             Gp0Command::CpuToVramBlit => 2,

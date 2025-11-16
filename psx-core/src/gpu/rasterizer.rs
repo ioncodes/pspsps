@@ -16,7 +16,7 @@ const DITHER_TABLE: [[i32; 4]; 4] = [
 pub fn rasterize_polygon(
     vertices: &[(i16, i16)], colors: &[u32], uvs: &[u32], raw_texture: bool,
     texture_window: TextureWindowSettingCommand, drawing_area_x1: u32, drawing_area_y1: u32, drawing_area_x2: u32,
-    drawing_area_y2: u32, dither_enabled: bool, vram: &mut [u8],
+    drawing_area_y2: u32, dither_enabled: bool, semi_transparent: bool, semi_transparency_mode: u32, vram: &mut [u8],
 ) {
     // Quads must be split into two triangles
     // Vertices received: V0, V1, V2, V3
@@ -50,6 +50,8 @@ pub fn rasterize_polygon(
             drawing_area_x2,
             drawing_area_y2,
             dither_enabled,
+            semi_transparent,
+            semi_transparency_mode,
             vram,
         );
         rasterize_triangle(
@@ -66,6 +68,8 @@ pub fn rasterize_polygon(
             drawing_area_x2,
             drawing_area_y2,
             dither_enabled,
+            semi_transparent,
+            semi_transparency_mode,
             vram,
         );
     } else {
@@ -83,6 +87,8 @@ pub fn rasterize_polygon(
             drawing_area_x2,
             drawing_area_y2,
             dither_enabled,
+            semi_transparent,
+            semi_transparency_mode,
             vram,
         );
     }
@@ -90,7 +96,8 @@ pub fn rasterize_polygon(
 
 pub fn rasterize_rectangle(
     x: i16, y: i16, width: u16, height: u16, uv: u32, texpage: u16, texture_window: TextureWindowSettingCommand,
-    drawing_area_x1: u32, drawing_area_y1: u32, drawing_area_x2: u32, drawing_area_y2: u32, vram: &mut [u8],
+    drawing_area_x1: u32, drawing_area_y1: u32, drawing_area_x2: u32, drawing_area_y2: u32, semi_transparent: bool,
+    semi_transparency_mode: u32, vram: &mut [u8],
 ) {
     // Extract UV and CLUT from the uv parameter
     let u_base = (uv & 0xFF) as u8;
@@ -157,11 +164,119 @@ pub fn rasterize_rectangle(
                 continue;
             }
 
+            // Apply semi-transparency blending if enabled
+            // For textured rectangles, bit 15 of CLUT entry acts as semi-transparency flag
+            let pixel_semi_transparent = (pixel & 0x8000) != 0;
+            let final_pixel = if semi_transparent || pixel_semi_transparent {
+                // Read background pixel
+                let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
+                let background = u16::from_le_bytes([vram[vram_idx], vram[vram_idx + 1]]);
+
+                // Blend with background (mask off bit 15 for blending)
+                rgb::blend_semi_transparency(pixel & 0x7FFF, background, semi_transparency_mode)
+            } else {
+                pixel
+            };
+
+            // Write pixel to VRAM
+            let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
+            let bytes = final_pixel.to_le_bytes();
+            vram[vram_idx] = bytes[0];
+            vram[vram_idx + 1] = bytes[1];
+        }
+    }
+}
+
+pub fn rasterize_line(
+    x0: i16, y0: i16, x1: i16, y1: i16, color0: u32, color1: u32, gouraud: bool, semi_transparent: bool,
+    semi_transparency_mode: u32, drawing_area_x1: u32, drawing_area_y1: u32, drawing_area_x2: u32,
+    drawing_area_y2: u32, vram: &mut [u8],
+) {
+    // Bresenham's line algorithm with Gouraud shading support
+    let mut x0 = x0 as i32;
+    let mut y0 = y0 as i32;
+    let x1 = x1 as i32;
+    let y1 = y1 as i32;
+
+    let dx = (x1 - x0).abs();
+    let dy = (y1 - y0).abs();
+    let sx = if x0 < x1 { 1 } else { -1 };
+    let sy = if y0 < y1 { 1 } else { -1 };
+    let mut err = dx - dy;
+
+    // Extract color components for interpolation
+    let (r0, g0, b0) = rgb::extract_rgb888(color0);
+    let (r1, g1, b1) = rgb::extract_rgb888(color1);
+
+    // Calculate total distance for interpolation
+    let total_distance = ((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0)) as f32;
+    let total_distance = total_distance.sqrt().max(1.0);
+
+    loop {
+        // Check if within drawing area
+        if x0 >= drawing_area_x1 as i32
+            && x0 < drawing_area_x2 as i32
+            && y0 >= drawing_area_y1 as i32
+            && y0 < drawing_area_y2 as i32
+        {
+            // Calculate interpolation factor for Gouraud shading
+            let t = if gouraud {
+                let dist = ((x0 - x0.min(x1)) * (x0 - x0.min(x1)) + (y0 - y0.min(y1)) * (y0 - y0.min(y1))) as f32;
+                (dist.sqrt() / total_distance).min(1.0)
+            } else {
+                0.0
+            };
+
+            // Interpolate color if Gouraud shading
+            let (r, g, b) = if gouraud {
+                let r = (r0 as f32 + (r1 - r0) as f32 * t) as i32;
+                let g = (g0 as f32 + (g1 - g0) as f32 * t) as i32;
+                let b = (b0 as f32 + (b1 - b0) as f32 * t) as i32;
+                (r, g, b)
+            } else {
+                (r0, g0, b0)
+            };
+
+            let mut pixel = rgb::rgb888_to_rgb555(r, g, b);
+
+            // Apply semi-transparency blending if enabled
+            if semi_transparent {
+                // Wrap coordinates to VRAM dimensions
+                let vram_x = (x0 & (VRAM_WIDTH as i32 - 1)) as usize;
+                let vram_y = (y0 & (VRAM_HEIGHT as i32 - 1)) as usize;
+
+                // Read background pixel
+                let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
+                let background = u16::from_le_bytes([vram[vram_idx], vram[vram_idx + 1]]);
+
+                // Blend with background
+                pixel = rgb::blend_semi_transparency(pixel, background, semi_transparency_mode);
+            }
+
+            // Wrap coordinates to VRAM dimensions
+            let vram_x = (x0 & (VRAM_WIDTH as i32 - 1)) as usize;
+            let vram_y = (y0 & (VRAM_HEIGHT as i32 - 1)) as usize;
+
             // Write pixel to VRAM
             let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
             let bytes = pixel.to_le_bytes();
             vram[vram_idx] = bytes[0];
             vram[vram_idx + 1] = bytes[1];
+        }
+
+        // Break when we reach the end point
+        if x0 == x1 && y0 == y1 {
+            break;
+        }
+
+        let e2 = 2 * err;
+        if e2 > -dy {
+            err -= dy;
+            x0 += sx;
+        }
+        if e2 < dx {
+            err += dx;
+            y0 += sy;
         }
     }
 }
@@ -169,7 +284,8 @@ pub fn rasterize_rectangle(
 fn rasterize_triangle(
     vertices: [(i16, i16); 3], colors: [u32; 3], uvs: [u32; 3], textured: bool, raw_texture: bool, clut: u16,
     texpage: u16, texture_window: TextureWindowSettingCommand, drawing_area_x1: u32, drawing_area_y1: u32,
-    drawing_area_x2: u32, drawing_area_y2: u32, dither_enabled: bool, vram: &mut [u8],
+    drawing_area_x2: u32, drawing_area_y2: u32, dither_enabled: bool, semi_transparent: bool,
+    semi_transparency_mode: u32, vram: &mut [u8],
 ) {
     // Vertex coordinates
     let (x0, y0) = (vertices[0].0 as i32, vertices[0].1 as i32);
@@ -243,9 +359,23 @@ fn rasterize_triangle(
                 let vram_x = (x & (VRAM_WIDTH as i32 - 1)) as usize;
                 let vram_y = (y & (VRAM_HEIGHT as i32 - 1)) as usize;
 
+                // Apply semi-transparency blending if enabled
+                // For textured primitives, bit 15 of CLUT entry acts as semi-transparency flag
+                let pixel_semi_transparent = textured && (pixel & 0x8000) != 0;
+                let final_pixel = if semi_transparent || pixel_semi_transparent {
+                    // Read background pixel
+                    let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
+                    let background = u16::from_le_bytes([vram[vram_idx], vram[vram_idx + 1]]);
+
+                    // Blend with background (mask off bit 15 for blending)
+                    rgb::blend_semi_transparency(pixel & 0x7FFF, background, semi_transparency_mode)
+                } else {
+                    pixel
+                };
+
                 // Push to VRAM
                 let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
-                let bytes = pixel.to_le_bytes();
+                let bytes = final_pixel.to_le_bytes();
                 vram[vram_idx] = bytes[0];
                 vram[vram_idx + 1] = bytes[1];
             }

@@ -1,8 +1,6 @@
-media/mk2.mp4
-
-media/pb2.mp4
-
-media/debugger.mp4
+<video src="media/mk2.mp4" width=180 />
+<video src="media/pb2.mp4" width=180 />
+<video src="media/debugger.mp4" width=180 />
 
 <img width="512" height="240" alt="crash_display" src="media/crash_display.png" />
 <img width="1702" height="932" alt="crash_vram" src="media/crash_vram.png" />

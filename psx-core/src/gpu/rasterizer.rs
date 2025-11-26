@@ -159,15 +159,18 @@ pub fn rasterize_rectangle(
                 vram,
             );
 
-            // Skip transparent pixels
+            // Skip fully transparent pixels
             if pixel == 0x0000 {
                 continue;
             }
 
             // Apply semi-transparency blending if enabled
-            // For textured rectangles, bit 15 of CLUT entry acts as semi-transparency flag
+            // Bit 15 of texture color acts as semi-transparency flag, but only for semi-transparent commands
+            // For opaque commands: 0x8000 = Non-Transparent Black
+            // For semi-transparent commands: 0x8000 = Semi-Transparent Black
             let pixel_semi_transparent = (pixel & 0x8000) != 0;
-            let final_pixel = if semi_transparent || pixel_semi_transparent {
+            let should_blend = semi_transparent && pixel_semi_transparent;
+            let final_pixel = if should_blend {
                 // Read background pixel
                 let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
                 let background = u16::from_le_bytes([vram[vram_idx], vram[vram_idx + 1]]);
@@ -175,7 +178,8 @@ pub fn rasterize_rectangle(
                 // Blend with background (mask off bit 15 for blending)
                 rgb::blend_semi_transparency(pixel & 0x7FFF, background, semi_transparency_mode)
             } else {
-                pixel
+                // Opaque rendering: mask off bit 15 to get actual color
+                pixel & 0x7FFF
             };
 
             // Write pixel to VRAM
@@ -350,7 +354,7 @@ fn rasterize_triangle(
                     )
                 };
 
-                // Transparent pixel
+                // Skip fully transparent pixels
                 if textured && pixel == 0x0000 {
                     continue;
                 }
@@ -360,9 +364,16 @@ fn rasterize_triangle(
                 let vram_y = (y & (VRAM_HEIGHT as i32 - 1)) as usize;
 
                 // Apply semi-transparency blending if enabled
-                // For textured primitives, bit 15 of CLUT entry acts as semi-transparency flag
+                // Bit 15 of texture color acts as semi-transparency flag, but only for semi-transparent commands
+                // For opaque commands: 0x8000 = Non-Transparent Black
+                // For semi-transparent commands: 0x8000 = Semi-Transparent Black
                 let pixel_semi_transparent = textured && (pixel & 0x8000) != 0;
-                let final_pixel = if semi_transparent || pixel_semi_transparent {
+                let should_blend = if textured {
+                    semi_transparent && pixel_semi_transparent
+                } else {
+                    semi_transparent
+                };
+                let final_pixel = if should_blend {
                     // Read background pixel
                     let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
                     let background = u16::from_le_bytes([vram[vram_idx], vram[vram_idx + 1]]);
@@ -370,7 +381,12 @@ fn rasterize_triangle(
                     // Blend with background (mask off bit 15 for blending)
                     rgb::blend_semi_transparency(pixel & 0x7FFF, background, semi_transparency_mode)
                 } else {
-                    pixel
+                    // For textured primitives, mask off bit 15 to get actual color
+                    if textured {
+                        pixel & 0x7FFF
+                    } else {
+                        pixel
+                    }
                 };
 
                 // Push to VRAM

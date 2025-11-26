@@ -28,9 +28,10 @@ pub struct Gpu {
 impl Gpu {
     pub fn new() -> Self {
         let mut gpu = Self { gp: Gp::new() };
-        
-        gpu.gp.drawing_area_bottom_right =
-            DrawingAreaBottomRightCommand((VRAM_HEIGHT as u32) << 10 | (VRAM_WIDTH as u32));
+
+        let drawing_area_bottom_right =
+            ((VRAM_HEIGHT as u32 - 1) << 10) | (VRAM_WIDTH as u32 - 1);
+        gpu.gp.drawing_area_bottom_right = DrawingAreaBottomRightCommand(drawing_area_bottom_right);
 
         gpu
     }
@@ -48,32 +49,41 @@ impl Gpu {
         let (width, height) = self.gp.resolution();
         let mut buffer = vec![(0, 0, 0); width * height];
 
-        // Use display area from GP1(05h) command
-        // X is in halfword units (multiply by 2 for pixel coordinates)
-        let display_x = 0;
-        let display_y = 0;
+        // Use display area from GP1(05h) command.
+        // The register encodes halfword addresses, which map 1:1 to 16-bit pixels in VRAM.
+        let display_x = (self.gp.display_area_x as usize) & (VRAM_WIDTH - 1);
+        let display_y = (self.gp.display_area_y as usize) & (VRAM_HEIGHT - 1);
 
         for y in 0..height {
+            let vram_y = (display_y + y) & (VRAM_HEIGHT - 1);
             for x in 0..width {
-                let vram_x = display_x + x;
-                let vram_y = display_y + y;
+                let vram_x = (display_x + x) & (VRAM_WIDTH - 1);
+                let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
 
-                if vram_x < VRAM_WIDTH && vram_y < VRAM_HEIGHT {
-                    let vram_idx = (vram_y * VRAM_WIDTH + vram_x) * 2;
+                // Read RGB555 pixel from VRAM
+                let pixel_u16 = u16::from_le_bytes([self.gp.vram[vram_idx], self.gp.vram[vram_idx + 1]]);
 
-                    // Read RGB555 pixel from VRAM
-                    let pixel_u16 = u16::from_le_bytes([self.gp.vram[vram_idx], self.gp.vram[vram_idx + 1]]);
+                // Convert RGB555 to RGB888
+                let (r8, g8, b8) = rgb::rgb555_to_rgb888(pixel_u16);
 
-                    // Convert RGB555 to RGB888
-                    let (r8, g8, b8) = rgb::rgb555_to_rgb888(pixel_u16);
-
-                    let buffer_idx = y * width + x;
-                    buffer[buffer_idx] = (r8 as u8, g8 as u8, b8 as u8);
-                }
+                let buffer_idx = y * width + x;
+                buffer[buffer_idx] = (r8 as u8, g8 as u8, b8 as u8);
             }
         }
 
         buffer
+    }
+
+    fn drawing_area_bounds_exclusive(&self) -> (i32, i32, i32, i32) {
+        let x1 = self.gp.drawing_area_top_left.x1() as i32;
+        let y1 = self.gp.drawing_area_top_left.y1() as i32;
+        let x2_inclusive = self.gp.drawing_area_bottom_right.x2() as i32;
+        let y2_inclusive = self.gp.drawing_area_bottom_right.y2() as i32;
+
+        let x2 = (x2_inclusive + 1).min(VRAM_WIDTH as i32).max(x1);
+        let y2 = (y2_inclusive + 1).min(VRAM_HEIGHT as i32).max(y1);
+
+        (x1, y1, x2, y2)
     }
 
     pub fn tick(&mut self) {
@@ -114,6 +124,8 @@ impl Gpu {
             "Draw rectangle primitive"
         );
 
+        let (drawing_x1, drawing_y1, drawing_x2, drawing_y2) = self.drawing_area_bounds_exclusive();
+
         // Apply drawing offset
         let x = x + self.gp.drawing_offset.x_offset_signed() as i16;
         let y = y + self.gp.drawing_offset.y_offset_signed() as i16;
@@ -121,7 +133,6 @@ impl Gpu {
         if cmd.textured() {
             let uv = outer_cmd.data[cmd.uv_idx()];
 
-            // reconstruct texpage from GPU state (set by GP0(E1) command)
             let texpage = ((self.gp.gp1_status.texture_page_x_base() & 0xF) as u16)
                 | ((self.gp.gp1_status.texture_page_y_base_1() as u16) << 4)
                 | (((self.gp.gp1_status.texture_page_colors() & 0x3) as u16) << 7)
@@ -135,10 +146,10 @@ impl Gpu {
                 uv,
                 texpage,
                 self.gp.texture_window,
-                self.gp.drawing_area_top_left.x1(),
-                self.gp.drawing_area_top_left.y1(),
-                self.gp.drawing_area_bottom_right.x2(),
-                self.gp.drawing_area_bottom_right.y2(),
+                drawing_x1 as u32,
+                drawing_y1 as u32,
+                drawing_x2 as u32,
+                drawing_y2 as u32,
                 cmd.semi_transparent(),
                 self.gp.gp1_status.semi_transparency(),
                 &mut self.gp.vram,
@@ -154,10 +165,10 @@ impl Gpu {
                     let screen_y = y as i32 + row as i32;
 
                     // Check drawing area bounds
-                    if screen_x < self.gp.drawing_area_top_left.x1() as i32
-                        || screen_x >= self.gp.drawing_area_bottom_right.x2() as i32
-                        || screen_y < self.gp.drawing_area_top_left.y1() as i32
-                        || screen_y >= self.gp.drawing_area_bottom_right.y2() as i32
+                    if screen_x < drawing_x1
+                        || screen_x >= drawing_x2
+                        || screen_y < drawing_y1
+                        || screen_y >= drawing_y2
                     {
                         continue;
                     }
@@ -236,6 +247,8 @@ impl Gpu {
             "Draw line primitive"
         );
 
+        let (drawing_x1, drawing_y1, drawing_x2, drawing_y2) = self.drawing_area_bounds_exclusive();
+
         // Rasterize the line
         rasterizer::rasterize_line(
             x0,
@@ -247,10 +260,10 @@ impl Gpu {
             cmd.gouraud(),
             cmd.semi_transparent(),
             self.gp.gp1_status.semi_transparency(),
-            self.gp.drawing_area_top_left.x1(),
-            self.gp.drawing_area_top_left.y1(),
-            self.gp.drawing_area_bottom_right.x2(),
-            self.gp.drawing_area_bottom_right.y2(),
+            drawing_x1 as u32,
+            drawing_y1 as u32,
+            drawing_x2 as u32,
+            drawing_y2 as u32,
             &mut self.gp.vram,
         );
     }
@@ -293,12 +306,14 @@ impl Gpu {
                 // Extract texpage components (bits 0-8, 11 update global state)
                 let texture_page_x_base = (texpage & 0xF) as u32;
                 let texture_page_y_base_1 = ((texpage >> 4) & 0x1) != 0;
+                let semi_transparency = ((texpage >> 5) & 0x3) as u32;
                 let texture_page_colors = ((texpage >> 7) & 0x3) as u32;
                 let texture_page_y_base_2 = ((texpage >> 11) & 0x1) != 0;
 
-                // Update global GPU state (same as GP0(E1h) command)
+                // Update global GPU state: (gpustat & 0xFFFFFE00) | (texpage & 0x1FF)
                 self.gp.gp1_status.set_texture_page_x_base(texture_page_x_base);
                 self.gp.gp1_status.set_texture_page_y_base_1(texture_page_y_base_1);
+                self.gp.gp1_status.set_semi_transparency(semi_transparency);
                 self.gp.gp1_status.set_texture_page_colors(texture_page_colors);
                 self.gp.gp1_status.set_texture_page_y_base_2(texture_page_y_base_2);
 
@@ -320,6 +335,8 @@ impl Gpu {
             "Rasterizing polygon"
         );
 
+        let (drawing_x1, drawing_y1, drawing_x2, drawing_y2) = self.drawing_area_bounds_exclusive();
+
         // Rasterize the polygon (triangle or quad) into VRAM
         rasterizer::rasterize_polygon(
             &vertices,
@@ -327,10 +344,10 @@ impl Gpu {
             &uvs,
             cmd.raw_texture(),
             self.gp.texture_window,
-            self.gp.drawing_area_top_left.x1(),
-            self.gp.drawing_area_top_left.y1(),
-            self.gp.drawing_area_bottom_right.x2(),
-            self.gp.drawing_area_bottom_right.y2(),
+            drawing_x1 as u32,
+            drawing_y1 as u32,
+            drawing_x2 as u32,
+            drawing_y2 as u32,
             self.gp.gp1_status.dither(),
             cmd.semi_transparent(),
             self.gp.gp1_status.semi_transparency(),
@@ -546,6 +563,8 @@ impl Gpu {
                     "Quick rectangle fill"
                 );
 
+                let (drawing_x1, drawing_y1, drawing_x2, drawing_y2) = self.drawing_area_bounds_exclusive();
+
                 // Convert RGB888 to RGB555
                 let (r, g, b) = rgb::extract_rgb888(color);
                 let pixel_value = rgb::rgb888_to_rgb555(r, g, b);
@@ -556,10 +575,10 @@ impl Gpu {
                         let vram_y = y as usize + row as usize;
 
                         // within drawing area?
-                        if vram_x < self.gp.drawing_area_top_left.x1() as usize
-                            || vram_x >= self.gp.drawing_area_bottom_right.x2() as usize
-                            || vram_y < self.gp.drawing_area_top_left.y1() as usize
-                            || vram_y >= self.gp.drawing_area_bottom_right.y2() as usize
+                        if vram_x < drawing_x1 as usize
+                            || vram_x >= drawing_x2 as usize
+                            || vram_y < drawing_y1 as usize
+                            || vram_y >= drawing_y2 as usize
                         {
                             continue;
                         }

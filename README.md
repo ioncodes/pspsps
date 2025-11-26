@@ -1,14 +1,12 @@
-https://github.com/user-attachments/assets/a01301e9-513c-4163-b0c8-3f370bc051f0
+| Puzzle Bobble 2 | Mortal Kombat 2 | Debugger Demo |
+|---|---|---|
+| <video src="https://github.com/user-attachments/assets/9b4c112d-c59d-4bce-98dc-5291d52e77e9"> | <video src="https://github.com/user-attachments/assets/f803d9e0-c691-44dd-a1ff-838901da33e6"> | <video src="https://github.com/user-attachments/assets/7355ed5d-e48a-47ea-aaf8-e46905dbf7b1"> |
 
-https://github.com/user-attachments/assets/a548bf17-5979-48e3-97b9-808d8dda9ad4
 
-<img width="512" height="240" alt="crash_display" src="https://github.com/user-attachments/assets/2a51cbe8-a45e-4060-9fd3-7ba38f307e01" />
-
-<img width="1702" height="932" alt="image" src="https://github.com/user-attachments/assets/b6e562c7-8fd3-481c-aedb-4c2b9f2c9e26" />
-<img width="2088" height="1281" alt="image" src="https://github.com/user-attachments/assets/24b75293-e4b1-4232-9fff-da0860f84842" />
-
-<img width="1024" height="512" alt="diamond_vram" src="https://github.com/user-attachments/assets/a19e6bad-cf46-43aa-9af4-d0d588e120c9" />
-<img width="1024" height="512" alt="shell_vram" src="https://github.com/user-attachments/assets/de0329e0-ce27-44b1-9952-5ea4782f896d" />
-<img width="1024" height="512" alt="memory_card_vram" src="https://github.com/user-attachments/assets/7b5d7438-a408-46ee-bde3-29fdb7020ea0" />
-<img width="1024" height="512" alt="cd_player_vram" src="https://github.com/user-attachments/assets/a757bb65-e64d-42fd-8afa-92fbbea6938a" />
+<img width="512" height="240" alt="crash_display" src="media/crash_display.png" />
+<img width="1702" height="932" alt="crash_vram" src="media/crash_vram.png" />
+<img width="1024" height="512" alt="diamond_vram" src="media/diamond_vram.png" />
+<img width="1024" height="512" alt="shell_vram" src="media/shell_vram.png" />
+<img width="1024" height="512" alt="memory_card_vram" src="media/memory_card_vram.png" />
+<img width="1024" height="512" alt="cd_player_vram" src="media/cd_player_vram.png" />
 

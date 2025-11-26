@@ -1,8 +1,6 @@
-https://github.com/user-attachments/assets/9b4c112d-c59d-4bce-98dc-5291d52e77e9
-
-https://github.com/user-attachments/assets/f803d9e0-c691-44dd-a1ff-838901da33e6
-
-https://github.com/user-attachments/assets/7355ed5d-e48a-47ea-aaf8-e46905dbf7b1
+| Puzzle Bobble 2 | Mortal Kombat 2 | Debugger Demo |
+|---|---|---|
+| <video src="https://github.com/user-attachments/assets/9b4c112d-c59d-4bce-98dc-5291d52e77e9"> | <video src="https://github.com/user-attachments/assets/f803d9e0-c691-44dd-a1ff-838901da33e6"> | <video src="https://github.com/user-attachments/assets/7355ed5d-e48a-47ea-aaf8-e46905dbf7b1"> |
 
 
 <img width="512" height="240" alt="crash_display" src="media/crash_display.png" />
